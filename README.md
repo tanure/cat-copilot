@@ -17,6 +17,7 @@ CatPilot helps you capture work and life context quickly from the terminal:
 - 🎯 Manage milestones
 - 🧠 Create organized memos
 - 📊 Generate daily summaries
+- 📈 Generate executive reports (Markdown/HTML)
 - 🛠️ Configure storage path + partitioning (day/week/month)
 
 All data writes are configuration-driven via `data/config.json`.
@@ -30,6 +31,7 @@ All data writes are configuration-driven via `data/config.json`.
 | 🎯 Milestones | Create/update/list milestones and status | `milestone-tracking` |
 | 🧠 Memos | Generate structured markdown memo files | `memo-creation` |
 | 📊 Daily Summary | Build day recap from all available sources | `daily-summary` |
+| 📈 Reports | Build period-based executive reports with KPIs, charts, and insights in Markdown/HTML | `report-generator` |
 | 🛠️ Interactive Setup | First-run and reconfigure storage behavior | `interactive-setup` |
 
 ## Install 🚀
@@ -89,6 +91,11 @@ Outputs are emoji-enhanced for fast scanning and fun interaction.
 - `summarize my day`
 - `summarize my day and save it`
 
+### Reports
+- `generate executive report for this month in markdown`
+- `export weekly report in html`
+- `create report from 2026-03-01 to 2026-03-09 in html`
+
 ## Example Outputs 🧪
 
 ### Task list
@@ -121,6 +128,18 @@ Outputs are emoji-enhanced for fast scanning and fun interaction.
 ➡️ Next Actions
 - Prioritize open planning task as P1.
 - Schedule 30 min for milestone review.
+```
+
+### Executive report (markdown)
+
+```text
+📊 CatPilot Report generated for period: 2026-03-01 to 2026-03-09
+✅ Exported to: C:/Users/albert/notes/2026/2026-03/reports/report-20260309-1830.md
+
+Top insights:
+1) ✅ Task completion rate improved to 68% (+12pp vs prior period).
+2) ⚠️ 3 overdue tasks are concentrated in one milestone stream.
+3) 🎯 Milestone throughput increased with 2 milestones moved to Done.
 ```
 
 ## How Storage Works 🗂️
@@ -176,6 +195,7 @@ Notes:
 - `milestone-tracking`
 - `memo-creation`
 - `daily-summary`
+- `report-generator`
 
 ## License 📄
 

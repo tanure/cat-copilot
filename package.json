@@ -1,0 +1,41 @@
+{
+  "name": "catpilot-cli",
+  "version": "0.1.0",
+  "description": "😺 CatPilot: a playful personal secretary for GitHub Copilot CLI (tasks, journal, milestones, memos, summaries)",
+  "license": "MIT",
+  "author": "Albert Tanure",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/<your-org-or-user>/catpilot.git"
+  },
+  "homepage": "https://github.com/<your-org-or-user>/catpilot#readme",
+  "bugs": {
+    "url": "https://github.com/<your-org-or-user>/catpilot/issues"
+  },
+  "keywords": [
+    "copilot",
+    "copilot-cli",
+    "productivity",
+    "tasks",
+    "journal",
+    "milestones",
+    "memo",
+    "assistant",
+    "catpilot"
+  ],
+  "bin": {
+    "catpilot": "bin/catpilot.js"
+  },
+  "files": [
+    "bin",
+    "plugin.json",
+    "agents",
+    "skills",
+    "data/config.template.json",
+    "README.md",
+    "assets"
+  ],
+  "engines": {
+    "node": ">=18"
+  }
+}

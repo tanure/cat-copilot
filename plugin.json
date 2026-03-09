@@ -1,0 +1,12 @@
+{
+    "name": "catpilot",
+    "description": "CatPilot assistant for GitHub Copilot CLI: tasks, journaling, milestones, memos (file-based).",    
+    "version": "0.1.0",
+    "author": {
+        "name": "Albert Tanure"
+    },
+    "license": "MIT",
+    "agents": ["agents/"],
+    "skills": ["skills/"]
+
+}

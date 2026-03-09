@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "storage": {
+    "root": "data",
+    "partitioning": "month",
+    "allowExternalPaths": true,
+    "files": {
+      "tasks": "tasks.md",
+      "journal": "journal.md",
+      "milestones": "milestones.md",
+      "memos": "memos"
+    }
+  },
+  "migration": {
+    "mode": "move"
+  }
+}

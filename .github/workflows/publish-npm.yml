@@ -76,6 +76,24 @@ jobs:
           echo "package.json version set to $VERSION"
           cat package.json
 
+      - name: Validate package CLI entry
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ ! -f "bin/catpilot.js" ]]; then
+            echo "Required CLI file missing: bin/catpilot.js"
+            exit 1
+          fi
+
+          BIN_PATH=$(node -p "const p=require('./package.json'); p.bin && p.bin.catpilot ? p.bin.catpilot : ''")
+          if [[ "${BIN_PATH}" != "bin/catpilot.js" ]]; then
+            echo "Invalid package.json bin.catpilot value: '${BIN_PATH}'. Expected 'bin/catpilot.js'."
+            exit 1
+          fi
+
+          echo "CLI entry validation passed."
+
       - name: Verify package contents
         run: npm pack --dry-run
 

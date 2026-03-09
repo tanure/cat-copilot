@@ -2,10 +2,10 @@
 
 Playful personal secretary for GitHub Copilot CLI with structured memory, emoji-first UX, and configurable file storage.
 
-![npm version](https://img.shields.io/npm/v/catpilot-cli)
-![npm downloads](https://img.shields.io/npm/dm/catpilot-cli)
-![license](https://img.shields.io/npm/l/catpilot-cli)
-![node](https://img.shields.io/node/v/catpilot-cli)
+![npm version](https://img.shields.io/npm/v/%40alberttanure%2Fcatpilot-cli)
+![npm downloads](https://img.shields.io/npm/dm/%40alberttanure%2Fcatpilot-cli)
+![license](https://img.shields.io/npm/l/%40alberttanure%2Fcatpilot-cli)
+![node](https://img.shields.io/node/v/%40alberttanure%2Fcatpilot-cli)
 
 ![CatPilot Pixel Icon](assets/catpilot-pixel.svg)
 
@@ -46,7 +46,7 @@ catpilot
 ### Option B: Install from published npm package
 
 ```powershell
-npm install -g @your-scope/catpilot-cli@latest
+npm install -g @alberttanure/catpilot-cli@latest
 catpilot
 ```
 

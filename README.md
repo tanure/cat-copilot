@@ -103,7 +103,7 @@ Outputs are emoji-enhanced for fast scanning and fun interaction.
 ```text
 ✅ Open tasks loaded from C:/Users/albert/notes/2026/2026-03/tasks.md
 - 🟢 #12 Draft Q2 planning notes (Due: 2026-03-12)
-- 🟢 #15 Prepare REDACTED DR discussion notes
+- 🟢 #15 Prepare Company DR discussion notes
 - ✅ #09 Finalize plugin README
 ⚠️ Tip: want me to set priority for task #15?
 ```

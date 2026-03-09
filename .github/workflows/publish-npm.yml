@@ -94,6 +94,36 @@ jobs:
 
           echo "CLI entry validation passed."
 
+      - name: Validate npm authentication
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "NPM_TOKEN secret is missing. Add it in GitHub repository secrets."
+            exit 1
+          fi
+
+          NPM_USER=$(npm whoami 2>/tmp/npm-whoami.err || true)
+          if [[ -z "${NPM_USER}" ]]; then
+            echo "npm authentication failed for NPM_TOKEN."
+            cat /tmp/npm-whoami.err || true
+            echo "Ensure token has read/write publish permissions for @alberttanure scope/package."
+            exit 1
+          fi
+
+          echo "Authenticated npm user: ${NPM_USER}"
+
+          PKG_NAME=$(node -p "require('./package.json').name")
+          echo "Target package: ${PKG_NAME}"
+
+          if [[ "${PKG_NAME}" != @alberttanure/* ]]; then
+            echo "package.json name must be under @alberttanure scope for this pipeline."
+            exit 1
+          fi
+
       - name: Verify package contents
         run: npm pack --dry-run
 

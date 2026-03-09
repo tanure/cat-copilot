@@ -1,6 +1,6 @@
 {
   "name": "@alberttanure/catpilot-cli",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "😺 CatPilot: a playful personal secretary for GitHub Copilot CLI (tasks, journal, milestones, memos, summaries)",
   "license": "MIT",
   "author": "Albert Tanure",

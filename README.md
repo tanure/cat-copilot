@@ -195,33 +195,6 @@ Key settings (see also `data/config.template.json`):
 
 If config is missing/invalid and a write is requested, CatPilot triggers interactive setup automatically.
 
-## Publish to npm 📦
-
-Yes — you need an npm account to publish.
-
-1. Create account at npmjs.com and verify email.
-2. Login:
-
-```powershell
-npm login
-```
-
-3. (Recommended) Dry run package contents:
-
-```powershell
-npm pack --dry-run
-```
-
-4. Publish:
-
-```powershell
-npm publish --access public
-```
-
-Notes:
-- You can publish only package names/scopes you own.
-- You cannot publish under `@github/*` unless you own that npm scope.
-
 ## Troubleshooting 🧯
 
 - `❌ copilot not found`: install GitHub Copilot CLI and re-open terminal.

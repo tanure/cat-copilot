@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   publish:
@@ -127,7 +127,22 @@ jobs:
       - name: Verify package contents
         run: npm pack --dry-run
 
+      - name: Generate release notes body
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.tag.outputs.version }}"
+          node scripts/generate-release-notes.mjs "$VERSION" > RELEASE_NOTES.md
+          echo "Generated RELEASE_NOTES.md"
+          cat RELEASE_NOTES.md
+
       - name: Publish to npm
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
+
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          body_path: RELEASE_NOTES.md

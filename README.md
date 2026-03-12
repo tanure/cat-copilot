@@ -7,6 +7,12 @@ Playful personal secretary for GitHub Copilot CLI with structured memory, emoji-
 ![license](https://img.shields.io/npm/l/%40alberttanure%2Fcatpilot-cli)
 ![node](https://img.shields.io/node/v/%40alberttanure%2Fcatpilot-cli)
 
+## Release Notes 🗒️
+
+- Current version: **v0.1.7**
+- Changelog (all versions): [CHANGELOG.md](https://github.com/tanure/cat-copilot/blob/main/CHANGELOG.md)
+- GitHub release notes: [Releases](https://github.com/tanure/cat-copilot/releases)
+
 ![CatPilot Pixel Icon](assets/catpilot-pixel.svg)
 
 ## Why CatPilot ✨
@@ -49,6 +55,36 @@ catpilot
 npm install -g @alberttanure/catpilot-cli@latest
 catpilot
 ```
+
+## Update (no uninstall needed) 🔄
+
+### Recommended: built-in updater
+
+```powershell
+catpilot update
+```
+
+### Direct npm update
+
+```powershell
+npm update -g @alberttanure/catpilot-cli
+```
+
+If your shell was opened before the update, restart it to refresh PATH/shims.
+
+## Doctor (one-shot diagnostics) 🩺
+
+Use doctor when `/agents` does not show `CatPilot`:
+
+```powershell
+catpilot doctor
+```
+
+It checks:
+- plugin root and packaged assets
+- presence of `plugin.json`
+- presence of `agents/*.agent.md`
+- `copilot --version` availability
 
 ### Requirements
 
@@ -183,6 +219,12 @@ Notes:
 ## Troubleshooting 🧯
 
 - `❌ copilot not found`: install GitHub Copilot CLI and re-open terminal.
+- `⚠️ /agents does not show CatPilot`:
+   - run `catpilot doctor`
+   - run `copilot --version` (upgrade if outdated)
+   - run `catpilot update`
+   - restart terminal/session and retry `/agents`
+   - run with `CATPILOT_DEBUG=1 catpilot` to print plugin root + discovered agent files
 - `⚠️ setup loops`: validate JSON format in `data/config.json`.
 - `⚠️ writes in wrong place`: ask CatPilot to show current storage config.
 - `❌ npm publish fails`: check package name availability and npm auth.

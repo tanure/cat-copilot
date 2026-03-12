@@ -7,6 +7,15 @@ const fs = require('node:fs');
 const pluginRoot = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);
 
+function renderStartupBrandLine() {
+  const shouldShowBrandLine = process.env.CATPILOT_BRAND_LINE === '1';
+  if (!shouldShowBrandLine || !process.stdout.isTTY) {
+    return;
+  }
+
+  process.stderr.write('CatPilot · Copilot CLI assistant\n');
+}
+
 function findAgentFiles(agentsDirPath) {
   if (!fs.existsSync(agentsDirPath)) {
     return [];
@@ -178,6 +187,6 @@ if (firstArg === 'doctor') {
   runDoctor();
 }
 
+renderStartupBrandLine();
 runSelfChecks();
-
 runCommand('copilot', args, { cwd: pluginRoot });

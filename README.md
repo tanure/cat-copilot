@@ -9,11 +9,11 @@ Playful personal secretary for GitHub Copilot CLI with structured memory, emoji-
 
 ## Release Notes 🗒️
 
-- Current version: **v0.1.7**
+- Current version: **v0.1.8**
 - Changelog (all versions): [CHANGELOG.md](https://github.com/tanure/cat-copilot/blob/main/CHANGELOG.md)
 - GitHub release notes: [Releases](https://github.com/tanure/cat-copilot/releases)
 
-![CatPilot Pixel Icon](assets/catpilot-pixel.svg)
+<img src="assets/catpilot-pixel.png" alt="CatPilot Pixel Icon" style="max-width: 300px; width: 100%;" />
 
 ## Why CatPilot ✨
 
@@ -85,6 +85,12 @@ It checks:
 - presence of `plugin.json`
 - presence of `agents/*.agent.md`
 - `copilot --version` availability
+
+Optional startup brand line (plain text, no logo/art):
+
+```powershell
+$env:CATPILOT_BRAND_LINE=1; catpilot
+```
 
 ### Requirements
 

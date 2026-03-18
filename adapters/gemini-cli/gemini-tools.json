@@ -1,0 +1,106 @@
+{
+  "tools": [
+    {
+      "name": "catpilot_list_tasks",
+      "description": "List all tasks from CatPilot storage",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "status": {
+            "type": "STRING",
+            "description": "Filter by status: open, done, or all (default: all)"
+          }
+        }
+      }
+    },
+    {
+      "name": "catpilot_add_task",
+      "description": "Add a new task to CatPilot",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "title": {
+            "type": "STRING",
+            "description": "Task title"
+          },
+          "due": {
+            "type": "STRING",
+            "description": "Due date (YYYY-MM-DD format)"
+          },
+          "priority": {
+            "type": "STRING",
+            "description": "Priority level (P0, P1, P2, P3)"
+          }
+        },
+        "required": ["title"]
+      }
+    },
+    {
+      "name": "catpilot_complete_task",
+      "description": "Mark a task as completed",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "id": {
+            "type": "NUMBER",
+            "description": "Task ID"
+          }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "catpilot_add_journal",
+      "description": "Add a journal entry",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "text": {
+            "type": "STRING",
+            "description": "Journal entry text"
+          }
+        },
+        "required": ["text"]
+      }
+    },
+    {
+      "name": "catpilot_list_journal",
+      "description": "List recent journal entries",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "days": {
+            "type": "NUMBER",
+            "description": "Number of days to show (default: 7)"
+          }
+        }
+      }
+    },
+    {
+      "name": "catpilot_create_memo",
+      "description": "Create a new memo",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "title": {
+            "type": "STRING",
+            "description": "Memo title"
+          },
+          "content": {
+            "type": "STRING",
+            "description": "Memo content"
+          }
+        },
+        "required": ["title"]
+      }
+    },
+    {
+      "name": "catpilot_list_memos",
+      "description": "List all memos",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {}
+      }
+    }
+  ]
+}

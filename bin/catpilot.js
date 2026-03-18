@@ -1,8 +1,13 @@
 #!/usr/bin/env node
 
-const { spawn, spawnSync } = require('node:child_process');
-const path = require('node:path');
-const fs = require('node:fs');
+import { spawn, spawnSync } from 'node:child_process';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const pluginRoot = path.resolve(__dirname, '..');
 const args = process.argv.slice(2);

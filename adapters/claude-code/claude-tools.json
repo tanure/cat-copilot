@@ -1,0 +1,142 @@
+[
+  {
+    "name": "list_tasks",
+    "description": "List all tasks from CatPilot storage, filtered by status",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["open", "done", "all"],
+          "description": "Filter tasks by status (default: all)"
+        }
+      }
+    }
+  },
+  {
+    "name": "add_task",
+    "description": "Add a new task to CatPilot",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Task title (required)"
+        },
+        "due": {
+          "type": "string",
+          "description": "Due date in YYYY-MM-DD format (optional)"
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["P0", "P1", "P2", "P3"],
+          "description": "Priority level (optional)"
+        },
+        "tags": {
+          "type": "string",
+          "description": "Comma-separated tags (optional)"
+        },
+        "context": {
+          "type": "string",
+          "description": "Context or notes (optional)"
+        }
+      },
+      "required": ["title"]
+    }
+  },
+  {
+    "name": "complete_task",
+    "description": "Mark a task as completed",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "number",
+          "description": "Task ID (required)"
+        }
+      },
+      "required": ["id"]
+    }
+  },
+  {
+    "name": "remove_task",
+    "description": "Remove a task from CatPilot",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "number",
+          "description": "Task ID (required)"
+        }
+      },
+      "required": ["id"]
+    }
+  },
+  {
+    "name": "add_journal_entry",
+    "description": "Add a journal entry for today",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Journal entry text (required)"
+        }
+      },
+      "required": ["text"]
+    }
+  },
+  {
+    "name": "list_journal",
+    "description": "List recent journal entries",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "type": "number",
+          "description": "Number of days to show (default: 7)"
+        }
+      }
+    }
+  },
+  {
+    "name": "create_memo",
+    "description": "Create a new memo",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Memo title (required)"
+        },
+        "content": {
+          "type": "string",
+          "description": "Memo content (optional)"
+        }
+      },
+      "required": ["title"]
+    }
+  },
+  {
+    "name": "list_memos",
+    "description": "List all memos",
+    "input_schema": {
+      "type": "object",
+      "properties": {}
+    }
+  },
+  {
+    "name": "read_memo",
+    "description": "Read memo content by filename",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "filename": {
+          "type": "string",
+          "description": "Memo filename (required)"
+        }
+      },
+      "required": ["filename"]
+    }
+  }
+]

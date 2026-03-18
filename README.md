@@ -28,6 +28,65 @@ CatPilot helps you capture work and life context quickly from the terminal:
 
 All data writes are configuration-driven via `data/config.json`.
 
+## Setup: Use CatPilot as Copilot CLI Plugin 🔌
+
+### Installation (Development)
+
+If you're building from source:
+
+```bash
+# Clone and install globally
+git clone https://github.com/tanure/cat-copilot.git
+cd cat-copilot
+npm link
+
+# Register plugin with Copilot CLI
+copilot plugin install @alberttanure/catpilot-cli
+
+# Verify installation
+copilot agents  # Should list "CatPilot"
+```
+
+### Installation (From npm)
+
+```bash
+# Install from published package
+npm install -g @alberttanure/catpilot-cli
+
+# Register plugin with Copilot CLI
+copilot plugin install @alberttanure/catpilot-cli
+
+# Verify installation
+copilot agents  # Should list "CatPilot"
+```
+
+### First Time Setup
+
+After plugin installation, ask Copilot CLI's CatPilot agent to set up storage:
+
+```bash
+copilot chat
+
+# In chat:
+> I'm using CatPilot for the first time. Set up my storage.
+```
+
+This runs the `interactive-setup` skill and creates `data/config.json` with your preferences.
+
+### Troubleshooting
+
+If `copilot agents` doesn't show **CatPilot**, run diagnostics:
+
+```bash
+cat-pilot doctor
+```
+
+This checks for:
+- Valid `plugin.json`
+- `agents/*.agent.md` files
+- Copilot CLI availability
+- Configuration paths
+
 ## Features & Capabilities 🧭
 
 | Capability | What it does | Skill |

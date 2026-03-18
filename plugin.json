@@ -1,7 +1,7 @@
 {
     "name": "catpilot",
     "description": "CatPilot assistant for GitHub Copilot CLI: tasks, journaling, milestones, memos (file-based).",    
-    "version": "0.1.8",
+    "version": "0.1.9",
     "author": {
         "name": "Albert Tanure"
     },

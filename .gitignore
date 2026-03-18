@@ -59,6 +59,8 @@ bld/
 !bin/
 bin/*
 !bin/catpilot.js
+!bin/cat-cli.js
+!bin/cat-tui.js
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/

@@ -97,9 +97,12 @@ Today, `cat-tui` is a separate executable, not something embedded inside Copilot
 
 ```bash
 npm install -g @alberttanure/catpilot-cli
-copilot plugin install @alberttanure/catpilot-cli
+copilot plugin install tanure/cat-copilot
 copilot agents
 ```
+
+Note: `copilot plugin install ...` registers CatPilot inside Copilot CLI only.  
+If you also want direct shell commands like `cat-pilot` and `cat-tui`, run the global npm install step as shown below.
 
 Expected result: `CatPilot` appears in the Copilot agents list.
 
@@ -397,7 +400,7 @@ npm update -g @alberttanure/catpilot-cli
 
 ## Release Notes
 
-- Current version: **v0.1.9**
+- Current version: **v0.1.10**
 - Changelog: [CHANGELOG.md](https://github.com/tanure/cat-copilot/blob/main/CHANGELOG.md)
 - GitHub releases: [Releases](https://github.com/tanure/cat-copilot/releases)
 

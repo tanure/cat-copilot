@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.10] - 2026-03-18
+
+### Fixed
+- **Critical: Missing CLI executables in npm package** - `.gitignore` was excluding `bin/cat-cli.js` and `bin/cat-tui.js`, preventing `cat-pilot` and `cat-tui` commands from being available globally after install
+- Updated `.gitignore` to include all three bin executables: `catpilot.js`, `cat-cli.js`, `cat-tui.js`
+- Verified npm package now includes all CLI entry points and generates correct Windows command shims
+
 ## [0.1.9] - 2026-03-18
 
 ### Added
@@ -52,6 +59,7 @@ All notable changes to this project are documented in this file.
 - Added debug mode output via `CATPILOT_DEBUG=1`.
 - Added README guidance for update and `/agents` troubleshooting.
 
+[0.1.10]: https://github.com/tanure/cat-copilot/releases/tag/v0.1.10
 [0.1.9]: https://github.com/tanure/cat-copilot/releases/tag/v0.1.9
 [0.1.8]: https://github.com/tanure/cat-copilot/releases/tag/v0.1.8
 [0.1.7]: https://github.com/tanure/cat-copilot/releases/tag/v0.1.7

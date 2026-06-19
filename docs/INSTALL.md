@@ -15,7 +15,7 @@ This installs four binaries: `catpilot`, `cat-pilot`, `cat-tui`, and `catpilot-m
 
 | Surface | What you install | Command / config | What you get |
 | --- | --- | --- | --- |
-| **Copilot CLI** | Plugin **+** MCP | `copilot plugin install tanure/cat-copilot` then `copilot mcp add catpilot -- catpilot-mcp` | Agent + skills **and** MCP tools in chat |
+| **Copilot CLI** | Plugin **+** MCP | `copilot plugin marketplace add tanure/cat-copilot` then `copilot plugin install catpilot@catpilot-marketplace` and `copilot mcp add catpilot -- catpilot-mcp` | Agent + skills **and** MCP tools in chat |
 | **Copilot in VS Code** | MCP | `.vscode/mcp.json` (or user `mcp.json`) → server `catpilot` = `catpilot-mcp` | CatPilot tools in Copilot Chat, next to Obsidian |
 | **Copilot App** | Plugin **+** MCP | Install plugin, register `catpilot-mcp` as an MCP server | Agent + skills + MCP tools in App sessions |
 | **Any MCP host** | MCP | `templates/mcp/generic-mcp.json` | CatPilot tools anywhere MCP is supported |
@@ -24,11 +24,24 @@ This installs four binaries: `catpilot`, `cat-pilot`, `cat-tui`, and `catpilot-m
 > exact next step for whatever is missing.
 
 ## 1. GitHub Copilot CLI
+
+**Option A — via the CatPilot marketplace (recommended, also how it shows up in the Copilot App):**
+```bash
+# Register the marketplace once, then install by name
+copilot plugin marketplace add tanure/cat-copilot
+copilot plugin marketplace browse catpilot-marketplace   # see CatPilot listed
+copilot plugin install catpilot@catpilot-marketplace
+```
+
+**Option B — install the repo directly:**
 ```bash
 # Agent + skills (file-based assistant)
 copilot plugin install tanure/cat-copilot
 copilot agents            # verify "CatPilot" appears
+```
 
+**Add the MCP tools (either option):**
+```bash
 # MCP tools (programmatic task/journal/learning/growth/project tools)
 copilot mcp add catpilot -- catpilot-mcp
 ```
@@ -48,7 +61,13 @@ Tip: keep your Obsidian vault open in the same window — capture with Copilot C
 review in Obsidian.
 
 ## 3. GitHub Copilot App
-1. Install the plugin (agent + skills): `copilot plugin install tanure/cat-copilot`.
+CatPilot is published as a **plugin marketplace**, so it's discoverable from the App.
+1. Register and install the plugin (agent + skills):
+   ```bash
+   copilot plugin marketplace add tanure/cat-copilot
+   copilot plugin install catpilot@catpilot-marketplace
+   ```
+   (Or install the repo directly: `copilot plugin install tanure/cat-copilot`.)
 2. Register the MCP server so App sessions can call the tools:
    `copilot mcp add catpilot -- catpilot-mcp` (or add it via the App's MCP settings
    using `templates/mcp/generic-mcp.json`).

@@ -132,11 +132,20 @@ Today, `cat-tui` is a separate executable, not something embedded inside Copilot
 
 ## Install For The Full Copilot Experience
 
+CatPilot is published as a **Copilot plugin marketplace**, so it's discoverable from
+the Copilot CLI and the Copilot App:
+
 ```bash
 npm install -g @alberttanure/catpilot-cli
-copilot plugin install tanure/cat-copilot
+
+# Discover + install via the CatPilot marketplace (recommended)
+copilot plugin marketplace add tanure/cat-copilot
+copilot plugin marketplace browse catpilot-marketplace
+copilot plugin install catpilot@catpilot-marketplace
 copilot agents
 ```
+
+Prefer a direct install? `copilot plugin install tanure/cat-copilot` works too.
 
 Note: `copilot plugin install ...` registers CatPilot inside Copilot CLI only.  
 If you also want direct shell commands like `cat-pilot` and `cat-tui`, run the global npm install step as shown below.

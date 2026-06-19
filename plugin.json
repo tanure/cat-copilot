@@ -1,12 +1,31 @@
 {
     "name": "catpilot",
-    "description": "CatPilot assistant for GitHub Copilot CLI: tasks, journaling, milestones, memos (file-based).",    
-    "version": "0.1.10",
+    "description": "CatPilot assistant for GitHub Copilot: tasks, journaling, milestones, memos, learning/cert tracking, growth/review-prep, and project status (file-based, Obsidian-friendly).",
+    "version": "0.2.0",
     "author": {
-        "name": "Albert Tanure"
+        "name": "Albert Tanure",
+        "url": "https://github.com/tanure"
     },
+    "homepage": "https://github.com/tanure/cat-copilot",
+    "repository": "https://github.com/tanure/cat-copilot",
     "license": "MIT",
+    "category": "productivity",
+    "keywords": [
+        "tasks",
+        "journal",
+        "notes",
+        "knowledge-base",
+        "obsidian",
+        "productivity",
+        "second-brain",
+        "learning",
+        "growth"
+    ],
+    "tags": [
+        "personal-assistant",
+        "note-taking",
+        "knowledge-os"
+    ],
     "agents": ["agents/"],
     "skills": ["skills/"]
-
 }

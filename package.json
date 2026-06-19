@@ -37,6 +37,7 @@
   "files": [
     "bin",
     "lib",
+    "adapters",
     "mcp",
     "plugin.json",
     "agents",

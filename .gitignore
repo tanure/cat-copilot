@@ -7,6 +7,7 @@
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+!.vscode/mcp.json
 !.vscode/*.code-snippets
 
 # Local History for Visual Studio Code
@@ -61,6 +62,7 @@ bin/*
 !bin/catpilot.js
 !bin/cat-cli.js
 !bin/cat-tui.js
+!bin/cat-mcp.js
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
@@ -423,3 +425,28 @@ FodyWeavers.xsd
 # Additional files built by Visual Studio
 
 # End of https://www.toptal.com/developers/gitignore/api/visualstudio,visualstudiocode
+
+# ============================================================================
+# CatPilot — private personal data (two-layer model)
+# ----------------------------------------------------------------------------
+# Layer 1 (public): the generic engine, skills, MCP server, and templates.
+# Layer 2 (private): your real vault content lives OUTSIDE the repo (e.g. an
+# Obsidian vault). Never commit personal tasks/journal/memos/learning/growth.
+# Only config templates and the vault scaffold under templates/ are tracked.
+# ============================================================================
+
+# Ignore all personal markdown data under data/, but keep template/sample config.
+data/**/*.md
+data/**/*.md.bak
+data/memos/
+data/**/memos/
+!data/README.md
+
+# Real workspace config can contain absolute private paths — keep only templates.
+data/config.json
+!data/config.template.json
+
+# A local private vault checked out inside the repo for convenience (never commit).
+/vault/
+/private-vault/
+*.private.md

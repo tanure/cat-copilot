@@ -116,9 +116,9 @@ Rules:
 ## Examples
 
 ### Example 1 (minimal)
-User: "Create a task to prepare REDACTED DR discussion notes"
+User: "Create a task to prepare release notes draft"
 Write:
-| 1 | Open | Prepare REDACTED DR discussion notes |  |  |  |  |
+| 1 | Open | Prepare release notes draft |  |  |  |  |
 
 ### Example 2 (with metadata)
 User: "Add a task: draft plugin demo outline due Friday priority high tag copilot-cli"

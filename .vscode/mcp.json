@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "catpilot": {
+      "type": "stdio",
+      "command": "catpilot-mcp",
+      "env": {
+        "CATPILOT_ROOT": "${workspaceFolder}"
+      }
+    }
+  }
+}

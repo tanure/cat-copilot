@@ -1,0 +1,14 @@
+{
+  "//": "Generic MCP host config (Copilot CLI, Copilot App, and other MCP clients).",
+  "//command": "Requires the global bin: npm i -g @alberttanure/catpilot-cli",
+  "//root": "Set CATPILOT_ROOT to the folder containing data/config.json (your CatPilot project).",
+  "mcpServers": {
+    "catpilot": {
+      "command": "catpilot-mcp",
+      "args": [],
+      "env": {
+        "CATPILOT_ROOT": "/absolute/path/to/your/catpilot/project"
+      }
+    }
+  }
+}

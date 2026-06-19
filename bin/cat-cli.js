@@ -323,6 +323,110 @@ memoCmd
   });
 
 // ============================================================================
+// LEARNING / GROWTH / PROJECT COMMANDS (per-file domains)
+// ============================================================================
+
+import * as domains from '../lib/domains.js';
+
+function registerDomainCommands(name, domain, label, extraOpts = []) {
+  const cmd = program.command(name).description(`Manage ${label}`);
+
+  let addCmd = cmd
+    .command('add <title>')
+    .description(`Add a ${label} note`)
+    .option('--body <text>', 'Markdown body');
+  for (const [flag, desc] of extraOpts) addCmd = addCmd.option(flag, desc);
+  addCmd.action((title, options) => {
+    try {
+      const { body, ...frontmatter } = options;
+      const res = domains.addNote(domain, { title, body, frontmatter });
+      console.log(`\n✅ ${label} note created at ${res.path}`);
+    } catch (err) {
+      console.error(`❌ Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+  cmd
+    .command('list')
+    .description(`List ${label} notes`)
+    .action(() => {
+      try {
+        const notes = domains.listNotes(domain);
+        if (notes.length === 0) {
+          console.log(`\n📂 No ${label} notes found.`);
+          return;
+        }
+        console.log(`\n📂 ${label} notes:\n`);
+        notes.forEach(n => {
+          const fm = n.frontmatter || {};
+          const status = fm.status ? ` [${fm.status}]` : '';
+          console.log(`   ${fm.title || n.filename}${status}`);
+        });
+        console.log();
+      } catch (err) {
+        console.error(`❌ Error: ${err.message}`);
+        process.exit(1);
+      }
+    });
+}
+
+registerDomainCommands('learning', 'learning', 'learning', [
+  ['--goal <goal>', 'Learning goal'],
+  ['--target_date <date>', 'Target date (YYYY-MM-DD)'],
+  ['--next_review <date>', 'Next review date (YYYY-MM-DD)'],
+  ['--status <status>', 'Status (In Progress|Done)']
+]);
+registerDomainCommands('growth', 'growth', 'growth', [
+  ['--area <area>', 'Impact area'],
+  ['--impact <impact>', 'Quantified impact']
+]);
+registerDomainCommands('project', 'projects', 'project', [
+  ['--status <status>', 'Status (Active|Blocked|Done)'],
+  ['--owner <owner>', 'Owner'],
+  ['--due <date>', 'Due date (YYYY-MM-DD)']
+]);
+
+// ============================================================================
+// INSTALL / SURFACE DETECTION
+// ============================================================================
+
+program
+  .command('install')
+  .description('Detect which Copilot surfaces are configured and print next steps')
+  .action(() => {
+    console.log('\n🧩 CatPilot — Copilot ecosystem install check\n');
+
+    const workspaceRoot = process.cwd();
+    const configPath = path.join(workspaceRoot, 'data', 'config.json');
+    const mcpEntry = path.resolve(pluginRoot, 'bin', 'cat-mcp.js');
+    const vscodeMcp = path.join(workspaceRoot, '.vscode', 'mcp.json');
+
+    const configOk = fs.existsSync(configPath);
+    const mcpOk = fs.existsSync(mcpEntry);
+    const vscodeOk = fs.existsSync(vscodeMcp);
+
+    console.log('📂 Workspace');
+    console.log(`${configOk ? '✅' : '⚠️'} config.json ${configOk ? `(${configPath})` : '— run `cat-pilot setup`'}`);
+    console.log(`${mcpOk ? '✅' : '❌'} MCP server entry (${mcpEntry})`);
+
+    console.log('\n🖥️  GitHub Copilot CLI');
+    console.log('   Plugin (agent + skills):  copilot plugin install tanure/cat-copilot');
+    console.log(`   MCP server:               copilot mcp add catpilot -- node "${mcpEntry}"`);
+
+    console.log('\n🧑‍💻 Copilot in VS Code');
+    console.log(`${vscodeOk ? '✅' : '⚠️'} .vscode/mcp.json ${vscodeOk ? '' : '— copy templates/mcp/vscode-mcp.json into .vscode/mcp.json'}`);
+    console.log('   Then open Copilot Chat and pick the "catpilot" tools.');
+
+    console.log('\n🪟 GitHub Copilot App');
+    console.log('   Install the plugin and register the MCP server (same command as CLI).');
+    console.log('   See docs/INSTALL.md for the App walkthrough.');
+
+    console.log(`\nℹ️ Full matrix: docs/INSTALL.md`);
+    console.log();
+  });
+
+// ============================================================================
 // PARSE AND RUN
 // ============================================================================
 

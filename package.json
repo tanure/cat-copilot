@@ -22,30 +22,45 @@
     "milestones",
     "memo",
     "assistant",
-    "catpilot"
+    "catpilot",
+    "mcp",
+    "model-context-protocol",
+    "obsidian",
+    "knowledge-base"
   ],
   "bin": {
     "catpilot": "bin/catpilot.js",
     "cat-pilot": "bin/cat-cli.js",
-    "cat-tui": "bin/cat-tui.js"
+    "cat-tui": "bin/cat-tui.js",
+    "catpilot-mcp": "bin/cat-mcp.js"
   },
   "files": [
     "bin",
     "lib",
+    "mcp",
     "plugin.json",
     "agents",
     "skills",
+    "templates",
     "CHANGELOG.md",
     "data/config.template.json",
+    "data/README.md",
     "README.md",
     "assets"
   ],
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "commander": "^11.0.0",
     "ink": "^4.0.0",
-    "react": "^18.0.0"
+    "react": "^18.0.0",
+    "zod": "^4.4.3"
   },
   "engines": {
     "node": ">=18"
+  },
+  "scripts": {
+    "test": "node test/quick-test.js && node test/adapter-integration.js && node test/mcp-smoke.js",
+    "test:mcp": "node test/mcp-smoke.js",
+    "mcp": "node bin/cat-mcp.js"
   }
 }

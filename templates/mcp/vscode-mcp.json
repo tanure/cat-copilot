@@ -1,0 +1,14 @@
+{
+  "//": "Copy this to .vscode/mcp.json in any workspace (or merge into your user-level mcp.json).",
+  "//command": "Uses the globally installed `catpilot-mcp` bin (npm i -g @alberttanure/catpilot-cli).",
+  "//root": "Set CATPILOT_ROOT to the folder that contains data/config.json. ${workspaceFolder} works when you run CatPilot from the repo; otherwise hardcode the path to your CatPilot project.",
+  "servers": {
+    "catpilot": {
+      "type": "stdio",
+      "command": "catpilot-mcp",
+      "env": {
+        "CATPILOT_ROOT": "${workspaceFolder}"
+      }
+    }
+  }
+}

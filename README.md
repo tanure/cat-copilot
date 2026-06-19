@@ -31,6 +31,43 @@ Most terminal tools are either too raw or too rigid. CatPilot is meant to feel c
 
 All interfaces write to the same config-driven storage, so your data stays in sync.
 
+## A personal knowledge OS across every Copilot surface
+
+CatPilot is more than a CLI tool — it's a **two-layer second brain**:
+
+- **Layer 1 — this repo (public, generic):** the engine, agent, skills, and a real
+  **MCP server**. Neutral vocabulary only (tasks, journal, learning, growth, projects)
+  so it's safe to open-source and use with any employer.
+- **Layer 2 — your private vault (outside the repo):** your real content, ideally an
+  **Obsidian** vault. CatPilot writes here; the repo only ships templates, never data.
+
+Point `data/config.json`'s `storage.root` at your Obsidian vault and the **same brain**
+is reachable from four doors:
+
+| Surface | How | Best for |
+| --- | --- | --- |
+| **GitHub Copilot CLI** | `copilot plugin install` + agent/skills | Conversational planning, summaries, reports |
+| **Copilot in VS Code** | `.vscode/mcp.json` (MCP server) | Editor + Obsidian side by side |
+| **Copilot App** | plugin + MCP registration | Session-based planning |
+| **Standalone CLI / MCP** | `cat-pilot` / `catpilot-mcp` | Scripting & embedding anywhere |
+
+New personal-management domains help you stay on track for projects, certifications,
+studies, and growth/review prep:
+
+- **`learning`** — certification & study tracker (goals, target dates, progress).
+- **`growth`** — accomplishment / brag-doc log + neutral review-prep summaries.
+- **`project-tracker`** — lightweight per-project status rollups.
+- **`sanitize`** — a pre-write guardrail that flags employer-internal details before they
+  ever hit disk, so growth/review content stays shareable.
+
+📚 **Start here:**
+[`docs/INSTALL.md`](docs/INSTALL.md) ·
+[`docs/SURFACES.md`](docs/SURFACES.md) ·
+[`docs/USING_IN_VSCODE.md`](docs/USING_IN_VSCODE.md) ·
+[`docs/OBSIDIAN_KNOWLEDGE_BASE.md`](docs/OBSIDIAN_KNOWLEDGE_BASE.md) ·
+[`docs/PRIVACY_AND_BOUNDARIES.md`](docs/PRIVACY_AND_BOUNDARIES.md) ·
+[`docs/PLAYBOOK.md`](docs/PLAYBOOK.md)
+
 ## Choose Your Path
 
 ### Option 1: Full Copilot Experience

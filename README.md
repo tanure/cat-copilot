@@ -41,8 +41,9 @@ CatPilot is more than a CLI tool — it's a **two-layer second brain**:
 - **Layer 2 — your private vault (outside the repo):** your real content, ideally an
   **Obsidian** vault. CatPilot writes here; the repo only ships templates, never data.
 
-Point `data/config.json`'s `storage.root` at your Obsidian vault and the **same brain**
-is reachable from four doors:
+Run `cat-pilot setup` once to point `storage.root` at your Obsidian vault. It writes a
+**global** config (`~/.catpilot/config.json`) so the **same brain** is reachable from
+any directory, through four doors:
 
 | Surface | How | Best for |
 | --- | --- | --- |
@@ -186,15 +187,24 @@ cat-tui
 
 ## First-Time Setup
 
-CatPilot stores its workspace configuration in `data/config.json`.
-
-If you run:
+CatPilot stores a **shared global** configuration at `~/.catpilot/config.json`, so the
+same storage is used no matter which directory you launch from. Run setup once:
 
 ```bash
 cat-pilot setup
 ```
 
-you will be guided through:
+Prefer non-interactive? Pass flags:
+
+```bash
+cat-pilot setup --yes --root "/path/to/your/ObsidianVault" --partitioning month
+```
+
+Resolution order (first match wins): `CATPILOT_CONFIG` env → `CATPILOT_ROOT` env →
+`<cwd>/data/config.json` (project-local, use `cat-pilot setup --local`) →
+`~/.catpilot/config.json` (global). `cat-pilot doctor` shows which one is active.
+
+Setup guides you through:
 
 - storage root path
 - partitioning mode
@@ -355,7 +365,8 @@ cat-pilot doctor
 
 It checks:
 
-- workspace `data/config.json`
+- the active config (global `~/.catpilot/config.json` or project-local) and its scope
+- the resolved storage root
 - packaged `plugin.json`
 - packaged `agents/`
 - packaged `skills/`

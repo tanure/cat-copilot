@@ -5,17 +5,19 @@ and the Copilot App. This is the most "second-brain native" setup because your
 Obsidian vault and your Copilot chat live side by side.
 
 ## Setup
-1. Install the package and create a config:
+1. Install the package and create the shared global config:
    ```bash
    npm install -g @alberttanure/catpilot-cli
-   cat-pilot setup     # point storage.root at your Obsidian vault
+   cat-pilot setup --yes --root "/path/to/your/ObsidianVault"
    ```
 2. Add the MCP server to VS Code:
    - This repo already ships `.vscode/mcp.json`. For another workspace, copy
      `templates/mcp/vscode-mcp.json` to `.vscode/mcp.json`.
    - Or add the `catpilot` server to your **user-level** `mcp.json` so it's available
      everywhere.
-3. Set `CATPILOT_ROOT` (in the config `env`) to the folder containing `data/config.json`.
+3. No `CATPILOT_ROOT` needed — the global config (`~/.catpilot/config.json`) is
+   resolved from any directory. Set `CATPILOT_ROOT` in the config `env` only to pin a
+   specific project folder instead.
 4. Reload VS Code and open **Copilot Chat**. The `catpilot` tools appear in the tools list.
 
 ## Recommended layout
@@ -34,7 +36,8 @@ Summarize what I did this week and save it as a memo.
 ```
 
 ## How it stays in sync
-Every tool call resolves storage from `data/config.json`. Tasks/journal/milestones
+Every tool call resolves storage from your shared config (`~/.catpilot/config.json`
+by default). Tasks/journal/milestones
 are monthly markdown files; memos/learning/growth/projects are per-file notes with
 frontmatter (Dataview-ready). Because the root is your vault, everything shows up in
 Obsidian immediately.

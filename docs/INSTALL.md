@@ -6,8 +6,17 @@ CatPilot ships **one npm package** that provides the CLI, the TUI, and the
 ## 0. Install the package (once)
 ```bash
 npm install -g @alberttanure/catpilot-cli
-cat-pilot setup        # creates data/config.json (point storage.root at your vault)
+cat-pilot setup        # creates the shared global config at ~/.catpilot/config.json
 ```
+
+`cat-pilot setup` writes a **global** config (`~/.catpilot/config.json`) by default,
+so CatPilot resolves to the **same storage from every directory** — whatever folder
+you open Copilot in. Point it at your Obsidian vault:
+```bash
+cat-pilot setup --yes --root "/path/to/your/ObsidianVault" --partitioning month
+```
+Use `cat-pilot setup --local` only if you want a per-project config
+(`<cwd>/data/config.json`) that overrides the global one inside that folder.
 
 This installs four binaries: `catpilot`, `cat-pilot`, `cat-tui`, and `catpilot-mcp`.
 
@@ -45,7 +54,9 @@ copilot agents            # verify "CatPilot" appears
 # MCP tools (programmatic task/journal/learning/growth/project tools)
 copilot mcp add catpilot -- catpilot-mcp
 ```
-Set `CATPILOT_ROOT` if you launch Copilot from outside your CatPilot project:
+With the global config in place (`cat-pilot setup`), the MCP server resolves the
+**same storage from any directory** — no extra environment variable needed.
+`CATPILOT_ROOT` is now an **optional override** to pin a specific project folder:
 ```bash
 copilot mcp add catpilot --env CATPILOT_ROOT=/path/to/catpilot -- catpilot-mcp
 ```
@@ -55,7 +66,8 @@ copilot mcp add catpilot --env CATPILOT_ROOT=/path/to/catpilot -- catpilot-mcp
    (this repo already includes one), **or** add the `catpilot` server to your
    user-level `mcp.json` so it's available in every workspace.
 2. Reload VS Code; open **Copilot Chat** and confirm the `catpilot` tools are listed.
-3. Set `CATPILOT_ROOT` in the config `env` to the folder containing `data/config.json`.
+3. Optional: set `CATPILOT_ROOT` in the config `env` only if you want to pin a
+   specific project folder instead of the shared global config.
 
 Tip: keep your Obsidian vault open in the same window — capture with Copilot Chat,
 review in Obsidian.
@@ -81,7 +93,11 @@ npm run test:mcp         # smoke-test the MCP server in an isolated workspace
 ```
 
 ## Notes
-- The MCP server resolves storage from `data/config.json` (or `CATPILOT_ROOT`),
-  so all surfaces read/write the **same** files — including your Obsidian vault.
+- `cat-pilot setup` writes a **global** config at `~/.catpilot/config.json`, so every
+  surface resolves the **same storage from any directory**. Resolution order:
+  `CATPILOT_CONFIG` → `CATPILOT_ROOT` → `<cwd>/data/config.json` (project-local) →
+  `~/.catpilot/config.json` (global).
+- Point `storage.root` at your Obsidian vault so all surfaces read/write the **same**
+  files — including the vault.
 - Keep personal content in the private vault (Layer 2). See
   `PRIVACY_AND_BOUNDARIES.md`.

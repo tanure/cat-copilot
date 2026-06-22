@@ -10,11 +10,35 @@
 import * as claudeTools from '../adapters/claude-code/tools.js';
 import * as geminiTools from '../adapters/gemini-cli/tools.js';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(__dirname, '..');
+
+// Isolate all writes to a throwaway temp config so tests never touch the real
+// (Obsidian) vault. CATPILOT_CONFIG takes precedence over every other source.
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'catpilot-itest-'));
+fs.mkdirSync(path.join(tmpRoot, 'data'), { recursive: true });
+const tmpConfigPath = path.join(tmpRoot, 'data', 'config.json');
+fs.writeFileSync(
+  tmpConfigPath,
+  JSON.stringify({
+    version: 1,
+    storage: {
+      root: 'data',
+      partitioning: 'month',
+      allowExternalPaths: true,
+      files: {
+        tasks: 'tasks.md', journal: 'journal.md', milestones: 'milestones.md',
+        memos: 'memos', learning: 'learning', growth: 'growth', projects: 'projects'
+      }
+    },
+    migration: { mode: 'move' }
+  }, null, 2)
+);
+process.env.CATPILOT_CONFIG = tmpConfigPath;
 
 // Test results tracking
 const results = {

@@ -1,7 +1,8 @@
 # Surfaces & Parity
 
 CatPilot runs the **same engine** behind four surfaces. Storage is always resolved
-from `data/config.json`, so data stays in sync no matter where you capture it.
+from a shared config (global `~/.catpilot/config.json` by default), so data stays in
+sync no matter which directory you capture from.
 
 ## At a glance
 
@@ -36,8 +37,8 @@ Notes:
 
 ## The one rule that makes parity work
 There is a single storage layer (`lib/cli-utils.js` + `lib/domains.js`) and a single
-config (`data/config.json`). Every surface calls into it — no duplicated logic, no
-divergent data. Point the config root at your Obsidian vault and you have one brain
-with many doors.
+config, resolved globally (`~/.catpilot/config.json`) so it's the same from any
+directory. Every surface calls into it — no duplicated logic, no divergent data. Point
+the config root at your Obsidian vault and you have one brain with many doors.
 
 See also: `INSTALL.md`, `USING_IN_VSCODE.md`, `OBSIDIAN_KNOWLEDGE_BASE.md`.

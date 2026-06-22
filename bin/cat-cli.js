@@ -17,7 +17,7 @@ const pluginRoot = path.resolve(__dirname, '..');
 program
   .name('cat-pilot')
   .description('CatPilot CLI: Standalone terminal tool for tasks, memos, journal, and milestones')
-  .version('0.1.8');
+  .version('0.2.2');
 
 // ============================================================================
 // SETUP COMMANDS
@@ -25,11 +25,20 @@ program
 
 program
   .command('setup')
-  .description('Initialize or reconfigure storage')
-  .action(async () => {
+  .description('Initialize or reconfigure storage (global by default, shared across all directories)')
+  .option('--local', 'Write a project-local config (<cwd>/data/config.json) instead of the global one')
+  .option('--root <path>', 'Storage root (absolute path recommended, e.g. your Obsidian vault)')
+  .option('--partitioning <mode>', 'Partitioning mode: day | week | month')
+  .option('-y, --yes', 'Skip prompts and confirmation (non-interactive)')
+  .action(async (options) => {
     try {
-      await runSetup();
-      console.log('\n✅ Setup complete!');
+      const result = await runSetup({
+        local: options.local,
+        root: options.root,
+        partitioning: options.partitioning,
+        yes: options.yes
+      });
+      if (result) console.log('\n✅ Setup complete!');
     } catch (err) {
       console.error(`❌ Setup error: ${err.message}`);
       process.exit(1);
@@ -43,22 +52,39 @@ program
     console.log('\n🩺 CatPilot Doctor\n');
 
     const workspaceRoot = process.cwd();
-    const configPath = path.join(workspaceRoot, 'data', 'config.json');
+    const resolved = cliUtils.resolveConfigPath(workspaceRoot);
     const pluginConfigPath = path.join(pluginRoot, 'plugin.json');
     const agentsDirPath = path.join(pluginRoot, 'agents');
     const skillsDirPath = path.join(pluginRoot, 'skills');
 
-    // Workspace checks
-    console.log('📂 Workspace Configuration:');
-    const workspaceConfigFound = fs.existsSync(configPath);
-    console.log(`${workspaceConfigFound ? '✅' : '❌'} config.json (${configPath})`);
+    // Config resolution (global-aware)
+    console.log('📂 Storage Configuration:');
+    const configFound = resolved.scope !== 'none' && fs.existsSync(resolved.path);
+    const scopeLabel = {
+      'env-config': 'from CATPILOT_CONFIG',
+      'env-root': 'from CATPILOT_ROOT',
+      local: 'project-local',
+      global: 'global (~/.catpilot)',
+      none: 'not configured'
+    }[resolved.scope];
+    console.log(`${configFound ? '✅' : '❌'} config.json (${resolved.path}) — ${scopeLabel}`);
+    if (configFound) {
+      try {
+        const cfg = cliUtils.loadConfig(workspaceRoot);
+        console.log(`   📦 Storage root: ${path.resolve(cfg.__baseDir || workspaceRoot, cfg.storage.root)}`);
+      } catch (err) {
+        console.log(`   ⚠️  ${err.message.split('\n')[0]}`);
+      }
+    } else {
+      console.log('   → Run `cat-pilot setup` to create a shared global config.');
+    }
 
     // Plugin checks
     console.log('\n📦 Plugin Assets:');
     const pluginConfigFound = fs.existsSync(pluginConfigPath);
     const agentsDirFound = fs.existsSync(agentsDirPath);
     const skillsDirFound = fs.existsSync(skillsDirPath);
-    
+
     console.log(`${pluginConfigFound ? '✅' : '❌'} plugin.json (${pluginConfigPath})`);
     console.log(`${agentsDirFound ? '✅' : '❌'} agents/ directory (${agentsDirPath})`);
     console.log(`${skillsDirFound ? '✅' : '❌'} skills/ directory (${skillsDirPath})`);
@@ -398,16 +424,17 @@ program
     console.log('\n🧩 CatPilot — Copilot ecosystem install check\n');
 
     const workspaceRoot = process.cwd();
-    const configPath = path.join(workspaceRoot, 'data', 'config.json');
+    const resolved = cliUtils.resolveConfigPath(workspaceRoot);
+    const configPath = resolved.path;
     const mcpEntry = path.resolve(pluginRoot, 'bin', 'cat-mcp.js');
     const vscodeMcp = path.join(workspaceRoot, '.vscode', 'mcp.json');
 
-    const configOk = fs.existsSync(configPath);
+    const configOk = resolved.scope !== 'none' && fs.existsSync(configPath);
     const mcpOk = fs.existsSync(mcpEntry);
     const vscodeOk = fs.existsSync(vscodeMcp);
 
-    console.log('📂 Workspace');
-    console.log(`${configOk ? '✅' : '⚠️'} config.json ${configOk ? `(${configPath})` : '— run `cat-pilot setup`'}`);
+    console.log('📂 Storage');
+    console.log(`${configOk ? '✅' : '⚠️'} config.json ${configOk ? `(${configPath}, ${resolved.scope})` : '— run `cat-pilot setup` to create a shared global config'}`);
     console.log(`${mcpOk ? '✅' : '❌'} MCP server entry (${mcpEntry})`);
 
     console.log('\n🖥️  GitHub Copilot CLI');

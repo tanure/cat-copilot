@@ -12,10 +12,14 @@
  * duplicated file logic here. Point your config's `storage.root` at your private
  * Obsidian vault and every surface reads/writes the same files.
  *
- * Working directory:
- *   The server resolves config from the current working directory. Set the
- *   CATPILOT_ROOT environment variable to pin it to your CatPilot project folder
- *   regardless of where the MCP host launches the process.
+ * Working directory / storage resolution:
+ *   Storage is resolved globally by lib/cli-utils.js in this order:
+ *     1. CATPILOT_CONFIG (explicit config path)
+ *     2. CATPILOT_ROOT   (<root>/data/config.json)
+ *     3. <cwd>/data/config.json (project-local)
+ *     4. ~/.catpilot/config.json (global, shared across every directory)
+ *   So the SAME storage is used no matter where the MCP host launches this
+ *   process. Set CATPILOT_ROOT only if you want to pin a specific project.
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -37,7 +41,7 @@ if (process.env.CATPILOT_ROOT) {
 
 const server = new McpServer({
   name: 'catpilot',
-  version: '0.2.1'
+  version: '0.2.2'
 });
 
 /** Wrap any result as MCP text content (JSON for structured data). */

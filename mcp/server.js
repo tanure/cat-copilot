@@ -37,7 +37,7 @@ if (process.env.CATPILOT_ROOT) {
 
 const server = new McpServer({
   name: 'catpilot',
-  version: '0.2.0'
+  version: '0.2.1'
 });
 
 /** Wrap any result as MCP text content (JSON for structured data). */

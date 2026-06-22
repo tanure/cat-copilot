@@ -6,13 +6,13 @@
   },
   "metadata": {
     "description": "CatPilot — a terminal-first personal knowledge OS for GitHub Copilot: tasks, journaling, milestones, memos, learning, growth, and project tracking, all file-based and Obsidian-friendly.",
-    "version": "0.2.0"
+    "version": "0.2.1"
   },
   "plugins": [
     {
       "name": "catpilot",
       "description": "CatPilot assistant for GitHub Copilot: capture tasks, journal notes, milestones, memos, learning/cert tracking, growth/review-prep notes, and project status — stored as plain markdown you can keep in an Obsidian vault.",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "source": "."
     }
   ]

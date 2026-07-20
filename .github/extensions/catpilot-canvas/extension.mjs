@@ -97,6 +97,41 @@ async function handleApi(req, url) {
     mm = p.match(/^\/api\/(learning|growth|projects)\/(.+)$/);
     if (mm && m === "GET") return { note: store.readNote(mm[1], decodeURIComponent(mm[2])) };
 
+    // Reports (Copilot-generated executive reports)
+    if (p === "/api/reports" && m === "GET") return { reports: store.listReports() };
+    if (p === "/api/reports" && m === "POST") {
+        const body = await readBody(req);
+        if (body && typeof body.body === "string" && body.body.length) return { report: store.saveReport(body) };
+        return { report: store.generateReport(body || {}) };
+    }
+    mm = p.match(/^\/api\/reports\/(.+)$/);
+    if (mm && m === "GET") return { report: store.readReport(decodeURIComponent(mm[1])) };
+    if (mm && m === "DELETE") return { removed: store.deleteReport(decodeURIComponent(mm[1])) };
+
+    // Timeline / activity feed
+    if (p === "/api/timeline" && m === "GET") return store.activity({ days: Number(url.searchParams.get("days")) || 14 });
+
+    // Config + interactive data migration
+    if (p === "/api/config" && m === "GET") return store.getConfig();
+    if (p === "/api/config/plan" && m === "POST") return store.planConfigChange(await readBody(req));
+    if (p === "/api/config/apply" && m === "POST") return store.applyConfigChange(await readBody(req));
+
+    // Agent bridge — drive the Copilot session from the canvas
+    if (p === "/api/agent" && m === "POST") {
+        const { prompt } = await readBody(req);
+        if (!prompt || !String(prompt).trim()) throw new Error("prompt is required");
+        if (!sessionRef?.send) return { ok: false, error: "No active session." };
+        const id = await sessionRef.send(String(prompt));
+        return { ok: true, id };
+    }
+    if (p === "/api/agent/generate" && m === "POST") {
+        const { prompt, timeout } = await readBody(req);
+        if (!prompt || !String(prompt).trim()) throw new Error("prompt is required");
+        if (!sessionRef?.sendAndWait) return { ok: false, error: "No active session." };
+        const ev = await sessionRef.sendAndWait(String(prompt), Number(timeout) || 120000);
+        return { ok: true, content: ev?.data?.content || "" };
+    }
+
     return null; // not an API route we know
 }
 
@@ -211,15 +246,47 @@ const actions = [
             catch (err) { throw new CanvasError("add_milestone_failed", err.message); }
         },
     },
+    {
+        name: "generate_report",
+        description: "Generate and save a CatPilot executive report (markdown) for a period, built from tasks, milestones and journal.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                period: { type: "string", enum: ["today", "this-week", "last-week", "this-month", "last-month", "all"], description: "Reporting period (default this-week)." },
+                title: { type: "string", description: "Optional report title." },
+            },
+        },
+        handler: async (ctx) => {
+            try { return { ok: true, report: store.generateReport(ctx.input || {}) }; }
+            catch (err) { throw new CanvasError("generate_report_failed", err.message); }
+        },
+    },
+    {
+        name: "save_report",
+        description: "Save a CatPilot report the agent has authored (e.g. via the report-generator skill) into the canvas reports folder.",
+        inputSchema: {
+            type: "object",
+            required: ["title", "body"],
+            properties: {
+                title: { type: "string" },
+                body: { type: "string", description: "Report content (markdown or HTML)." },
+                format: { type: "string", enum: ["markdown", "html"], description: "Defaults to markdown." },
+            },
+        },
+        handler: async (ctx) => {
+            try { return { ok: true, report: store.saveReport(ctx.input || {}) }; }
+            catch (err) { throw new CanvasError("save_report_failed", err.message); }
+        },
+    },
 ];
 
 const canvas = createCanvas({
     id: "catpilot-canvas",
     displayName: "CatPilot",
-    description: "Visual command center for CatPilot: tasks, journal, milestones, memos, learning, growth and projects with dashboards and charts.",
+    description: "Visual command center for CatPilot: dashboard, tasks, journal, milestones, memos, learning, growth, projects, timeline, Copilot reports, settings/migration and a help guide — with charts and agent actions.",
     inputSchema: {
         type: "object",
-        properties: { view: { type: "string", description: "Optional initial view: dashboard|tasks|journal|milestones|memos|learning|growth|projects" } },
+        properties: { view: { type: "string", description: "Optional initial view: dashboard|timeline|tasks|journal|milestones|memos|learning|growth|projects|reports|settings|help" } },
     },
     actions,
     open: async (ctx) => {

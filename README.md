@@ -48,7 +48,7 @@ any directory, through four doors:
 | Surface | How | Best for |
 | --- | --- | --- |
 | **GitHub Copilot CLI** | `copilot plugin install` + agent/skills | Conversational planning, summaries, reports |
-| **GitHub Copilot Canvas** | `.github/extensions/catpilot-canvas/` (side-panel UI) | Visual dashboard, tasks board, charts |
+| **GitHub Copilot Canvas** | `.github/extensions/catpilot-canvas/` (side-panel UI) | Visual dashboard, tasks board, reports, timeline, charts |
 | **Copilot in VS Code** | `.vscode/mcp.json` (MCP server) | Editor + Obsidian side by side |
 | **Copilot App** | plugin + MCP registration | Session-based planning |
 | **Standalone CLI / MCP** | `cat-pilot` / `catpilot-mcp` | Scripting & embedding anywhere |
@@ -89,6 +89,18 @@ What you get in the canvas:
   drag to done, edit/save locally, and open a detail popup — plus an add button.
 - **Journal, Milestones, Memos** — browse, add, and open full detail views (memos render markdown).
 - **Learning, Growth, Projects** — card views with add buttons and detail popups.
+- **Reports** — generate GitHub Copilot **executive reports** for any period (this week, last
+  month, all time…), open them (markdown or HTML), and delete. Shares the same reports folder
+  as the `report-generator` skill.
+- **Timeline** — a 7/14/30-day activity rail grouped by day, with quick **agent actions** to
+  summarize or plan from what you've been working on.
+- **Settings** — change your storage root, partitioning, or migration mode from an interactive
+  wizard: **preview** exactly which files would move, then an approval checkbox gates
+  **Confirm & apply** so nothing is migrated until you say so.
+- **Help** — an in-canvas capabilities guide explaining every view.
+- **Markdown everywhere** — every text field has a formatting toolbar (bold, italic, headings,
+  lists, checkboxes, code, links), a live **preview** toggle, and **✨ Generate with Copilot**.
+- **Ask Copilot** — a global ✨ button to hand off any prompt to the agent from the canvas.
 - **Onboarding** — a first-run setup flow when no CatPilot config exists yet.
 - **Light / dark** — a theme toggle that follows the Copilot app theme tokens.
 

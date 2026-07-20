@@ -48,6 +48,7 @@ any directory, through four doors:
 | Surface | How | Best for |
 | --- | --- | --- |
 | **GitHub Copilot CLI** | `copilot plugin install` + agent/skills | Conversational planning, summaries, reports |
+| **GitHub Copilot Canvas** | `.github/extensions/catpilot-canvas/` (side-panel UI) | Visual dashboard, tasks board, charts |
 | **Copilot in VS Code** | `.vscode/mcp.json` (MCP server) | Editor + Obsidian side by side |
 | **Copilot App** | plugin + MCP registration | Session-based planning |
 | **Standalone CLI / MCP** | `cat-pilot` / `catpilot-mcp` | Scripting & embedding anywhere |
@@ -68,6 +69,31 @@ studies, and growth/review prep:
 [`docs/OBSIDIAN_KNOWLEDGE_BASE.md`](docs/OBSIDIAN_KNOWLEDGE_BASE.md) ·
 [`docs/PRIVACY_AND_BOUNDARIES.md`](docs/PRIVACY_AND_BOUNDARIES.md) ·
 [`docs/PLAYBOOK.md`](docs/PLAYBOOK.md)
+
+## GitHub Copilot Canvas
+
+CatPilot ships a **GitHub Copilot canvas extension** — a beautiful, modern side-panel
+UI that turns your whole workspace into a visual command center, without leaving the
+Copilot app. It reads and writes the **exact same** config-driven storage as the CLI,
+agent, and MCP server, so everything stays in sync across surfaces.
+
+The extension lives in [`.github/extensions/catpilot-canvas/`](.github/extensions/catpilot-canvas/)
+and is discovered automatically as a **project-scoped** canvas — no install step. Open
+it from the Copilot app's canvas panel (the agent can open it for you), or share it with
+anyone via a gist.
+
+What you get in the canvas:
+
+- **Dashboard** — hero, summary cards, last-3-days activity, charts, and productivity nudges.
+- **Tasks** — switch between **list (table)** and **board (kanban)** views, complete inline,
+  drag to done, edit/save locally, and open a detail popup — plus an add button.
+- **Journal, Milestones, Memos** — browse, add, and open full detail views (memos render markdown).
+- **Learning, Growth, Projects** — card views with add buttons and detail popups.
+- **Onboarding** — a first-run setup flow when no CatPilot config exists yet.
+- **Light / dark** — a theme toggle that follows the Copilot app theme tokens.
+
+Every action round-trips through CatPilot's storage engine, so the agent, skills, and MCP
+server all see the same data instantly.
 
 ## Choose Your Path
 

@@ -2,7 +2,55 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.3.0] - 2026-07-20
+
+### Added
+- **GitHub Copilot canvas extension (`catpilot-canvas`)** — a modern, themeable side-panel
+  UI for CatPilot that reads and writes the **same** config-driven storage as the CLI,
+  agent, skills, and MCP server. Lives in `.github/extensions/catpilot-canvas/`.
+  - Dashboard (summary cards, priority donut, last-3-days activity chart, focus list, recent feed).
+  - Tasks in **list (table)** and **board (kanban)** views with inline complete, local edit/save, and detail popups.
+  - Journal, Milestones, Memos, Learning, Growth, Projects — browse, add, and open detail views.
+  - **Reports** — generate GitHub Copilot executive reports for any period and open them as markdown/HTML.
+  - **Timeline** — a 7/14/30-day activity rail with one-click agent actions.
+  - **Settings** — interactive storage/partition/migration wizard that previews exactly which files
+    would move and gates the change behind an explicit approval before migrating.
+  - **Markdown everywhere** — formatting toolbar, live preview, and ✨ Generate with Copilot on every field.
+  - **Help** guide, global **Ask Copilot** button, first-run onboarding, and light/dark theme.
+- Published the canvas to the **[Awesome Copilot](https://awesome-copilot.github.com/extensions/)** marketplace
+  (`copilot plugin install catpilot-canvas@awesome-copilot`).
+
+### Changed
+- Documented canvas install paths (Copilot CLI marketplace, project-scoped, user-scoped, gist) and
+  how the canvas renders in the **GitHub Copilot app** side panel.
+
+### Packaging
+- Added `publishConfig.access: "public"` so the scoped package publishes publicly, and added
+  `canvas` / `copilot-extension` / `github-copilot-app` keywords.
+
+## [0.2.2] - 2026-06-22
+
+### Added
+- Global shared storage configuration so every CatPilot surface (CLI, agent, MCP) reads/writes one location.
+
+### Fixed
+- `cat-pilot` first-time setup flow.
+
+## [0.2.1] - 2026-06-22
+
+### Fixed
+- MCP server packaging — include `adapters/` in the published tarball.
+
+### Added
+- Plugin marketplace metadata and knowledge-OS domains.
+
+## [0.2.0] - 2026-06-19
+
+### Added
+- Multi-surface MCP server, knowledge-OS domains, and Obsidian vault scaffold.
+
 ## [0.1.10] - 2026-03-18
+
 
 ### Fixed
 - **Critical: Missing CLI executables in npm package** - `.gitignore` was excluding `bin/cat-cli.js` and `bin/cat-tui.js`, preventing `cat-pilot` and `cat-tui` commands from being available globally after install

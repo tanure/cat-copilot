@@ -450,3 +450,6 @@ data/config.json
 /vault/
 /private-vault/
 *.private.md
+
+# Impeccable design-review skill working cache (never commit).
+.impeccable/

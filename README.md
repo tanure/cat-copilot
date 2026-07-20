@@ -48,7 +48,7 @@ any directory, through four doors:
 | Surface | How | Best for |
 | --- | --- | --- |
 | **GitHub Copilot CLI** | `copilot plugin install` + agent/skills | Conversational planning, summaries, reports |
-| **GitHub Copilot Canvas** | `.github/extensions/catpilot-canvas/` (side-panel UI) | Visual dashboard, tasks board, reports, timeline, charts |
+| **GitHub Copilot Canvas** | `copilot plugin install catpilot-canvas@awesome-copilot` (renders in the GitHub Copilot app side panel) | Visual dashboard, tasks board, reports, timeline, charts |
 | **Copilot in VS Code** | `.vscode/mcp.json` (MCP server) | Editor + Obsidian side by side |
 | **Copilot App** | plugin + MCP registration | Session-based planning |
 | **Standalone CLI / MCP** | `cat-pilot` / `catpilot-mcp` | Scripting & embedding anywhere |
@@ -78,9 +78,10 @@ Copilot app. It reads and writes the **exact same** config-driven storage as the
 agent, and MCP server, so everything stays in sync across surfaces.
 
 The extension lives in [`.github/extensions/catpilot-canvas/`](.github/extensions/catpilot-canvas/)
-and is discovered automatically as a **project-scoped** canvas — no install step. Open
-it from the Copilot app's canvas panel (the agent can open it for you), or share it with
-anyone via a gist.
+and renders in the **[GitHub Copilot app](https://github.com/features/copilot)** side panel —
+just ask Copilot to *"open the CatPilot canvas"* and it appears next to your chat. It's also
+published to the **[Awesome Copilot](https://awesome-copilot.github.com/extensions/)** marketplace
+so anyone can install it in one command (see [Install the canvas](#install-the-canvas) below).
 
 What you get in the canvas:
 
@@ -107,7 +108,39 @@ What you get in the canvas:
 Every action round-trips through CatPilot's storage engine, so the agent, skills, and MCP
 server all see the same data instantly.
 
-## Choose Your Path
+### Install the canvas
+
+Pick whichever fits how you work — all four end up in the same visual canvas:
+
+| Method | When to use | Steps |
+| --- | --- | --- |
+| **Awesome Copilot marketplace** *(recommended)* | You want it in every repo/session with one command | `copilot plugin install catpilot-canvas@awesome-copilot` |
+| **Project-scoped** *(zero install)* | You've cloned `tanure/cat-copilot` | Nothing to do — it's auto-discovered from `.github/extensions/catpilot-canvas/` |
+| **User-scoped** | You want it available globally without the marketplace | Copy the `catpilot-canvas/` folder into `~/.copilot/extensions/` (or `$COPILOT_HOME/extensions/`) |
+| **Gist** | Someone shared it with you | Copilot palette → **Install extension from gist…** |
+
+If the Awesome Copilot marketplace isn't registered yet, add it once, then install:
+
+```bash
+copilot plugin marketplace add github/awesome-copilot
+copilot plugin install catpilot-canvas@awesome-copilot
+```
+
+### Open the canvas
+
+The canvas UI is rendered by the **GitHub Copilot app's** canvas panel. From either surface:
+
+- **GitHub Copilot app** — open a session in a repo where the extension is installed and ask
+  Copilot to *"open the CatPilot canvas"* (or click it from the canvas picker). The dashboard
+  opens in the side panel.
+- **GitHub Copilot CLI** — run `copilot` in your project; the CLI **discovers and loads** the
+  extension, so its agent actions (generate a report, summarize the timeline, add a task, etc.)
+  are available right away in the terminal. The visual canvas itself is drawn by the app's
+  canvas renderer, so when you ask Copilot to open it, it surfaces in the connected app panel —
+  there is no separate ASCII/terminal renderer for canvases. For a terminal-only dashboard, use
+  [`cat-tui`](#option-3-terminal-dashboard-preview) instead.
+
+
 
 ### Option 1: Full Copilot Experience
 

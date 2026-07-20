@@ -22,6 +22,7 @@ const DEFAULT_FILES = {
     learning: "learning",
     growth: "growth",
     projects: "projects",
+    reports: "reports",
 };
 
 const DOMAIN_TAG = { learning: "learning", growth: "growth", projects: "project" };
@@ -577,4 +578,349 @@ function buildTimeline({ journal, memos, learning, growth, projects, since }) {
     for (const n of growth) if (n.frontmatter?.date >= since) events.push({ date: n.frontmatter.date, type: "growth", label: n.frontmatter.title || n.filename });
     for (const n of projects) if (n.frontmatter?.date >= since) events.push({ date: n.frontmatter.date, type: "project", label: n.frontmatter.title || n.filename });
     return events.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 25);
+}
+
+// ---------------------------------------------------------------------------
+// Timeline / activity feed (parametrized, grouped by day)
+// ---------------------------------------------------------------------------
+function oneLine(s, n = 120) {
+    const t = String(s || "").replace(/\s+/g, " ").trim();
+    return t.length > n ? t.slice(0, n - 1) + "…" : t;
+}
+
+export function activity({ days = 14 } = {}) {
+    const config = loadConfig();
+    const since = daysAgoISO(Math.max(0, days - 1));
+    const journal = parseJournalEntries(readFileOrCreate(resolveFilePath("journal", config)));
+    const memos = listMemos();
+    const learning = safeList("learning");
+    const growth = safeList("growth");
+    const projects = safeList("projects");
+    const milestones = parseMilestones(readFileOrCreate(resolveFilePath("milestones", config)));
+    let reports = [];
+    try { reports = listReports(); } catch { /* ignore */ }
+
+    const events = [];
+    for (const e of journal) if (e.date >= since) events.push({ date: e.date, type: "journal", label: "Journal entry", detail: oneLine(e.text) });
+    for (const m of memos) if (m.date && m.date >= since) events.push({ date: m.date, type: "memo", label: m.title, detail: m.filename });
+    for (const n of learning) if (n.frontmatter?.date >= since) events.push({ date: n.frontmatter.date, type: "learning", label: n.frontmatter.title || n.filename, detail: n.frontmatter.status || "" });
+    for (const n of growth) if (n.frontmatter?.date >= since) events.push({ date: n.frontmatter.date, type: "growth", label: n.frontmatter.title || n.filename, detail: n.frontmatter.impact || "" });
+    for (const n of projects) if (n.frontmatter?.date >= since) events.push({ date: n.frontmatter.date, type: "project", label: n.frontmatter.title || n.filename, detail: n.frontmatter.status || "" });
+    for (const m of milestones) if (m.targetDate && m.targetDate >= since) events.push({ date: m.targetDate, type: "milestone", label: m.name, detail: `Target · ${m.status || "Planned"}` });
+    for (const r of reports) if (r.date && r.date >= since) events.push({ date: r.date, type: "report", label: r.title, detail: r.filename });
+
+    events.sort((a, b) => b.date.localeCompare(a.date));
+    const groups = [];
+    const idx = {};
+    for (const e of events) {
+        if (!idx[e.date]) { idx[e.date] = { date: e.date, items: [] }; groups.push(idx[e.date]); }
+        idx[e.date].items.push(e);
+    }
+    const byType = {};
+    for (const e of events) byType[e.type] = (byType[e.type] || 0) + 1;
+    return { since, days, count: events.length, byType, groups, events };
+}
+
+// ---------------------------------------------------------------------------
+// Reports (Copilot-generated executive reports; shares the partitioned
+// `reports/` folder used by the CatPilot report-generator skill)
+// ---------------------------------------------------------------------------
+function nowStamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`;
+}
+
+function reportDate(filename) {
+    const m = filename.match(/(\d{4})-?(\d{2})-?(\d{2})/);
+    return m ? `${m[1]}-${m[2]}-${m[3]}` : "";
+}
+
+export function listReports() {
+    const config = loadConfig();
+    const dir = resolveFilePath("reports", config);
+    ensureDir(dir);
+    const files = fs.readdirSync(dir).filter((f) => /\.(md|html?)$/i.test(f));
+    const rows = files.map((filename) => {
+        const full = path.join(dir, filename);
+        let mtime = 0, size = 0;
+        try { const st = fs.statSync(full); mtime = st.mtimeMs; size = st.size; } catch { /* ignore */ }
+        const ext = path.extname(filename).slice(1).toLowerCase();
+        let title = filename;
+        try {
+            const c = fs.readFileSync(full, "utf8");
+            if (ext === "md") {
+                const h = c.match(/^#\s+(.+)$/m);
+                if (h) title = h[1].trim();
+            } else {
+                const h = c.match(/<title>([\s\S]*?)<\/title>/i) || c.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
+                if (h) title = h[1].replace(/<[^>]+>/g, "").trim();
+            }
+        } catch { /* ignore */ }
+        return { filename, title, date: reportDate(filename), ext, format: ext === "md" ? "markdown" : "html", mtime, size };
+    });
+    rows.sort((a, b) => (b.mtime - a.mtime) || b.filename.localeCompare(a.filename));
+    return rows;
+}
+
+export function readReport(filename) {
+    const config = loadConfig();
+    const dir = resolveFilePath("reports", config);
+    const safe = path.basename(String(filename || ""));
+    const full = path.join(dir, safe);
+    if (!path.resolve(full).startsWith(path.resolve(dir))) throw new Error("Invalid report path");
+    if (!fs.existsSync(full)) { const e = new Error(`Report not found: ${safe}`); e.code = "NOT_FOUND"; throw e; }
+    const ext = path.extname(safe).slice(1).toLowerCase();
+    const content = fs.readFileSync(full, "utf8");
+    let title = safe;
+    const h = content.match(/^#\s+(.+)$/m);
+    if (h) title = h[1].trim();
+    return { filename: safe, title, content, format: ext === "md" ? "markdown" : "html", date: reportDate(safe) };
+}
+
+export function saveReport({ title, body, format = "markdown" } = {}) {
+    const config = loadConfig();
+    const dir = resolveFilePath("reports", config);
+    ensureDir(dir);
+    const ext = format === "html" ? "html" : "md";
+    const slug = slugify(title || "report");
+    const filename = `report-${nowStamp()}${slug ? "-" + slug : ""}.${ext}`;
+    let content = body || "";
+    if (ext === "md" && title && !/^#\s/m.test(content)) content = `# ${title}\n\n${content}`;
+    fs.writeFileSync(path.join(dir, filename), content, "utf8");
+    return { filename, title: title || filename, content, format: ext === "md" ? "markdown" : "html", date: reportDate(filename) };
+}
+
+export function deleteReport(filename) {
+    const config = loadConfig();
+    const dir = resolveFilePath("reports", config);
+    const safe = path.basename(String(filename || ""));
+    const full = path.join(dir, safe);
+    if (!path.resolve(full).startsWith(path.resolve(dir))) throw new Error("Invalid report path");
+    if (fs.existsSync(full)) fs.unlinkSync(full);
+    return { ok: true, filename: safe };
+}
+
+function periodRange(period = "this-week") {
+    const now = new Date();
+    const iso = (d) => d.toISOString().split("T")[0];
+    const startOfWeek = (d) => { const x = new Date(d); const day = (x.getDay() + 6) % 7; x.setDate(x.getDate() - day); return x; };
+    let since, until, label;
+    if (period === "today") { since = iso(now); until = iso(now); label = "Today"; }
+    else if (period === "last-week") { const s = startOfWeek(now); s.setDate(s.getDate() - 7); const e = new Date(s); e.setDate(e.getDate() + 6); since = iso(s); until = iso(e); label = "Last week"; }
+    else if (period === "this-month") { since = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`; until = iso(now); label = "This month"; }
+    else if (period === "last-month") { const m = new Date(now.getFullYear(), now.getMonth() - 1, 1); const e = new Date(now.getFullYear(), now.getMonth(), 0); since = iso(m); until = iso(e); label = "Last month"; }
+    else if (period === "all") { since = "0000-01-01"; until = "9999-12-31"; label = "All time"; }
+    else { const s = startOfWeek(now); since = iso(s); until = iso(now); label = "This week"; }
+    return { since, until, label };
+}
+
+// Build a professional executive report (markdown) from tasks + milestones +
+// journal, mirroring the CatPilot report-generator skill's section layout, then
+// persist it to the reports folder.
+export function generateReport({ period = "this-week", title } = {}) {
+    const config = loadConfig();
+    const tasks = parseTasksTable(readFileOrCreate(resolveFilePath("tasks", config)));
+    const milestones = parseMilestones(readFileOrCreate(resolveFilePath("milestones", config)));
+    const journal = parseJournalEntries(readFileOrCreate(resolveFilePath("journal", config)));
+    const { since, until, label } = periodRange(period);
+    const today = todayISO();
+
+    const isDone = (t) => /^(done|completed)$/i.test(t.status || "");
+    const done = tasks.filter(isDone);
+    const open = tasks.filter((t) => !isDone(t));
+    const total = tasks.length;
+    const rate = total ? Math.round((done.length / total) * 100) : 0;
+    const overdue = open.filter((t) => t.dueDate && t.dueDate < today);
+    const dueToday = open.filter((t) => t.dueDate === today);
+
+    const msStatus = milestones.reduce((a, m) => { const s = m.status || "Planned"; a[s] = (a[s] || 0) + 1; return a; }, {});
+    const msDue = milestones.filter((m) => m.targetDate && m.targetDate >= since && m.targetDate <= until);
+    const jHits = journal.filter((j) => j.date >= since && j.date <= until);
+
+    const bar = (v, max, w = 20) => { const n = max ? Math.round((v / max) * w) : 0; return "█".repeat(n) + "░".repeat(w - n); };
+    const rptTitle = title || `CatPilot Report — ${label}`;
+
+    const insights = [];
+    if (overdue.length) insights.push(`⚠️ **${overdue.length} overdue task${overdue.length > 1 ? "s" : ""}** need attention.`);
+    if (rate >= 70) insights.push(`✅ Strong completion rate at **${rate}%**.`);
+    else if (total) insights.push(`ℹ️ Completion rate is **${rate}%** — room to close out open work.`);
+    if ((msStatus["In Progress"] || 0) > 0) insights.push(`🎯 **${msStatus["In Progress"]} milestone${msStatus["In Progress"] > 1 ? "s" : ""}** in progress.`);
+    if (!jHits.length) insights.push(`ℹ️ No journal entries in ${label.toLowerCase()} — capture context as you go.`);
+    if (!insights.length) insights.push("ℹ️ Limited data for this period. Add tasks and milestones to enrich future reports.");
+
+    const recs = [];
+    if (overdue.length) recs.push(`Reschedule or close the ${overdue.length} overdue item${overdue.length > 1 ? "s" : ""}.`);
+    if (dueToday.length) recs.push(`Prioritise ${dueToday.length} task${dueToday.length > 1 ? "s" : ""} due today.`);
+    if ((msStatus.Planned || 0) > 0) recs.push(`Kick off ${msStatus.Planned} planned milestone${msStatus.Planned > 1 ? "s" : ""}.`);
+    recs.push("Review this report with stakeholders and set next-period targets.");
+
+    const md = [
+        `# 📊 ${rptTitle}`,
+        "",
+        `## 🧭 Executive Summary`,
+        `Over **${label.toLowerCase()}** (${since} → ${until}), the workspace tracked **${total} task${total !== 1 ? "s" : ""}** ` +
+        `(${done.length} completed, ${open.length} open, ${rate}% completion) across **${milestones.length} milestone${milestones.length !== 1 ? "s" : ""}**. ` +
+        (overdue.length ? `There ${overdue.length === 1 ? "is" : "are"} **${overdue.length} overdue** item${overdue.length > 1 ? "s" : ""} to address.` : `Nothing is overdue.`),
+        "",
+        `## 🔢 KPI Snapshot`,
+        `| Metric | Value |`,
+        `| --- | --- |`,
+        `| Total tasks | ${total} |`,
+        `| Open tasks | ${open.length} |`,
+        `| Completed tasks | ${done.length} |`,
+        `| Completion rate | ${rate}% |`,
+        `| Overdue | ${overdue.length} |`,
+        `| Due today | ${dueToday.length} |`,
+        `| Milestones | ${milestones.length} |`,
+        `| Journal entries (period) | ${jHits.length} |`,
+        "",
+        `## ✅ Tasks Analysis`,
+        `\`\`\``,
+        `Completed  ${bar(done.length, total)}  ${done.length}/${total}`,
+        `Open       ${bar(open.length, total)}  ${open.length}/${total}`,
+        `\`\`\``,
+        overdue.length ? "**Overdue:**\n" + overdue.slice(0, 8).map((t) => `- ${t.title}${t.dueDate ? ` _(due ${t.dueDate})_` : ""}`).join("\n") : "_No overdue tasks._",
+        "",
+        `## 🎯 Milestones Analysis`,
+        Object.keys(msStatus).length
+            ? Object.entries(msStatus).map(([s, n]) => `- **${s}:** ${n}`).join("\n")
+            : "_No milestones tracked yet._",
+        msDue.length ? "\n**Targeting this period:**\n" + msDue.map((m) => `- ${m.name} — ${m.targetDate} _(${m.status})_`).join("\n") : "",
+        "",
+        `## 📈 Trends`,
+        `- ${jHits.length} journal entr${jHits.length === 1 ? "y" : "ies"} logged in ${label.toLowerCase()}.`,
+        `- ${done.length} task${done.length !== 1 ? "s" : ""} marked done overall.`,
+        "",
+        `## ⚠️ Risks & Insights`,
+        insights.map((i) => `- ${i}`).join("\n"),
+        "",
+        `## 🚀 Recommendations`,
+        recs.map((r, i) => `${i + 1}. ${r}`).join("\n"),
+        "",
+        `---`,
+        `_Generated by the CatPilot canvas on ${today}. Period: ${label}._`,
+    ].join("\n");
+
+    return saveReport({ title: rptTitle, body: md, format: "markdown" });
+}
+
+// ---------------------------------------------------------------------------
+// Config editing + interactive data migration
+// ---------------------------------------------------------------------------
+
+// Resolve every domain path for a given (root, partitioning) pair without
+// mutating the active config.
+function resolveDomainPaths(baseDir, root, partitioning) {
+    const storageRoot = path.resolve(baseDir, root);
+    const partition = getPartitionFolder(partitioning);
+    const out = {};
+    for (const [type, fileName] of Object.entries(DEFAULT_FILES)) {
+        out[type] = { path: path.join(storageRoot, partition, fileName), isDir: !/\.[a-z]+$/i.test(fileName) };
+    }
+    return { storageRoot, partition, paths: out };
+}
+
+function countEntries(p, isDir) {
+    try {
+        if (isDir) return fs.existsSync(p) ? fs.readdirSync(p).length : 0;
+        return fs.existsSync(p) ? 1 : 0;
+    } catch { return 0; }
+}
+
+// Return the current config plus a normalized view for the settings UI.
+export function getConfig() {
+    const status = configStatus();
+    if (!status.configured) return { configured: false };
+    const config = loadConfig();
+    const { storageRoot, partition } = resolveDomainPaths(config.__baseDir, config.storage.root, config.storage.partitioning);
+    return {
+        configured: true,
+        configPath: config.__configPath,
+        scope: status.scope,
+        root: config.storage.root,
+        resolvedRoot: storageRoot,
+        partitioning: config.storage.partitioning,
+        partition,
+        migration: config.migration?.mode || "adopt",
+        allowExternalPaths: config.storage.allowExternalPaths !== false,
+    };
+}
+
+// Build a preview of what changing the config would do — no writes.
+export function planConfigChange({ root, partitioning, migration = "move" } = {}) {
+    const current = getConfig();
+    if (!current.configured) throw Object.assign(new Error("CatPilot is not set up yet."), { code: "NOT_CONFIGURED" });
+    const config = loadConfig();
+    const baseDir = config.__baseDir;
+    const nextRoot = (root && String(root).trim()) || current.root;
+    const nextPart = partitioning || current.partitioning;
+
+    const from = resolveDomainPaths(baseDir, current.root, current.partitioning);
+    const to = resolveDomainPaths(baseDir, nextRoot, nextPart);
+
+    const rootChanged = path.resolve(from.storageRoot) !== path.resolve(to.storageRoot);
+    const partChanged = current.partitioning !== nextPart;
+
+    const items = [];
+    for (const [type, meta] of Object.entries(from.paths)) {
+        const dest = to.paths[type];
+        const count = countEntries(meta.path, meta.isDir);
+        const samePath = path.resolve(meta.path) === path.resolve(dest.path);
+        items.push({
+            type,
+            isDir: meta.isDir,
+            from: meta.path,
+            to: dest.path,
+            count,
+            willMove: !samePath && count > 0 && migration !== "adopt",
+            exists: count > 0,
+        });
+    }
+    const moving = items.filter((i) => i.willMove);
+    return {
+        current: { root: current.root, partitioning: current.partitioning, resolvedRoot: from.storageRoot, migration: current.migration },
+        next: { root: nextRoot, partitioning: nextPart, resolvedRoot: to.storageRoot, migration },
+        rootChanged,
+        partitioningChanged: partChanged,
+        needsMigration: (rootChanged || partChanged) && migration !== "adopt",
+        totalItems: moving.reduce((a, i) => a + i.count, 0),
+        items,
+    };
+}
+
+function moveOrCopyPath(src, dest, isDir, mode) {
+    if (!fs.existsSync(src)) return 0;
+    ensureDir(path.dirname(dest));
+    if (isDir) {
+        ensureDir(dest);
+        let n = 0;
+        for (const name of fs.readdirSync(src)) {
+            const s = path.join(src, name);
+            const d = path.join(dest, name);
+            if (mode === "copy") fs.copyFileSync(s, d);
+            else fs.renameSync(s, d);
+            n++;
+        }
+        return n;
+    }
+    if (mode === "copy") fs.copyFileSync(src, dest);
+    else fs.renameSync(src, dest);
+    return 1;
+}
+
+// Apply a config change, optionally migrating current-partition data. Requires
+// an explicit confirm flag so the UI can gate it behind user approval.
+export function applyConfigChange({ root, partitioning, migration = "move", confirm = false } = {}) {
+    if (!confirm) throw new Error("applyConfigChange requires confirm=true");
+    const plan = planConfigChange({ root, partitioning, migration });
+    let migrated = 0;
+    if (plan.needsMigration && (migration === "move" || migration === "copy")) {
+        for (const item of plan.items) {
+            if (!item.willMove) continue;
+            try { migrated += moveOrCopyPath(item.from, item.to, item.isDir, migration); } catch { /* best-effort per item */ }
+        }
+    }
+    const config = writeConfig({ root: plan.next.root, partitioning: plan.next.partitioning, migration });
+    return { ok: true, migrated, config: getConfig(), applied: plan.next, note: config.__configPath };
 }

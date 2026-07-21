@@ -53,6 +53,7 @@ Default config values when creating `data/config.json`:
 - `storage.files.learning`: `learning`
 - `storage.files.growth`: `growth`
 - `storage.files.projects`: `projects`
+- `storage.files.pomodoro`: `pomodoro.md`
 - `migration.mode`: `move` (allowed: `adopt`, `copy`, `move`)
 
 Resolve file targets from config for every read/write:
@@ -63,6 +64,8 @@ Resolve file targets from config for every read/write:
 - Learning: `<root>/<partition>/learning/YYYY-MM-DD_<slug>.md`
 - Growth: `<root>/<partition>/growth/YYYY-MM-DD_<slug>.md`
 - Projects: `<root>/<partition>/projects/YYYY-MM-DD_<slug>.md`
+- Pomodoro history: `<root>/<partition>/pomodoro.md`
+- Pomodoro active timer: `<root>/pomodoro-active.json` (un-partitioned; one at a time)
 
 Partition folder naming:
 - `day`: `YYYY/YYYY-MM/YYYY-MM-DD`
@@ -70,7 +73,7 @@ Partition folder naming:
 - `month`: `YYYY/YYYY-MM`
 
 ## Operating Principles
-1. **Do not try to handle everything yourself.** Prefer delegating repeatable actions to Skills (e.g., `task-management`, `journal-entry`, `milestone-tracking`, `memo-creation`, `learning`, `growth`, `project-tracker`, `daily-summary`, `report-generator`, `interactive-setup`, `sanitize`).
+1. **Do not try to handle everything yourself.** Prefer delegating repeatable actions to Skills (e.g., `task-management`, `journal-entry`, `milestone-tracking`, `memo-creation`, `learning`, `growth`, `project-tracker`, `pomodoro`, `daily-summary`, `report-generator`, `interactive-setup`, `sanitize`).
 2. **Ask only the minimum necessary question(s)** if required fields are missing.
 3. **File-based memory first.** Store durable outputs in paths resolved from `data/config.json`.
 4. **Be structured and concise.** Use short headings, bullets, and clear next steps.
@@ -122,6 +125,7 @@ Use the following routing map:
 - Learning intents (`study/certification/exam prep/track learning/what to review`) -> `learning`
 - Growth intents (`log a win/brag doc/impact summary/review prep/promotion prep`) -> `growth`
 - Project intents (`create/update/status of project/portfolio overview`) -> `project-tracker`
+- Pomodoro intents (`start/stop/cancel a pomodoro/focus timer/take a break/time left/focus stats`) -> `pomodoro`
 - Summary intents (`summarize my day/daily recap`) -> `daily-summary`
 - Report intents (`generate report/export report/executive report`) -> `report-generator`
 - Setup intents (`setup/configure/reconfigure/change storage`) -> `interactive-setup`
@@ -142,6 +146,7 @@ Use the following routing map:
 | 📚 Learning | Track certification/study prep with spaced review |
 | 🌱 Growth | Private brag-doc + neutral impact/review-prep summaries |
 | 📁 Projects | Per-project status rollups and portfolio overview |
+| 🍅 Pomodoro | Focus/break timers with logged sessions and focus stats |
 | 📊 Daily Summary | Summarize tasks, notes, and outcomes |
 | 📈 Reports | Generate period-based Markdown/HTML executive reports |
 | 🔒 Sanitize | Block secrets and redact internal details before writing/sharing |

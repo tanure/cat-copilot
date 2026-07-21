@@ -59,6 +59,10 @@ studies, and growth/review prep:
 - **`learning`** — certification & study tracker (goals, target dates, progress).
 - **`growth`** — accomplishment / brag-doc log + neutral review-prep summaries.
 - **`project-tracker`** — lightweight per-project status rollups.
+- **`pomodoro`** — focus timers (25/5/15) modeled as timestamp + duration, so a
+  running session is consistent across the CLI, MCP and canvas and survives
+  process restarts; sessions can optionally link to a task and are logged to a
+  partitioned `pomodoro.md` history.
 - **`sanitize`** — a pre-write guardrail that flags employer-internal details before they
   ever hit disk, so growth/review content stays shareable.
 
@@ -90,6 +94,9 @@ What you get in the canvas:
   drag to done, edit/save locally, and open a detail popup — plus an add button.
 - **Journal, Milestones, Memos** — browse, add, and open full detail views (memos render markdown).
 - **Learning, Growth, Projects** — card views with add buttons and detail popups.
+- **Pomodoro** — a live countdown ring for the running session, start controls
+  (type + minutes + optional task picker), complete/cancel, a today stats strip,
+  and a recent-sessions table — all backed by the same files the CLI/MCP use.
 - **Reports** — generate GitHub Copilot **executive reports** for any period (this week, last
   month, all time…), open them (markdown or HTML), and delete. Shares the same reports folder
   as the `report-generator` skill.
@@ -191,6 +198,8 @@ Today, `cat-tui` is a separate executable, not something embedded inside Copilot
 | List memos | Yes | Yes | Yes |
 | Read memo content | Yes | No | No |
 | Milestones | Yes | No | No |
+| Pomodoro timer (start/stop/status) | Yes | Yes | No |
+| Pomodoro history & stats | Yes | Yes | No |
 | Daily summaries | Yes | No | No |
 | Executive reports | Yes | No | No |
 
@@ -528,7 +537,7 @@ npm update -g @alberttanure/catpilot-cli
 
 ## Release Notes
 
-- Current version: **v0.1.10**
+- Current version: **v0.4.0**
 - Changelog: [CHANGELOG.md](https://github.com/tanure/cat-copilot/blob/main/CHANGELOG.md)
 - GitHub releases: [Releases](https://github.com/tanure/cat-copilot/releases)
 

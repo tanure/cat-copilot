@@ -32,7 +32,8 @@ fs.writeFileSync(
       allowExternalPaths: true,
       files: {
         tasks: 'tasks.md', journal: 'journal.md', milestones: 'milestones.md',
-        memos: 'memos', learning: 'learning', growth: 'growth', projects: 'projects'
+        memos: 'memos', learning: 'learning', growth: 'growth', projects: 'projects',
+        pomodoro: 'pomodoro.md'
       }
     },
     migration: { mode: 'move' }
@@ -159,6 +160,32 @@ async function testClaudeAdapter() {
       'Tool dispatcher working');
   } catch (err) {
     logTest('claude', 'handleToolCall dispatcher', false, err.message);
+  }
+
+  // Test 9: pomodoro start → status → complete
+  try {
+    const startRes = await claudeTools.pomodoro_start({ type: 'focus', minutes: 25, task: 'Test task from adapter', force: true });
+    const statusRes = await claudeTools.pomodoro_status();
+    const completeRes = await claudeTools.pomodoro_complete({ notes: 'integration test' });
+    const ok = startRes.success && statusRes.success && statusRes.data?.remainingSec >= 0
+      && completeRes.success && completeRes.data?.status === 'completed';
+    logTest('claude', 'pomodoro start/status/complete', ok,
+      `Logged session #${completeRes.data?.id} (${completeRes.data?.type})`);
+  } catch (err) {
+    logTest('claude', 'pomodoro start/status/complete', false, err.message);
+  }
+
+  // Test 10: pomodoro cancel + stats
+  try {
+    await claudeTools.pomodoro_start({ type: 'short-break', force: true });
+    const cancelRes = await claudeTools.pomodoro_cancel({ notes: 'abandoned in test' });
+    const statsRes = await claudeTools.pomodoro_stats({ period: 'all' });
+    const ok = cancelRes.success && cancelRes.data?.status === 'abandoned'
+      && statsRes.success && typeof statsRes.data?.completedSessions === 'number';
+    logTest('claude', 'pomodoro cancel/stats', ok,
+      `${statsRes.data?.completedSessions} completed, ${statsRes.data?.focusMinutes} focus min`);
+  } catch (err) {
+    logTest('claude', 'pomodoro cancel/stats', false, err.message);
   }
 }
 

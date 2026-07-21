@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.4.0] - 2026-07-21
+
+### Added
+- **Pomodoro focus timers** — a new `pomodoro` domain with full parity across every
+  surface (standalone CLI, MCP server, Claude adapter, skill, agent, and the canvas UI).
+  - Stateless timer model: a running session is stored as a `startedAt` timestamp +
+    planned duration in an un-partitioned `pomodoro-active.json`, so `remaining` is
+    recomputed on read and a timer survives process restarts and month boundaries and
+    stays consistent no matter which surface you use.
+  - Session types **focus (25) / short-break (5) / long-break (15)** with per-call or
+    per-config overrides, an optional link to an existing task, and an append-only
+    partitioned `pomodoro.md` history table.
+  - CLI: `cat-pilot pomodoro start|status|stop|cancel|list|stats|run` (alias `pomo`),
+    where `run` shows a live blocking terminal countdown.
+  - MCP tools: `pomodoro_start|status|complete|cancel|list|stats`.
+  - Canvas: a **Pomodoro** view with a live countdown ring, start controls (type +
+    minutes + optional task picker), complete/cancel, a today stats strip, and a
+    recent-sessions table.
+
+### Changed
+- **Version is now read from `package.json`** by the CLI (`--version`) and the MCP
+  server instead of being hard-coded separately, removing the drift between the CLI,
+  MCP server, and plugin manifest. Consolidated all manifests to `0.4.0`.
+
 ## [0.3.0] - 2026-07-20
 
 ### Added

@@ -7,6 +7,7 @@
  */
 
 import * as cliUtils from '../../lib/cli-utils.js';
+import * as pomodoro from '../../lib/pomodoro.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -252,6 +253,88 @@ async function read_memo(params) {
 }
 
 /**
+ * Resolve an optional task reference (numeric id or title) into a display label
+ * like "#7 Review issues". Falls back to the raw input if not found.
+ */
+function resolveTaskLabel(taskRef) {
+  if (taskRef === undefined || taskRef === null || String(taskRef).trim() === '') return '';
+  const raw = String(taskRef).trim();
+  try {
+    const config = cliUtils.loadConfig();
+    const tasksPath = cliUtils.resolveFilePath('tasks', config);
+    const content = cliUtils.readFileOrCreate(tasksPath);
+    const tasks = cliUtils.parseTasksTable(content);
+    const idMatch = raw.replace(/^#/, '');
+    let found = null;
+    if (/^\d+$/.test(idMatch)) {
+      found = tasks.find(t => t.id === parseInt(idMatch, 10));
+    }
+    if (!found) {
+      found = tasks.find(t => t.title && t.title.toLowerCase() === raw.toLowerCase());
+    }
+    if (found) return `#${found.id} ${found.title}`;
+  } catch {
+    /* config may be missing; just use the raw label */
+  }
+  return raw;
+}
+
+async function pomodoro_start(params = {}) {
+  try {
+    const task = resolveTaskLabel(params.task);
+    const result = pomodoro.start({ ...params, task }, process.cwd());
+    return { success: true, data: result.active, path: result.path };
+  } catch (err) {
+    return { success: false, error: err.message, active: err.active || undefined };
+  }
+}
+
+async function pomodoro_status() {
+  try {
+    const result = pomodoro.status(process.cwd());
+    return { success: true, data: result.active, path: result.path };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function pomodoro_complete(params = {}) {
+  try {
+    const result = pomodoro.complete(params, process.cwd());
+    return { success: true, data: result.record, path: result.path };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function pomodoro_cancel(params = {}) {
+  try {
+    const result = pomodoro.cancel(params, process.cwd());
+    return { success: true, data: result.record, path: result.path };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function pomodoro_list(params = {}) {
+  try {
+    const result = pomodoro.list(params, process.cwd());
+    return { success: true, data: result.data, path: result.path, count: result.count };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function pomodoro_stats(params = {}) {
+  try {
+    const data = pomodoro.stats(params, process.cwd());
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * Tool dispatcher
  * Maps tool names to handler functions
  */
@@ -265,7 +348,13 @@ async function handleToolCall(toolName, params) {
     list_journal,
     create_memo,
     list_memos,
-    read_memo
+    read_memo,
+    pomodoro_start,
+    pomodoro_status,
+    pomodoro_complete,
+    pomodoro_cancel,
+    pomodoro_list,
+    pomodoro_stats
   };
 
   const handler = tools[toolName];
@@ -285,5 +374,11 @@ export {
   create_memo,
   list_memos,
   read_memo,
+  pomodoro_start,
+  pomodoro_status,
+  pomodoro_complete,
+  pomodoro_cancel,
+  pomodoro_list,
+  pomodoro_stats,
   handleToolCall
 };

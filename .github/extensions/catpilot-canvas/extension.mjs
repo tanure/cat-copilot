@@ -112,6 +112,14 @@ async function handleApi(req, url) {
     // Timeline / activity feed
     if (p === "/api/timeline" && m === "GET") return store.activity({ days: Number(url.searchParams.get("days")) || 14 });
 
+    // Pomodoro
+    if (p === "/api/pomodoro/status" && m === "GET") return store.pomodoroStatus();
+    if (p === "/api/pomodoro/stats" && m === "GET") return store.pomodoroStats({ period: url.searchParams.get("period") || "all" });
+    if (p === "/api/pomodoro/complete" && m === "POST") return store.pomodoroComplete(await readBody(req));
+    if (p === "/api/pomodoro/cancel" && m === "POST") return store.pomodoroCancel(await readBody(req));
+    if (p === "/api/pomodoro" && m === "GET") return store.pomodoroList({ limit: Number(url.searchParams.get("limit")) || undefined });
+    if (p === "/api/pomodoro" && m === "POST") return store.pomodoroStart(await readBody(req));
+
     // Config + interactive data migration
     if (p === "/api/config" && m === "GET") return store.getConfig();
     if (p === "/api/config/plan" && m === "POST") return store.planConfigChange(await readBody(req));

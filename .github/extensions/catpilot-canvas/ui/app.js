@@ -106,6 +106,7 @@
         { id: "learning", icon: "🎓", label: "Learning", countKey: "learning" },
         { id: "growth", icon: "↗", label: "Growth", countKey: "growth" },
         { id: "projects", icon: "❏", label: "Projects", countKey: "projects" },
+        { id: "pomodoro", icon: "🍅", label: "Pomodoro" },
         { id: "reports", icon: "📊", label: "Reports" },
         { id: "settings", icon: "⚙️", label: "Settings", footer: true },
         { id: "help", icon: "❔", label: "Help", footer: true },
@@ -121,6 +122,7 @@
         learning: "Certifications and study topics",
         growth: "Accomplishments and impact log",
         projects: "Lightweight project status",
+        pomodoro: "Focus timers and logged sessions",
         reports: "Executive reports from your data",
         settings: "Storage, migration and preferences",
         help: "Capabilities and how to use this canvas",
@@ -975,6 +977,155 @@
         });
         root.append(wrap);
     };
+
+    // ---------------------------------------------------------------- pomodoro
+    const POMO_TYPES = [["focus", "Focus"], ["short-break", "Short break"], ["long-break", "Long break"]];
+    const POMO_DEFAULT_MIN = { focus: 25, "short-break": 5, "long-break": 15 };
+    let pomoTick = null;
+
+    function stopPomoTick() { if (pomoTick) { clearInterval(pomoTick); pomoTick = null; } }
+
+    function fmtClock(sec) {
+        const s = Math.max(0, Math.round(sec));
+        const m = Math.floor(s / 60);
+        return `${String(m).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+    }
+
+    // Circular progress ring for the running timer.
+    function pomoRing(remainingSec, plannedSec, size = 220) {
+        const NS = "http://www.w3.org/2000/svg";
+        const svg = document.createElementNS(NS, "svg");
+        svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+        svg.setAttribute("width", size); svg.setAttribute("height", size);
+        const cx = size / 2, cy = size / 2, r = size / 2 - 16, C = 2 * Math.PI * r;
+        const frac = plannedSec > 0 ? Math.max(0, Math.min(1, remainingSec / plannedSec)) : 0;
+        const track = document.createElementNS(NS, "circle");
+        track.setAttribute("cx", cx); track.setAttribute("cy", cy); track.setAttribute("r", r);
+        track.setAttribute("fill", "none"); track.setAttribute("stroke", "var(--panel-2)"); track.setAttribute("stroke-width", 14);
+        svg.append(track);
+        const arc = document.createElementNS(NS, "circle");
+        arc.setAttribute("cx", cx); arc.setAttribute("cy", cy); arc.setAttribute("r", r);
+        arc.setAttribute("fill", "none"); arc.setAttribute("stroke", remainingSec === 0 ? "#4caf7d" : "#ff6b6b");
+        arc.setAttribute("stroke-width", 14); arc.setAttribute("stroke-linecap", "round");
+        arc.setAttribute("stroke-dasharray", `${C * frac} ${C}`);
+        arc.setAttribute("transform", `rotate(-90 ${cx} ${cy})`);
+        svg.append(arc);
+        const t1 = document.createElementNS(NS, "text");
+        t1.setAttribute("x", cx); t1.setAttribute("y", cy - 2); t1.setAttribute("text-anchor", "middle");
+        t1.setAttribute("font-size", "40"); t1.setAttribute("font-weight", "800"); t1.setAttribute("fill", "var(--text)");
+        t1.textContent = fmtClock(remainingSec);
+        const t2 = document.createElementNS(NS, "text");
+        t2.setAttribute("x", cx); t2.setAttribute("y", cy + 22); t2.setAttribute("text-anchor", "middle");
+        t2.setAttribute("font-size", "12"); t2.setAttribute("fill", "var(--text-faint)");
+        t2.textContent = remainingSec === 0 ? "done" : "remaining";
+        svg.append(t1, t2);
+        return svg;
+    }
+
+    VIEWS.pomodoro = async (root) => {
+        stopPomoTick();
+        const [{ active }, stats, { sessions }] = await Promise.all([
+            api("/api/pomodoro/status"),
+            api("/api/pomodoro/stats?period=today"),
+            api("/api/pomodoro?limit=8"),
+        ]);
+        root.innerHTML = "";
+
+        const timerCard = el("div", { class: "card", style: "text-align:center;padding:24px" });
+        root.append(timerCard);
+
+        function renderTimer(activeSession) {
+            timerCard.innerHTML = "";
+            if (activeSession) {
+                const ringHost = el("div", { class: "pomo-ring" }, pomoRing(activeSession.remainingSec, activeSession.plannedSec));
+                const focusOn = activeSession.task || activeSession.label || activeSession.type;
+                timerCard.append(
+                    ringHost,
+                    el("div", { class: "pomo-meta" },
+                        el("span", { class: "badge st-inprogress", text: activeSession.type }),
+                        el("span", { class: "muted", text: `🎯 ${focusOn}` })),
+                    el("div", { class: "toolbar", style: "justify-content:center;margin-top:16px" },
+                        el("button", { class: "btn btn-primary", html: "✓ Complete", onclick: async () => {
+                            try { await api("/api/pomodoro/complete", { method: "POST", body: {} }); toast("Pomodoro completed", "Logged 🍅", "ok"); go("pomodoro"); }
+                            catch (e) { toast("Error", e.message, "err"); }
+                        } }),
+                        el("button", { class: "btn", html: "✕ Cancel", onclick: async () => {
+                            try { await api("/api/pomodoro/cancel", { method: "POST", body: {} }); toast("Pomodoro cancelled", "", ""); go("pomodoro"); }
+                            catch (e) { toast("Error", e.message, "err"); }
+                        } })));
+
+                stopPomoTick();
+                let remaining = activeSession.remainingSec;
+                const planned = activeSession.plannedSec;
+                pomoTick = setInterval(() => {
+                    if (state.view !== "pomodoro") { stopPomoTick(); return; }
+                    remaining = Math.max(0, remaining - 1);
+                    ringHost.innerHTML = "";
+                    ringHost.append(pomoRing(remaining, planned));
+                    if (remaining === 0) { stopPomoTick(); toast("Time!", "Pomodoro finished 🔔", "ok"); setTimeout(() => { if (state.view === "pomodoro") go("pomodoro"); }, 800); }
+                }, 1000);
+            } else {
+                renderStartForm();
+            }
+        }
+
+        async function renderStartForm() {
+            timerCard.innerHTML = "";
+            const f = {};
+            let tasks = [];
+            try { tasks = await api("/api/tasks?status=open"); tasks = tasks.tasks || tasks || []; } catch { tasks = []; }
+            const typeSel = el("select", {}, POMO_TYPES.map(([v, l]) => el("option", { value: v, text: l })));
+            const minutes = el("input", { type: "number", min: "1", value: String(POMO_DEFAULT_MIN.focus), style: "width:90px" });
+            typeSel.addEventListener("change", () => { minutes.value = String(POMO_DEFAULT_MIN[typeSel.value] || 25); });
+            const taskSel = el("select", {}, el("option", { value: "", text: "— No task —" }),
+                tasks.map((t) => el("option", { value: `#${t.id} ${t.title}`, text: `#${t.id} ${t.title}` })));
+            f.type = typeSel; f.minutes = minutes; f.task = taskSel;
+
+            timerCard.append(
+                el("div", { class: "big", text: "🍅", style: "font-size:52px" }),
+                el("h3", { text: "Start a focus session" }),
+                el("div", { class: "form", style: "max-width:420px;margin:16px auto 0;text-align:left" },
+                    el("div", { class: "form-row" },
+                        el("label", {}, el("span", { text: "Type" }), typeSel),
+                        el("label", {}, el("span", { text: "Minutes" }), minutes)),
+                    el("label", {}, el("span", { text: "Focus on task (optional)" }), taskSel)),
+                el("div", { class: "toolbar", style: "justify-content:center;margin-top:16px" },
+                    el("button", { class: "btn btn-primary", html: "▶ Start", onclick: async () => {
+                        const body = { type: typeSel.value, minutes: parseInt(minutes.value, 10) || undefined, task: taskSel.value || undefined };
+                        try { await api("/api/pomodoro", { method: "POST", body }); toast("Pomodoro started", body.type, "ok"); go("pomodoro"); }
+                        catch (e) { toast("Error", e.message, "err"); }
+                    } })));
+        }
+
+        renderTimer(active);
+
+        // Stats strip (today)
+        root.append(el("div", { class: "grid stat-grid", style: "margin-top:16px" },
+            statTile("🍅", stats.completedSessions, "Sessions today"),
+            statTile("🎯", stats.focusSessions, "Focus sessions"),
+            statTile("⏱️", stats.focusMinutes, "Focus minutes")));
+
+        // Recent sessions
+        if (sessions.length) {
+            const tbody = el("tbody");
+            sessions.forEach((s) => tbody.append(el("tr", {},
+                el("td", {}, el("span", { class: "badge", text: s.type })),
+                el("td", {}, el("span", { text: s.task || "—" })),
+                el("td", {}, el("span", { class: "muted small", text: `${s.actualMin || 0} min` })),
+                el("td", {}, statusBadge(s.status === "completed" ? "Done" : s.status)))));
+            root.append(el("h3", { text: "Recent sessions", style: "margin:20px 0 8px" }),
+                el("div", { class: "table-wrap" }, el("table", { class: "tbl" },
+                    el("thead", {}, el("tr", {}, el("th", { text: "Type" }), el("th", { text: "Task" }), el("th", { text: "Actual" }), el("th", { text: "Status" }))),
+                    tbody)));
+        }
+    };
+
+    function statTile(icon, value, label) {
+        return el("div", { class: "card", style: "text-align:center" },
+            el("div", { class: "big", text: icon, style: "font-size:26px" }),
+            el("div", { style: "font-size:24px;font-weight:800", text: String(value) }),
+            el("div", { class: "muted small", text: label }));
+    }
 
     // ---------------------------------------------------------------- reports
     const PERIODS = [["this-week", "This week"], ["last-week", "Last week"], ["this-month", "This month"], ["last-month", "Last month"], ["last-7", "Last 7 days"], ["last-30", "Last 30 days"], ["all", "All time"]];

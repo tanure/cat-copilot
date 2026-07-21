@@ -25,6 +25,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 import * as core from '../adapters/claude-code/tools.js';
 import * as domains from '../lib/domains.js';
@@ -39,9 +42,16 @@ if (process.env.CATPILOT_ROOT) {
   }
 }
 
+// Read the version from package.json so every surface reports the same number.
+let pkgVersion = '0.0.0';
+try {
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  pkgVersion = JSON.parse(fs.readFileSync(path.resolve(here, '..', 'package.json'), 'utf8')).version || pkgVersion;
+} catch { /* fall back to placeholder */ }
+
 const server = new McpServer({
   name: 'catpilot',
-  version: '0.2.2'
+  version: pkgVersion
 });
 
 /** Wrap any result as MCP text content (JSON for structured data). */
@@ -133,6 +143,51 @@ server.registerTool('memo_read', {
   description: 'Read a memo by filename.',
   inputSchema: { filename: z.string().describe('Memo filename (e.g. 2026-06-19_handover.md)') }
 }, async (args) => fromCore(await core.read_memo(args)));
+
+// ----------------------------------------------------------------------------
+// Pomodoro
+// ----------------------------------------------------------------------------
+server.registerTool('pomodoro_start', {
+  title: 'Start Pomodoro',
+  description: 'Start a Pomodoro focus/break timer. Refuses if one is already running unless force is set.',
+  inputSchema: {
+    minutes: z.number().int().optional().describe('Planned duration in minutes (defaults: focus 25, short-break 5, long-break 15)'),
+    type: z.enum(['focus', 'short-break', 'long-break']).optional().describe('Session type'),
+    task: z.string().optional().describe('Optional task to focus on (id like "7"/"#7" or a task title)'),
+    label: z.string().optional().describe('Optional free-form label if not linking a task'),
+    force: z.boolean().optional().describe('Override an already-running session')
+  }
+}, async (args) => fromCore(await core.pomodoro_start(args)));
+
+server.registerTool('pomodoro_status', {
+  title: 'Pomodoro status',
+  description: 'Show the currently running Pomodoro session with computed remaining time, or none.',
+  inputSchema: {}
+}, async () => fromCore(await core.pomodoro_status()));
+
+server.registerTool('pomodoro_complete', {
+  title: 'Complete Pomodoro',
+  description: 'Finalize the running Pomodoro session as completed and append it to the history log.',
+  inputSchema: { notes: z.string().optional().describe('Optional notes about the session') }
+}, async (args) => fromCore(await core.pomodoro_complete(args)));
+
+server.registerTool('pomodoro_cancel', {
+  title: 'Cancel Pomodoro',
+  description: 'Abandon the running Pomodoro session and log it as abandoned.',
+  inputSchema: { notes: z.string().optional().describe('Optional reason/notes') }
+}, async (args) => fromCore(await core.pomodoro_cancel(args)));
+
+server.registerTool('pomodoro_list', {
+  title: 'List Pomodoro sessions',
+  description: 'List past Pomodoro sessions (newest first).',
+  inputSchema: { limit: z.number().int().optional().describe('Max sessions to return') }
+}, async (args) => fromCore(await core.pomodoro_list(args)));
+
+server.registerTool('pomodoro_stats', {
+  title: 'Pomodoro stats',
+  description: 'Aggregate Pomodoro stats (session count + focus minutes) for a period.',
+  inputSchema: { period: z.enum(['today', 'week', 'month', 'all']).optional().describe('Reporting period (default all)') }
+}, async (args) => fromCore(await core.pomodoro_stats(args)));
 
 // ----------------------------------------------------------------------------
 // Generic per-file domains: learning, growth, projects

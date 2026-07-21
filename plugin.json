@@ -1,7 +1,7 @@
 {
     "name": "catpilot",
-    "description": "CatPilot assistant for GitHub Copilot: tasks, journaling, milestones, memos, learning/cert tracking, growth/review-prep, and project status (file-based, Obsidian-friendly).",
-    "version": "0.2.2",
+    "description": "CatPilot assistant for GitHub Copilot: tasks, journaling, milestones, memos, learning/cert tracking, growth/review-prep, project status, and pomodoro focus timers (file-based, Obsidian-friendly).",
+    "version": "0.4.0",
     "author": {
         "name": "Albert Tanure",
         "url": "https://github.com/tanure"
@@ -19,7 +19,8 @@
         "productivity",
         "second-brain",
         "learning",
-        "growth"
+        "growth",
+        "pomodoro"
     ],
     "tags": [
         "personal-assistant",

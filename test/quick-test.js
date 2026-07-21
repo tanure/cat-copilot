@@ -19,5 +19,16 @@ import * as geminiTools from '../adapters/gemini-cli/tools.js';
     console.log('Gemini catpilot_list_tasks: ❌ ERROR', e.message);
   }
 
+  console.log('\nTesting Pomodoro engine...');
+  try {
+    const started = await claudeTools.pomodoro_start({ type: 'focus', minutes: 25, force: true });
+    const st = await claudeTools.pomodoro_status();
+    const done = await claudeTools.pomodoro_complete({ notes: 'quick-test' });
+    const ok = started.success && st.success && st.data?.remainingSec >= 0 && done.success && done.data?.status === 'completed';
+    console.log('Claude pomodoro start→status→complete:', ok ? '✅ PASS' : '❌ FAIL');
+  } catch (e) {
+    console.log('Claude pomodoro cycle: ❌ ERROR', e.message);
+  }
+
   console.log('\nAdapters loaded successfully!');
 })();

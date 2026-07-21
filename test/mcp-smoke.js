@@ -36,7 +36,8 @@ function assert(cond, msg) {
         allowExternalPaths: true,
         files: {
           tasks: 'tasks.md', journal: 'journal.md', milestones: 'milestones.md',
-          memos: 'memos', learning: 'learning', growth: 'growth', projects: 'projects'
+          memos: 'memos', learning: 'learning', growth: 'growth', projects: 'projects',
+          pomodoro: 'pomodoro.md'
         }
       },
       migration: { mode: 'move' }
@@ -58,7 +59,9 @@ function assert(cond, msg) {
   console.log('Tools:', names.join(', '), '\n');
 
   const expected = ['task_add', 'task_list', 'journal_add', 'memo_create',
-    'learning_add', 'growth_add', 'project_add', 'config_info'];
+    'learning_add', 'growth_add', 'project_add', 'config_info',
+    'pomodoro_start', 'pomodoro_status', 'pomodoro_complete',
+    'pomodoro_cancel', 'pomodoro_list', 'pomodoro_stats'];
   for (const name of expected) assert(names.includes(name), `exposes ${name}`);
 
   const add = await client.callTool({ name: 'task_add', arguments: { title: 'Smoke test task', priority: 'P1' } });
@@ -72,6 +75,15 @@ function assert(cond, msg) {
 
   const cfg = await client.callTool({ name: 'config_info', arguments: {} });
   assert(cfg.content[0].text.includes('partition'), 'config_info returns resolved paths');
+
+  const pomoStart = await client.callTool({ name: 'pomodoro_start', arguments: { type: 'focus', minutes: 25, force: true } });
+  assert(!pomoStart.isError, 'pomodoro_start begins a session');
+
+  const pomoStatus = await client.callTool({ name: 'pomodoro_status', arguments: {} });
+  assert(!pomoStatus.isError && pomoStatus.content[0].text.includes('remainingSec'), 'pomodoro_status reports live timing');
+
+  const pomoComplete = await client.callTool({ name: 'pomodoro_complete', arguments: { notes: 'smoke' } });
+  assert(!pomoComplete.isError && pomoComplete.content[0].text.includes('completed'), 'pomodoro_complete logs the session');
 
   await client.close();
   fs.rmSync(tmp, { recursive: true, force: true });

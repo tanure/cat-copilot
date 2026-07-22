@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.0] - 2026-07-22
+
+### Added
+- **Global persistent Pomodoro mini-timer (canvas).** A running Pomodoro now shows a
+  floating dock pinned to the bottom-left corner that stays visible and keeps ticking on
+  **every** view (Tasks, Dashboard, etc.), not just the Pomodoro page. The dock shows a
+  live ring + MM:SS, the session type/task, and **Complete/Cancel** controls; clicking it
+  opens the full Pomodoro page. A single app-wide timer loop now drives both the dock and
+  the Pomodoro page (and re-syncs with the server every ~15s, so a session started from the
+  CLI also surfaces in the canvas).
+- **End-of-session notification + break suggestion.** When a session's countdown reaches
+  zero you get a sound, a best-effort OS/browser notification, and an in-app prompt. After a
+  **focus** session it suggests a **Short break / Long break / Another focus / Skip** (long
+  break suggested after every 4th completed focus session, classic Pomodoro); after a break
+  it offers **Start focus / Skip**. Nothing auto-starts — you always choose.
+
 ## [0.6.0] - 2026-07-22
 
 ### Added

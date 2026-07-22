@@ -298,6 +298,31 @@ table.tbl tr:focus-within .row-actions { opacity: 1; }
 /* pomodoro */
 .pomo-ring { display: flex; justify-content: center; margin-bottom: 8px; }
 .pomo-meta { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 6px; }
+
+/* Floating persistent mini-timer dock */
+.pomo-dock {
+    position: fixed; right: 22px; bottom: 22px; z-index: 45;
+    display: flex; align-items: center; gap: 12px;
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 16px; padding: 10px 12px; box-shadow: var(--shadow-lg);
+    max-width: 320px;
+}
+.pomo-dock.hidden { display: none; }
+.pomo-dock.is-done { border-color: color-mix(in srgb, #4caf7d 55%, var(--border)); animation: pomoPulse 1.6s ease-in-out infinite; }
+.pomo-dock-ring { flex: 0 0 auto; cursor: pointer; line-height: 0; opacity: .95; }
+.pomo-dock-info { display: flex; flex-direction: column; gap: 3px; cursor: pointer; min-width: 0; }
+.pomo-dock-time { font-size: 20px; font-weight: 800; line-height: 1; letter-spacing: .5px; font-variant-numeric: tabular-nums; }
+.pomo-dock-label { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pomo-dock-task { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pomo-dock-controls { display: flex; gap: 6px; margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--border-soft); }
+.pomo-dock-btn { width: 32px; height: 32px; font-size: 13px; border-radius: 9px; }
+.pomo-dock-btn:hover { background: var(--panel-hover); }
+@keyframes pomoPulse {
+    0%, 100% { box-shadow: var(--shadow-lg); }
+    50% { box-shadow: 0 0 0 3px color-mix(in srgb, #4caf7d 35%, transparent), var(--shadow-lg); }
+}
+/* Keep toasts stacked clear above the dock's corner */
+.pomo-dock:not(.hidden) ~ .toasts { bottom: 92px; }
 .stat-grid { grid-template-columns: repeat(3, 1fr); gap: 14px; }
 
 input, textarea, select {

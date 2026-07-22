@@ -81,15 +81,16 @@ server.registerTool('task_add', {
     due: z.string().optional().describe('Due date YYYY-MM-DD'),
     priority: z.string().optional().describe('P0/P1/P2/P3 or High/Med/Low'),
     tags: z.string().optional().describe('Comma-separated tags'),
-    context: z.string().optional().describe('One-line context')
+    context: z.string().optional().describe('One-line context'),
+    status: z.enum(['Open', 'Blocked', 'Done']).optional().describe('Initial status (default Open)')
   }
 }, async (args) => fromCore(await core.add_task(args)));
 
 server.registerTool('task_list', {
   title: 'List tasks',
-  description: 'List tasks, optionally filtered by status (open/done/all).',
+  description: 'List tasks, optionally filtered by status (open/blocked/done/all).',
   inputSchema: {
-    status: z.enum(['open', 'done', 'all']).optional().describe('Filter by status')
+    status: z.enum(['open', 'blocked', 'done', 'all']).optional().describe('Filter by status')
   }
 }, async (args) => fromCore(await core.list_tasks(args)));
 
@@ -98,6 +99,15 @@ server.registerTool('task_complete', {
   description: 'Mark a task as Done by its numeric ID.',
   inputSchema: { id: z.number().int().describe('Task ID') }
 }, async (args) => fromCore(await core.complete_task(args)));
+
+server.registerTool('task_set_status', {
+  title: 'Set task status',
+  description: 'Set a task status to Open, Blocked, or Done by its numeric ID.',
+  inputSchema: {
+    id: z.number().int().describe('Task ID'),
+    status: z.enum(['Open', 'Blocked', 'Done']).describe('New status')
+  }
+}, async (args) => fromCore(await core.set_task_status(args)));
 
 server.registerTool('task_remove', {
   title: 'Remove task',

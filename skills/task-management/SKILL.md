@@ -31,6 +31,14 @@ Use this skill when the user says things like:
 - Priority (P0/P1/P2/P3) or (High/Med/Low)
 - Tags (comma-separated)
 - Context (1 line)
+- Status (`Open`, `Blocked`, or `Done`; defaults to `Open`)
+
+## Task statuses
+Canonical stored statuses are **`Open`** (shown as "To do" in the canvas), **`Blocked`**,
+and **`Done`**. "Overdue" is *derived* from an Open task whose due date has passed — it is
+never a stored status and is not selectable. A `Blocked` task lives under `## Open Tasks`
+on disk (only `Done` tasks move to `## Done Tasks`), so its real status is preserved in the
+`Status` cell and it is never lost on save.
 
 ## Output format (configuration-aware)
 Resolve task target from `data/config.json` before any read/write.
@@ -84,6 +92,17 @@ Rules:
    - What was completed
    - Where it was updated (resolved tasks path)
 
+### Blocking / unblocking a task
+1. Resolve the tasks file from `data/config.json`.
+2. Read the resolved tasks file.
+3. Find the task by ID or title under `## Open Tasks`.
+4. To block: set its status to `Blocked` (keep it under `## Open Tasks`).
+   To unblock: set its status back to `Open`.
+5. Confirm what changed and where it was written.
+
+CLI equivalents: `cat-pilot task block <id>` and `cat-pilot task unblock <id>`;
+`cat-pilot task add "…" --status Blocked` creates a task already blocked.
+
 ### Removing a task
 1. Resolve the tasks file from `data/config.json`.
 2. Read the resolved tasks file.
@@ -132,7 +151,7 @@ Reply with the existing reference and suggest updating metadata instead.
 
 ## Response style
 - Use emojis in confirmations and list outputs.
-- For task lists, prefix each row summary with `🟢` for Open and `✅` for Done.
+- For task lists, prefix each row summary with `🟢` for Open, `⛔` for Blocked, and `✅` for Done.
 - Use `⚠️` for duplicates or missing required inputs.
 - Use `❌` for write/update failures.
 

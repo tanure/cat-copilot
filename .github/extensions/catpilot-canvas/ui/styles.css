@@ -256,6 +256,7 @@ table.tbl tr:focus-within .row-actions { opacity: 1; }
 .badge.st-done { background: rgba(53,200,143,.15); color: #35c88f; border-color: transparent; }
 .badge.st-planned { background: var(--panel-2); color: var(--text-muted); }
 .badge.st-inprogress { background: rgba(90,169,255,.16); color: #5aa9ff; border-color: transparent; }
+.badge.st-blocked { background: rgba(255,140,50,.16); color: #ff8c32; border-color: transparent; }
 .tag { font-size: 11px; padding: 2px 8px; border-radius: 6px; background: var(--panel-2); color: var(--text-muted); border: 1px solid var(--border); }
 .tags { display: flex; flex-wrap: wrap; gap: 5px; }
 

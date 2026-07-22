@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.6.0] - 2026-07-22
+
+### Added
+- **"Blocked" task status** across every surface (CLI, MCP, Claude adapter, canvas, skill).
+  Canonical statuses are now **Open** (shown as "To do"), **Blocked**, and **Done**.
+  - CLI: `task add --status <Open|Blocked|Done>`, plus new `task block <id>` and
+    `task unblock <id>` commands; `task list --status blocked`.
+  - MCP: `task_add` gains an optional `status` enum and a new `task_set_status` tool.
+  - Claude adapter: `add_task` honors an optional `status`; new `set_task_status` handler.
+  - Canvas: the task **board** now has four columns — **Overdue · To do · Blocked · Done** —
+    with drag-and-drop between them; the task modal has a **Status** selector; the list view
+    shows a status badge; and a **All / Today / 7 days** due-date filter was added.
+
+### Fixed
+- **Data-loss bug:** the task write layer (`lib/cli-utils.js` and the canvas
+  `catpilot-store.mjs`) previously grouped tasks into only *Open* vs *Done* sections and
+  silently dropped any other status on save. A task set to `Blocked` would be deleted on the
+  next write. The first section now persists **all not-done tasks** (Open *and* Blocked),
+  keeping the real value in the `Status` cell. The on-disk markdown format is unchanged and
+  fully backward compatible.
+
 ## [0.5.0] - 2026-07-22
 
 ### Added

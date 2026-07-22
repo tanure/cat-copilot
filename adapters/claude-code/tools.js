@@ -11,6 +11,14 @@ import * as pomodoro from '../../lib/pomodoro.js';
 import fs from 'fs';
 import path from 'path';
 
+const TASK_STATUSES = ['Open', 'Blocked', 'Done'];
+function normalizeTaskStatus(value, fallback = 'Open') {
+  if (value === undefined || value === null || value === '') return fallback;
+  const match = TASK_STATUSES.find(s => s.toLowerCase() === String(value).trim().toLowerCase());
+  if (!match) throw new Error(`Invalid status "${value}". Use one of: ${TASK_STATUSES.join(', ')}`);
+  return match;
+}
+
 /**
  * Tool handlers - implement CatPilot workflows
  * Each handler receives params and returns {success, data|error}
@@ -52,7 +60,7 @@ async function add_task(params) {
 
     const newTask = {
       id: cliUtils.getNextTaskId(tasks),
-      status: 'Open',
+      status: normalizeTaskStatus(params.status),
       title: params.title,
       dueDate: params.due || '',
       priority: params.priority || '',
@@ -99,6 +107,40 @@ async function complete_task(params) {
       success: true,
       data: task,
       message: `Task #${params.id} marked as Done`
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function set_task_status(params) {
+  try {
+    if (params.id === undefined) {
+      return { success: false, error: 'id is required' };
+    }
+    const status = normalizeTaskStatus(params.status, undefined);
+    if (!status) {
+      return { success: false, error: 'status is required' };
+    }
+
+    const config = cliUtils.loadConfig();
+    const tasksPath = cliUtils.resolveFilePath('tasks', config);
+    const content = cliUtils.readFileOrCreate(tasksPath);
+    const tasks = cliUtils.parseTasksTable(content);
+
+    const task = tasks.find(t => t.id === parseInt(params.id, 10));
+    if (!task) {
+      return { success: false, error: `Task #${params.id} not found` };
+    }
+
+    task.status = status;
+    const newContent = cliUtils.formatTasksTable(tasks);
+    fs.writeFileSync(tasksPath, newContent, 'utf8');
+
+    return {
+      success: true,
+      data: task,
+      message: `Task #${params.id} status set to ${status}`
     };
   } catch (err) {
     return { success: false, error: err.message };
@@ -352,6 +394,7 @@ async function handleToolCall(toolName, params) {
     list_tasks,
     add_task,
     complete_task,
+    set_task_status,
     remove_task,
     add_journal_entry,
     list_journal,
@@ -378,6 +421,7 @@ export {
   list_tasks,
   add_task,
   complete_task,
+  set_task_status,
   remove_task,
   add_journal_entry,
   list_journal,

@@ -209,8 +209,11 @@ function parseTasksTable(content) {
 }
 
 function formatTasksTable(tasks) {
-    const open = tasks.filter((t) => t.status === "Open" || t.status === "open");
-    const done = tasks.filter((t) => t.status === "Done" || t.status === "done");
+    const isDone = (t) => t.status === "Done" || t.status === "done";
+    // Section 1 = every NOT-done task (Open, Blocked, etc.) so custom statuses
+    // persist across the round-trip; section 2 = completed tasks.
+    const open = tasks.filter((t) => !isDone(t));
+    const done = tasks.filter(isDone);
     const header = "| ID | Status | Title | Due Date | Priority | Tags | Context |\n| --- | --- | --- | --- | --- | --- | --- |\n";
     let out = "";
     if (open.length) {
@@ -230,6 +233,16 @@ function nextId(rows) {
     return Math.max(...rows.map((r) => r.id || 0)) + 1;
 }
 
+// Canonical task statuses. "Overdue" is derived from the due date, never stored.
+export const TASK_STATUSES = ["Open", "Blocked", "Done"];
+
+function normalizeTaskStatus(value, fallback = "Open") {
+    if (value === undefined || value === null || value === "") return fallback;
+    const match = TASK_STATUSES.find((s) => s.toLowerCase() === String(value).trim().toLowerCase());
+    if (!match) throw new Error(`Invalid status "${value}". Use one of: ${TASK_STATUSES.join(", ")}`);
+    return match;
+}
+
 export function listTasks(status = "all") {
     const config = loadConfig();
     const p = resolveFilePath("tasks", config);
@@ -245,7 +258,7 @@ export function addTask(params = {}) {
     const tasks = parseTasksTable(readFileOrCreate(p));
     const task = {
         id: nextId(tasks),
-        status: "Open",
+        status: normalizeTaskStatus(params.status),
         title: params.title,
         dueDate: params.due || "",
         priority: params.priority || "",
@@ -264,7 +277,7 @@ export function updateTask(id, patch = {}) {
     const t = tasks.find((x) => x.id === parseInt(id, 10));
     if (!t) throw new Error(`Task #${id} not found`);
     for (const k of ["status", "title", "dueDate", "priority", "tags", "context"]) {
-        if (patch[k] !== undefined) t[k] = patch[k];
+        if (patch[k] !== undefined) t[k] = k === "status" ? normalizeTaskStatus(patch[k]) : patch[k];
     }
     fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
     return t;
@@ -959,6 +972,7 @@ export function summary() {
     const today = todayISO();
     const open = tasks.filter((t) => t.status.toLowerCase() === "open");
     const done = tasks.filter((t) => t.status.toLowerCase() === "done");
+    const blocked = tasks.filter((t) => t.status.toLowerCase() === "blocked");
     const overdue = open.filter((t) => t.dueDate && t.dueDate < today);
     const dueToday = open.filter((t) => t.dueDate === today);
 
@@ -1004,6 +1018,7 @@ export function summary() {
         counts: {
             tasksOpen: open.length,
             tasksDone: done.length,
+            tasksBlocked: blocked.length,
             tasksOverdue: overdue.length,
             tasksDueToday: dueToday.length,
             milestones: milestones.length,

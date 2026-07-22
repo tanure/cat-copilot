@@ -58,7 +58,7 @@ function assert(cond, msg) {
   const names = tools.map(t => t.name);
   console.log('Tools:', names.join(', '), '\n');
 
-  const expected = ['task_add', 'task_list', 'journal_add', 'memo_create',
+  const expected = ['task_add', 'task_list', 'task_set_status', 'journal_add', 'memo_create',
     'learning_add', 'growth_add', 'project_add', 'config_info',
     'pomodoro_start', 'pomodoro_status', 'pomodoro_complete',
     'pomodoro_cancel', 'pomodoro_list', 'pomodoro_stats', 'pomodoro_report'];
@@ -69,6 +69,14 @@ function assert(cond, msg) {
 
   const list = await client.callTool({ name: 'task_list', arguments: { status: 'all' } });
   assert(list.content[0].text.includes('Smoke test task'), 'task_list returns the added task');
+
+  // Blocked status flows through task_set_status and survives a re-list (regression).
+  const addBlocked = await client.callTool({ name: 'task_add', arguments: { title: 'Blocked smoke task', status: 'Blocked' } });
+  assert(!addBlocked.isError && addBlocked.content[0].text.includes('Blocked'), 'task_add accepts Blocked status');
+  const blockedList = await client.callTool({ name: 'task_list', arguments: { status: 'blocked' } });
+  assert(blockedList.content[0].text.includes('Blocked smoke task'), 'task_list surfaces the Blocked task (not dropped)');
+  const setStatus = await client.callTool({ name: 'task_set_status', arguments: { id: 1, status: 'Blocked' } });
+  assert(!setStatus.isError && setStatus.content[0].text.includes('Blocked'), 'task_set_status updates status');
 
   const learn = await client.callTool({ name: 'learning_add', arguments: { title: 'AZ-104', goal: 'Pass cert', target_date: '2026-09-01' } });
   assert(!learn.isError && learn.content[0].text.includes('learning'), 'learning_add creates a frontmatter note');

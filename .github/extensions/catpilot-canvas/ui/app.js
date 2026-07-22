@@ -148,7 +148,7 @@
     function priorityBadge(p) { return p ? el("span", { class: `badge ${priorityClass(p)}`, text: p }) : el("span", { class: "muted small", text: "—" }); }
     function statusBadge(s) {
         const k = (s || "").toLowerCase().replace(/\s/g, "");
-        const cls = k === "done" ? "st-done" : k === "inprogress" ? "st-inprogress" : k === "planned" ? "st-planned" : "st-open";
+        const cls = k === "done" ? "st-done" : k === "inprogress" ? "st-inprogress" : k === "planned" ? "st-planned" : k === "blocked" ? "st-blocked" : "st-open";
         return el("span", { class: `badge ${cls}`, text: s || "Open" });
     }
     function tagChips(tags) {
@@ -457,8 +457,24 @@
 
     // ---------- Tasks ----------
     let taskViewMode = localStorage.getItem("cp-task-view") || "list";
+    let taskDueFilter = localStorage.getItem("cp-task-filter") || "all"; // all | today | 7days
+
+    // Apply the active due-date filter. Today = due today or overdue;
+    // 7days = due within the next 7 days (includes overdue). Undated tasks are
+    // hidden while a filter is active, per product decision.
+    function applyDueFilter(tasks) {
+        if (taskDueFilter === "all") return tasks;
+        const today = todayISO();
+        const in7 = new Date(); in7.setDate(in7.getDate() + 7);
+        const limit = in7.toISOString().split("T")[0];
+        if (taskDueFilter === "today") return tasks.filter((t) => t.dueDate && t.dueDate <= today);
+        if (taskDueFilter === "7days") return tasks.filter((t) => t.dueDate && t.dueDate <= limit);
+        return tasks;
+    }
+
     VIEWS.tasks = async (root) => {
-        const { tasks } = await api("/api/tasks?status=all");
+        const { tasks: allTasks } = await api("/api/tasks?status=all");
+        const tasks = applyDueFilter(allTasks);
         root.innerHTML = "";
 
         // view switcher in topbar
@@ -467,16 +483,22 @@
             el("button", { class: taskViewMode === "board" ? "active" : "", text: "▦ Board", onclick: () => { taskViewMode = "board"; localStorage.setItem("cp-task-view", "board"); go("tasks"); } }));
         actionsHost.append(seg);
 
+        const filterSeg = el("div", { class: "segmented" },
+            ...[["all", "All"], ["today", "Today"], ["7days", "7 days"]].map(([key, label]) =>
+                el("button", { class: taskDueFilter === key ? "active" : "", text: label, onclick: () => { taskDueFilter = key; localStorage.setItem("cp-task-filter", key); go("tasks"); } })));
+
         const toolbar = el("div", { class: "toolbar" },
             el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }),
             el("input", { class: "search", placeholder: "Search tasks…", oninput: (e) => filterTasks(e.target.value) }),
+            filterSeg,
             el("span", { class: "spacer" }),
-            el("span", { class: "muted small", text: `${tasks.filter((t) => t.status.toLowerCase() === "open").length} open · ${tasks.filter((t) => t.status.toLowerCase() === "done").length} done` }));
+            el("span", { class: "muted small", text: `${tasks.filter((t) => t.status.toLowerCase() === "open").length} open · ${tasks.filter((t) => t.status.toLowerCase() === "blocked").length} blocked · ${tasks.filter((t) => t.status.toLowerCase() === "done").length} done` }));
         root.append(toolbar);
 
         const holder = el("div", { id: "task-holder" });
         root.append(holder);
-        if (!tasks.length) { holder.append(emptyState("🗒️", "No tasks yet", "Capture your first task and it will sync straight to CatPilot.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
+        if (!allTasks.length) { holder.append(emptyState("🗒️", "No tasks yet", "Capture your first task and it will sync straight to CatPilot.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
+        if (!tasks.length) { holder.append(emptyState("🔍", "Nothing in this window", "No tasks match the current filter. Try “All”.")); return; }
         if (taskViewMode === "list") renderTaskList(holder, tasks);
         else renderTaskBoard(holder, tasks);
         root._tasks = tasks;
@@ -492,8 +514,9 @@
 
     function renderTaskList(holder, tasks) {
         const open = tasks.filter((t) => t.status.toLowerCase() === "open");
+        const blocked = tasks.filter((t) => t.status.toLowerCase() === "blocked");
         const done = tasks.filter((t) => t.status.toLowerCase() === "done");
-        const ordered = [...open, ...done];
+        const ordered = [...open, ...blocked, ...done];
         const tbody = el("tbody");
         ordered.forEach((t) => tbody.append(taskRow(t)));
         holder.append(el("div", { class: "table-wrap" },
@@ -501,6 +524,7 @@
                 el("thead", {}, el("tr", {},
                     el("th", { text: "" }),
                     el("th", { text: "Task" }),
+                    el("th", { text: "Status" }),
                     el("th", { text: "Due" }),
                     el("th", { text: "Priority" }),
                     el("th", { text: "Tags" }),
@@ -523,6 +547,7 @@
             el("td", { style: "width:34px" }, check),
             el("td", {}, el("div", { class: "cell-title", text: t.title, onclick: () => taskDetail(t) }),
                 t.context ? el("div", { class: "muted small", text: t.context }) : null),
+            el("td", {}, statusBadge(t.status)),
             el("td", {}, t.dueDate ? el("span", { class: dueClass(t.dueDate, done), text: t.dueDate }) : el("span", { class: "muted small", text: "—" })),
             el("td", {}, priorityBadge(t.priority)),
             el("td", {}, tagChips(t.tags)),
@@ -541,9 +566,10 @@
 
     function renderTaskBoard(holder, tasks) {
         const cols = [
-            { key: "overdue", title: "⏰ Overdue", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate < todayISO() },
-            { key: "open", title: "◻ To do", filter: (t) => t.status.toLowerCase() === "open" && !(t.dueDate && t.dueDate < todayISO()) },
-            { key: "done", title: "✓ Done", filter: (t) => t.status.toLowerCase() === "done" },
+            { key: "overdue", title: "⏰ Overdue", status: "Open", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate < todayISO() },
+            { key: "open", title: "◻ To do", status: "Open", filter: (t) => t.status.toLowerCase() === "open" && !(t.dueDate && t.dueDate < todayISO()) },
+            { key: "blocked", title: "⛔ Blocked", status: "Blocked", filter: (t) => t.status.toLowerCase() === "blocked" },
+            { key: "done", title: "✓ Done", status: "Done", filter: (t) => t.status.toLowerCase() === "done" },
         ];
         const board = el("div", { class: "board" });
         for (const col of cols) {
@@ -558,8 +584,10 @@
                 e.preventDefault(); colEl.classList.remove("drop");
                 const id = e.dataTransfer.getData("text/plain");
                 try {
-                    if (col.key === "done") await api(`/api/tasks/${id}/complete`, { method: "POST" });
-                    else await api(`/api/tasks/${id}`, { method: "PUT", body: { status: "Open" } });
+                    // Overdue and To do both map to the stored "Open" status; the card
+                    // lands in the right column based on its due date.
+                    if (col.status === "Done") await api(`/api/tasks/${id}/complete`, { method: "POST" });
+                    else await api(`/api/tasks/${id}`, { method: "PUT", body: { status: col.status } });
                     await refreshSummary(); go("tasks");
                 } catch (err) { toast("Error", err.message, "err"); }
             });
@@ -570,6 +598,7 @@
 
     function boardCard(t) {
         const done = t.status.toLowerCase() === "done";
+        const blocked = t.status.toLowerCase() === "blocked";
         const card = el("div", { class: "board-card", draggable: "true", dataset: { taskTitle: t.title } });
         card.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", String(t.id)); card.classList.add("dragging"); });
         card.addEventListener("dragend", () => card.classList.remove("dragging"));
@@ -577,6 +606,7 @@
             el("div", { class: "bc-title", text: t.title, style: done ? "text-decoration:line-through;color:var(--text-faint)" : "", onclick: () => taskDetail(t) }),
             el("div", { class: "bc-meta" },
                 priorityBadge(t.priority),
+                blocked ? statusBadge("Blocked") : null,
                 t.dueDate ? el("span", { class: dueClass(t.dueDate, done), text: t.dueDate }) : null));
         return card;
     }
@@ -595,13 +625,14 @@
             el("div", { class: "form-row" },
                 field("Due date", f, "due", { value: t?.dueDate, type: "date" }),
                 selectField("Priority", f, "priority", ["", "P0", "P1", "P2", "P3", "High", "Med", "Low"], t?.priority)),
+            selectField("Status", f, "status", ["Open", "Blocked", "Done"], t?.status || "Open", { Open: "To do", Blocked: "Blocked", Done: "Done" }),
             field("Tags", f, "tags", { value: t?.tags, placeholder: "comma,separated" }),
             mdField("Context", f, "context", { value: t?.context, placeholder: "One-line context (markdown supported)" }));
         const save = el("button", { class: "btn btn-primary", text: editing ? "Save changes" : "Add task", onclick: async () => {
-            const payload = { title: f.title.value.trim(), due: f.due.value, priority: f.priority.value, tags: f.tags.value.trim(), context: f.context.value.trim() };
+            const payload = { title: f.title.value.trim(), due: f.due.value, priority: f.priority.value, tags: f.tags.value.trim(), context: f.context.value.trim(), status: f.status.value };
             if (!payload.title) { toast("Title required", "", "err"); return; }
             try {
-                if (editing) { await api(`/api/tasks/${t.id}`, { method: "PUT", body: { title: payload.title, dueDate: payload.due, priority: payload.priority, tags: payload.tags, context: payload.context } }); toast("Task updated", payload.title, "ok"); }
+                if (editing) { await api(`/api/tasks/${t.id}`, { method: "PUT", body: { title: payload.title, dueDate: payload.due, priority: payload.priority, tags: payload.tags, context: payload.context, status: payload.status } }); toast("Task updated", payload.title, "ok"); }
                 else { await api("/api/tasks", { method: "POST", body: payload }); toast("Task added", payload.title, "ok"); }
                 closeModal(); await refreshSummary(); go("tasks");
             } catch (e) { toast("Error", e.message, "err"); }
@@ -816,9 +847,9 @@
         store[key] = input;
         return el("label", {}, el("span", {}, label, opts.required ? el("em", { text: " *" }) : null), input);
     }
-    function selectField(label, store, key, options, value) {
+    function selectField(label, store, key, options, value, labels) {
         const sel = el("select", {});
-        options.forEach((o) => { const opt = el("option", { value: o, text: o || "—" }); if (o === value) opt.selected = true; sel.append(opt); });
+        options.forEach((o) => { const opt = el("option", { value: o, text: (labels && labels[o]) || o || "—" }); if (o === value) opt.selected = true; sel.append(opt); });
         store[key] = sel;
         return el("label", {}, el("span", { text: label }), sel);
     }
@@ -1387,7 +1418,7 @@
         root.innerHTML = "";
         const cards = [
             { icon: "🐱", title: "What is this canvas?", body: "A visual command center for **CatPilot**. Everything you see reads and writes the *same files* CatPilot's CLI, agent and MCP server use — so edits here show up everywhere. Nothing is duplicated." },
-            { icon: "🧭", title: "Navigation", body: "The sidebar covers every CatPilot domain: **Tasks, Journal, Milestones, Memos, Learning, Growth, Projects**. Each has add buttons, inline edit and detail popups. **Tasks** offers both a table and a kanban board." },
+            { icon: "🧭", title: "Navigation", body: "The sidebar covers every CatPilot domain: **Tasks, Journal, Milestones, Memos, Learning, Growth, Projects**. Each has add buttons, inline edit and detail popups. **Tasks** offers a table and a kanban board with **Overdue · To do · Blocked · Done** columns, a status selector on create/edit, and **All / Today / 7 days** due-date filters." },
             { icon: "🕑", title: "Timeline", body: "A day-grouped story of your recent activity across every domain, with a **7/14/30 day** switch. Use the Copilot action chips to summarize the period, plan next steps or draft a standup." },
             { icon: "📊", title: "Reports", body: "Generate an **executive report** for a period from your tasks and milestones — or ask Copilot to write a richer one via the *report-generator* skill. Reports are saved as markdown/HTML in your storage `reports/` folder and open in a reader." },
             { icon: "✨", title: "Ask Copilot", body: "The **✨ button** (top bar) and the action chips send prompts to the Copilot agent in the chat panel. The agent works on the same data, so it can add tasks, write memos, generate reports and more on your behalf." },

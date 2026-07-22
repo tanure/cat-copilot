@@ -93,8 +93,10 @@ so anyone can install it in one command (see [Install the canvas](#install-the-c
 What you get in the canvas:
 
 - **Dashboard** — hero, summary cards, last-3-days activity, charts, and productivity nudges.
-- **Tasks** — switch between **list (table)** and **board (kanban)** views, complete inline,
-  drag to done, edit/save locally, and open a detail popup — plus an add button.
+- **Tasks** — switch between **list (table)** and **board (kanban)** views with an
+  **Overdue · To do · Blocked · Done** board, pick a status (To do / Blocked / Done) on
+  create/edit, filter by due date (**All · Today · 7 days**), complete inline, drag between
+  columns, edit/save locally, and open a detail popup — plus an add button.
 - **Journal, Milestones, Memos** — browse, add, and open full detail views (memos render markdown).
 - **Learning, Growth, Projects** — card views with add buttons and detail popups.
 - **Pomodoro** — a live countdown ring for the running session, start controls
@@ -390,8 +392,12 @@ cat-pilot doctor
 
 ```bash
 cat-pilot task add "Draft Q2 planning notes" --due 2026-03-25 --priority P1 --tags planning,leadership --context "Need first draft before leadership sync"
+cat-pilot task add "Waiting on legal sign-off" --status Blocked
 cat-pilot task list
 cat-pilot task list --status all
+cat-pilot task list --status blocked
+cat-pilot task block 12
+cat-pilot task unblock 12
 cat-pilot task complete 12
 cat-pilot task remove 12
 ```

@@ -112,6 +112,29 @@ async function testClaudeAdapter() {
     logTest('claude', 'add_task validation', false, err.message);
   }
 
+  // Test 3b: Blocked status round-trip (regression for the data-loss bug where
+  // any status other than Open/Done was silently dropped on save).
+  try {
+    const added = await claudeTools.add_task({ title: 'Blocked task from adapter', status: 'Blocked' });
+    const setRes = await claudeTools.set_task_status({ id: added.data?.id, status: 'Blocked' });
+    const listRes = await claudeTools.list_tasks({ status: 'blocked' });
+    const survived = listRes.data?.some(t => t.id === added.data?.id && t.status === 'Blocked');
+    const ok = added.success && added.data?.status === 'Blocked' && setRes.success && survived;
+    logTest('claude', 'blocked status round-trip', ok,
+      ok ? `Task #${added.data?.id} persisted as Blocked` : 'Blocked task was dropped or miscounted');
+  } catch (err) {
+    logTest('claude', 'blocked status round-trip', false, err.message);
+  }
+
+  // Test 3c: set_task_status validation
+  try {
+    const bad = await claudeTools.set_task_status({ id: 999999, status: 'Nope' });
+    logTest('claude', 'set_task_status validation', !bad.success,
+      'Correctly rejected invalid status');
+  } catch (err) {
+    logTest('claude', 'set_task_status validation', false, err.message);
+  }
+
   // Test 4: list_journal
   try {
     const journalResult = await claudeTools.list_journal({ days: 7 });

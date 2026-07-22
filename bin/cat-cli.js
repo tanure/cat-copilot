@@ -111,6 +111,14 @@ const taskCmd = program
   .command('task')
   .description('Manage tasks');
 
+const TASK_STATUSES = ['Open', 'Blocked', 'Done'];
+function normalizeTaskStatus(value, fallback = 'Open') {
+  if (value === undefined || value === null || value === '') return fallback;
+  const match = TASK_STATUSES.find(s => s.toLowerCase() === String(value).trim().toLowerCase());
+  if (!match) throw new Error(`Invalid status "${value}". Use one of: ${TASK_STATUSES.join(', ')}`);
+  return match;
+}
+
 taskCmd
   .command('add <title>')
   .description('Add new task')
@@ -118,6 +126,7 @@ taskCmd
   .option('--priority <priority>', 'Priority (P0|P1|P2|P3)')
   .option('--tags <tags>', 'Tags (comma-separated)')
   .option('--context <context>', 'Context or notes')
+  .option('--status <status>', 'Status (Open|Blocked|Done)', 'Open')
   .action(async (title, options) => {
     try {
       const config = cliUtils.loadConfig();
@@ -125,9 +134,10 @@ taskCmd
       const content = cliUtils.readFileOrCreate(tasksPath, '## Open Tasks\n\n| ID | Status | Title | Due Date | Priority | Tags | Context |\n| --- | --- | --- | --- | --- | --- | --- |\n');
       const tasks = cliUtils.parseTasksTable(content);
 
+      const status = normalizeTaskStatus(options.status);
       const newTask = {
         id: cliUtils.getNextTaskId(tasks),
-        status: 'Open',
+        status,
         title,
         dueDate: options.due || '',
         priority: options.priority || '',
@@ -144,6 +154,7 @@ taskCmd
       console.log(`   📌 ID #${newTask.id}: ${title}`);
       if (options.due) console.log(`   📅 Due: ${options.due}`);
       if (options.priority) console.log(`   ⚡ Priority: ${options.priority}`);
+      if (status !== 'Open') console.log(`   🚦 Status: ${status}`);
     } catch (err) {
       console.error(`❌ Error: ${err.message}`);
       process.exit(1);
@@ -153,7 +164,7 @@ taskCmd
 taskCmd
   .command('list')
   .description('List tasks')
-  .option('--status <status>', 'Filter by status (open|done|all)', 'open')
+  .option('--status <status>', 'Filter by status (open|blocked|done|all)', 'open')
   .action((options) => {
     try {
       const config = cliUtils.loadConfig();
@@ -210,6 +221,38 @@ taskCmd
       console.error(`❌ Error: ${err.message}`);
       process.exit(1);
     }
+  });
+
+function setTaskStatusCli(id, status) {
+  const config = cliUtils.loadConfig();
+  const tasksPath = cliUtils.resolveFilePath('tasks', config);
+  const content = cliUtils.readFileOrCreate(tasksPath);
+  const tasks = cliUtils.parseTasksTable(content);
+
+  const task = tasks.find(t => t.id === parseInt(id, 10));
+  if (!task) {
+    console.error(`❌ Task #${id} not found`);
+    process.exit(1);
+  }
+  task.status = normalizeTaskStatus(status);
+  fs.writeFileSync(tasksPath, cliUtils.formatTasksTable(tasks), 'utf8');
+  console.log(`\n✅ Task #${id} status set to ${task.status}`);
+}
+
+taskCmd
+  .command('block <id>')
+  .description('Mark task as Blocked')
+  .action((id) => {
+    try { setTaskStatusCli(id, 'Blocked'); }
+    catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
+  });
+
+taskCmd
+  .command('unblock <id>')
+  .description('Move a Blocked task back to Open')
+  .action((id) => {
+    try { setTaskStatusCli(id, 'Open'); }
+    catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
   });
 
 taskCmd

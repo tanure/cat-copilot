@@ -17,5 +17,10 @@
   },
   "migration": {
     "mode": "move"
+  },
+  "pomodoro": {
+    "focus": 25,
+    "short-break": 5,
+    "long-break": 15
   }
 }

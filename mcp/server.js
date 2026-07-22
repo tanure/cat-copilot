@@ -189,6 +189,15 @@ server.registerTool('pomodoro_stats', {
   inputSchema: { period: z.enum(['today', 'week', 'month', 'all']).optional().describe('Reporting period (default all)') }
 }, async (args) => fromCore(await core.pomodoro_stats(args)));
 
+server.registerTool('pomodoro_report', {
+  title: 'Pomodoro report',
+  description: 'Productivity report for a period grouped by day, week, task, or session. Returns a summary (completed focus sessions, focus minutes, overall + focus completion rate) plus grouped breakdown rows.',
+  inputSchema: {
+    period: z.enum(['today', 'this-week', 'last-week', 'this-month', 'last-month', 'last-7', 'last-30', 'all']).optional().describe('Reporting period (default all)'),
+    groupBy: z.enum(['day', 'week', 'task', 'session']).optional().describe('How to group the breakdown (default day)')
+  }
+}, async (args) => fromCore(await core.pomodoro_report(args)));
+
 // ----------------------------------------------------------------------------
 // Generic per-file domains: learning, growth, projects
 // ----------------------------------------------------------------------------

@@ -224,6 +224,24 @@
         return el("div", {}, bars, legend);
     }
 
+    // Single-series vertical bar chart (value per labeled group).
+    function simpleBars(items, { color = "#7c5cff", unit = "" } = {}) {
+        const max = Math.max(1, ...items.map((d) => d.value || 0));
+        const bars = el("div", { class: "bars" });
+        for (const d of items) {
+            const stack = el("div", { class: "bar-stack" });
+            if (d.value) {
+                const seg = el("div", { class: "bar-seg" });
+                seg.style.height = `${(d.value / max) * 130}px`;
+                seg.style.background = color;
+                seg.title = `${d.label}: ${d.value}${unit}`;
+                stack.append(seg);
+            }
+            bars.append(el("div", { class: "bar-col" }, stack, el("div", { class: "bar-label", text: d.short || d.label })));
+        }
+        return bars;
+    }
+
     // ---------------------------------------------------------------- nav
     function renderNav() {
         const nav = $("#nav");
@@ -1024,11 +1042,13 @@
 
     VIEWS.pomodoro = async (root) => {
         stopPomoTick();
-        const [{ active }, stats, { sessions }] = await Promise.all([
+        const [{ active }, stats, { sessions }, cfg] = await Promise.all([
             api("/api/pomodoro/status"),
             api("/api/pomodoro/stats?period=today"),
             api("/api/pomodoro?limit=8"),
+            api("/api/config").catch(() => ({})),
         ]);
+        const durations = (cfg && cfg.pomodoro) || POMO_DEFAULT_MIN;
         root.innerHTML = "";
 
         const timerCard = el("div", { class: "card", style: "text-align:center;padding:24px" });
@@ -1075,8 +1095,8 @@
             let tasks = [];
             try { tasks = await api("/api/tasks?status=open"); tasks = tasks.tasks || tasks || []; } catch { tasks = []; }
             const typeSel = el("select", {}, POMO_TYPES.map(([v, l]) => el("option", { value: v, text: l })));
-            const minutes = el("input", { type: "number", min: "1", value: String(POMO_DEFAULT_MIN.focus), style: "width:90px" });
-            typeSel.addEventListener("change", () => { minutes.value = String(POMO_DEFAULT_MIN[typeSel.value] || 25); });
+            const minutes = el("input", { type: "number", min: "1", value: String(durations.focus || 25), style: "width:90px" });
+            typeSel.addEventListener("change", () => { minutes.value = String(durations[typeSel.value] || POMO_DEFAULT_MIN[typeSel.value] || 25); });
             const taskSel = el("select", {}, el("option", { value: "", text: "— No task —" }),
                 tasks.map((t) => el("option", { value: `#${t.id} ${t.title}`, text: `#${t.id} ${t.title}` })));
             f.type = typeSel; f.minutes = minutes; f.task = taskSel;
@@ -1118,7 +1138,91 @@
                     el("thead", {}, el("tr", {}, el("th", { text: "Type" }), el("th", { text: "Task" }), el("th", { text: "Actual" }), el("th", { text: "Status" }))),
                     tbody)));
         }
+
+        // Productivity reports
+        const reportHost = el("div", { style: "margin-top:24px" });
+        root.append(reportHost);
+        await renderPomoReports(reportHost);
     };
+
+    let pomoReport = { period: "this-week", by: "day" };
+    async function renderPomoReports(host) {
+        host.innerHTML = "";
+        const periodSel = el("select", {}, PERIODS.map(([v, l]) => el("option", { value: v, text: l, selected: v === pomoReport.period })));
+        periodSel.value = pomoReport.period;
+        periodSel.addEventListener("change", () => { pomoReport.period = periodSel.value; renderPomoReports(host); });
+        const BYS = [["day", "By day"], ["week", "By week"], ["task", "By task"], ["session", "By session"]];
+        const bySel = el("select", {}, BYS.map(([v, l]) => el("option", { value: v, text: l, selected: v === pomoReport.by })));
+        bySel.value = pomoReport.by;
+        bySel.addEventListener("change", () => { pomoReport.by = bySel.value; renderPomoReports(host); });
+
+        host.append(el("div", { class: "toolbar", style: "align-items:center;gap:10px;margin-bottom:12px" },
+            el("h3", { text: "📊 Productivity", style: "margin:0;margin-right:auto" }),
+            periodSel, bySel));
+
+        let data;
+        try { data = await api(`/api/pomodoro/report?period=${encodeURIComponent(pomoReport.period)}&by=${encodeURIComponent(pomoReport.by)}`); }
+        catch (e) { host.append(el("div", { class: "muted", text: e.message })); return; }
+        const s = data.summary;
+        const pct = (x) => `${Math.round((x || 0) * 100)}%`;
+
+        host.append(el("div", { class: "grid stat-grid" },
+            statTile("🎯", `${s.completedFocusSessions}/${s.focusSessions}`, "Focus completed"),
+            statTile("⏱️", s.focusMinutes, "Focus minutes"),
+            statTile("✅", pct(s.focusCompletionRate), "Focus completion"),
+            statTile("🍅", s.totalSessions, "Total sessions")));
+
+        if (!data.groups.length) { host.append(el("div", { class: "muted small", style: "margin-top:12px", text: "No sessions in this period yet." })); return; }
+
+        // Charts row (skip bars for session view)
+        const charts = el("div", { class: "grid", style: "grid-template-columns:2fr 1fr;gap:16px;margin-top:16px" });
+        if (pomoReport.by !== "session") {
+            const barItems = data.groups.map((g) => ({
+                label: g.label,
+                short: pomoReport.by === "day" ? g.label.slice(5) : (pomoReport.by === "week" ? g.label.replace(/^\d+-/, "") : g.label),
+                value: g.focusMinutes || 0,
+            }));
+            charts.append(el("div", { class: "card" },
+                el("div", { class: "muted small", style: "margin-bottom:8px", text: "Focus minutes" }),
+                simpleBars(barItems, { color: "#7c5cff", unit: " min" })));
+        }
+        const donutHost = el("div", { class: "card", style: "text-align:center" },
+            el("div", { class: "muted small", style: "margin-bottom:8px", text: "Completed vs abandoned" }),
+            donut([
+                { value: s.completedSessions, color: "#4ade80" },
+                { value: s.abandonedSessions, color: "#f87171" },
+            ]),
+            el("div", { class: "legend", style: "justify-content:center" },
+                el("span", {}, el("i", { style: "background:#4ade80" }), "Completed"),
+                el("span", {}, el("i", { style: "background:#f87171" }), "Abandoned")));
+        charts.append(donutHost);
+        if (pomoReport.by === "session") charts.style.gridTemplateColumns = "1fr";
+        host.append(charts);
+
+        // Grouped table
+        const tbody = el("tbody");
+        if (pomoReport.by === "session") {
+            data.groups.forEach((g) => tbody.append(el("tr", {},
+                el("td", {}, el("span", { class: "muted small", text: new Date(g.started).toLocaleString() })),
+                el("td", {}, el("span", { class: "badge", text: g.type })),
+                el("td", {}, el("span", { text: g.task || "—" })),
+                el("td", {}, el("span", { class: "muted small", text: `${g.actualMin}/${g.plannedMin} min` })),
+                el("td", {}, statusBadge(g.status === "completed" ? "Done" : g.status)))));
+            host.append(el("div", { class: "table-wrap", style: "margin-top:16px" }, el("table", { class: "tbl" },
+                el("thead", {}, el("tr", {}, el("th", { text: "Started" }), el("th", { text: "Type" }), el("th", { text: "Task" }), el("th", { text: "Actual/Planned" }), el("th", { text: "Status" }))),
+                tbody)));
+        } else {
+            const head = pomoReport.by === "task" ? "Task" : (pomoReport.by === "week" ? "Week" : "Day");
+            data.groups.forEach((g) => tbody.append(el("tr", {},
+                el("td", {}, el("span", { text: g.label })),
+                el("td", {}, el("span", { text: `${g.completedFocusSessions}/${g.focusSessions}` })),
+                el("td", {}, el("span", { text: String(g.focusMinutes) })),
+                el("td", {}, el("span", { class: "muted small", text: pct(g.completionRate) })))));
+            host.append(el("div", { class: "table-wrap", style: "margin-top:16px" }, el("table", { class: "tbl" },
+                el("thead", {}, el("tr", {}, el("th", { text: head }), el("th", { text: "Focus done" }), el("th", { text: "Focus min" }), el("th", { text: "Completion" }))),
+                tbody)));
+        }
+    }
 
     function statTile(icon, value, label) {
         return el("div", { class: "card", style: "text-align:center" },
@@ -1189,6 +1293,29 @@
             el("h4", { text: "Appearance" }),
             el("p", { class: "muted small", text: "Toggle light/dark from the top bar. Your preference is remembered on this machine." }),
             el("button", { class: "btn", html: state.theme === "dark" ? "☀️ Switch to light" : "🌙 Switch to dark", onclick: () => { toggleTheme(); go("settings"); } })));
+
+        // Pomodoro durations
+        const pd = cfg.pomodoro || { focus: 25, "short-break": 5, "long-break": 15 };
+        const dur = {};
+        const durInput = (key) => { const i = el("input", { type: "number", min: "1", value: String(pd[key] || 1), style: "width:90px" }); dur[key] = i; return i; };
+        const saveDur = el("button", { class: "btn btn-primary", html: "💾 Save durations", onclick: async () => {
+            const body = { pomodoro: {
+                focus: parseInt(dur.focus.value, 10),
+                "short-break": parseInt(dur["short-break"].value, 10),
+                "long-break": parseInt(dur["long-break"].value, 10),
+            } };
+            try { await api("/api/config/pomodoro", { method: "POST", body }); toast("Pomodoro durations saved", "", "ok"); go("settings"); }
+            catch (e) { toast("Error", e.message, "err"); }
+        } });
+        root.append(el("div", { class: "card settings-card", style: "margin-top:16px" },
+            el("h4", { text: "🍅 Pomodoro durations" }),
+            el("p", { class: "muted small", text: "Default session lengths (minutes) used when you start a timer without a custom value." }),
+            el("div", { class: "form" },
+                el("div", { class: "form-row" },
+                    el("label", {}, el("span", { text: "Focus" }), durInput("focus")),
+                    el("label", {}, el("span", { text: "Short break" }), durInput("short-break")),
+                    el("label", {}, el("span", { text: "Long break" }), durInput("long-break")))),
+            el("div", { class: "toolbar", style: "margin-top:12px" }, saveDur)));
     };
     function configModal(cfg) {
         const f = {};

@@ -54,6 +54,7 @@ Default config values when creating `data/config.json`:
 - `storage.files.growth`: `growth`
 - `storage.files.projects`: `projects`
 - `storage.files.pomodoro`: `pomodoro.md`
+- `pomodoro`: `{ focus: 25, "short-break": 5, "long-break": 15 }` (default session durations in minutes; top-level block, separate from `storage.files.pomodoro`)
 - `migration.mode`: `move` (allowed: `adopt`, `copy`, `move`)
 
 Resolve file targets from config for every read/write:
@@ -125,7 +126,7 @@ Use the following routing map:
 - Learning intents (`study/certification/exam prep/track learning/what to review`) -> `learning`
 - Growth intents (`log a win/brag doc/impact summary/review prep/promotion prep`) -> `growth`
 - Project intents (`create/update/status of project/portfolio overview`) -> `project-tracker`
-- Pomodoro intents (`start/stop/cancel a pomodoro/focus timer/take a break/time left/focus stats`) -> `pomodoro`
+- Pomodoro intents (`start/stop/cancel a pomodoro/focus timer/take a break/time left/focus stats/productivity report`) -> `pomodoro`
 - Summary intents (`summarize my day/daily recap`) -> `daily-summary`
 - Report intents (`generate report/export report/executive report`) -> `report-generator`
 - Setup intents (`setup/configure/reconfigure/change storage`) -> `interactive-setup`
@@ -146,7 +147,7 @@ Use the following routing map:
 | 📚 Learning | Track certification/study prep with spaced review |
 | 🌱 Growth | Private brag-doc + neutral impact/review-prep summaries |
 | 📁 Projects | Per-project status rollups and portfolio overview |
-| 🍅 Pomodoro | Focus/break timers with logged sessions and focus stats |
+| 🍅 Pomodoro | Focus/break timers, configurable durations, logged sessions, focus stats + productivity reports (by session/day/week) |
 | 📊 Daily Summary | Summarize tasks, notes, and outcomes |
 | 📈 Reports | Generate period-based Markdown/HTML executive reports |
 | 🔒 Sanitize | Block secrets and redact internal details before writing/sharing |

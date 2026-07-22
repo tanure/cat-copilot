@@ -187,6 +187,18 @@ async function testClaudeAdapter() {
   } catch (err) {
     logTest('claude', 'pomodoro cancel/stats', false, err.message);
   }
+
+  // Test 11: pomodoro_report (grouped productivity)
+  try {
+    const repRes = await claudeTools.pomodoro_report({ period: 'all', groupBy: 'day' });
+    const s = repRes.data?.summary;
+    const ok = repRes.success && s && typeof s.completionRate === 'number'
+      && typeof s.completedFocusSessions === 'number' && Array.isArray(repRes.data?.groups);
+    logTest('claude', 'pomodoro report (by day)', ok,
+      `${s?.totalSessions} sessions, ${Math.round((s?.completionRate || 0) * 100)}% completion, ${repRes.data?.groups?.length} group(s)`);
+  } catch (err) {
+    logTest('claude', 'pomodoro report (by day)', false, err.message);
+  }
 }
 
 // ============================================================================

@@ -30,5 +30,15 @@ import * as geminiTools from '../adapters/gemini-cli/tools.js';
     console.log('Claude pomodoro cycle: ❌ ERROR', e.message);
   }
 
+  console.log('\nTesting Pomodoro report...');
+  try {
+    const rep = await claudeTools.pomodoro_report({ period: 'all', groupBy: 'day' });
+    const s = rep.data?.summary;
+    const ok = rep.success && s && typeof s.completionRate === 'number' && Array.isArray(rep.data?.groups);
+    console.log('Claude pomodoro_report (by day):', ok ? '✅ PASS' : '❌ FAIL', ok ? `(${s.totalSessions} sessions, ${rep.data.groups.length} group(s))` : '');
+  } catch (e) {
+    console.log('Claude pomodoro_report: ❌ ERROR', e.message);
+  }
+
   console.log('\nAdapters loaded successfully!');
 })();

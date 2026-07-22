@@ -1,7 +1,7 @@
 {
     "name": "catpilot",
     "description": "CatPilot assistant for GitHub Copilot: tasks, journaling, milestones, memos, learning/cert tracking, growth/review-prep, project status, and pomodoro focus timers (file-based, Obsidian-friendly).",
-    "version": "0.4.0",
+    "version": "0.5.0",
     "author": {
         "name": "Albert Tanure",
         "url": "https://github.com/tanure"

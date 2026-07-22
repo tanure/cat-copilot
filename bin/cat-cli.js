@@ -494,6 +494,52 @@ pomodoroCmd
   });
 
 pomodoroCmd
+  .command('report')
+  .description('Productivity report by session, day, or week')
+  .option('--period <period>', 'today|this-week|last-week|this-month|last-month|last-7|last-30|all', 'this-week')
+  .option('--by <groupBy>', 'day|week|task|session', 'day')
+  .option('--json', 'Output raw JSON')
+  .action((options) => {
+    try {
+      const r = pomodoro.report({ period: options.period, groupBy: options.by });
+      if (options.json) {
+        console.log(JSON.stringify(r, null, 2));
+        return;
+      }
+      const s = r.summary;
+      const pct = (x) => `${Math.round((x || 0) * 100)}%`;
+      console.log(`\n📊 Pomodoro report — ${r.period} (grouped by ${r.groupBy})`);
+      console.log(`   🍅 Sessions: ${s.totalSessions} (✅ ${s.completedSessions} completed, 🚫 ${s.abandonedSessions} abandoned) — ${pct(s.completionRate)} completion`);
+      console.log(`   🎯 Focus: ${s.completedFocusSessions}/${s.focusSessions} completed (${pct(s.focusCompletionRate)}) — ${s.focusMinutes} focus min`);
+
+      if (!r.groups.length) {
+        console.log('\nℹ️ No sessions in this period.');
+        return;
+      }
+
+      console.log('');
+      if (r.groupBy === 'session') {
+        console.log('| Started | Type | Task | Planned | Actual | Status |');
+        console.log('| --- | --- | --- | --- | --- | --- |');
+        for (const g of r.groups) {
+          const when = new Date(g.started).toLocaleString();
+          console.log(`| ${when} | ${g.type} | ${g.task || '-'} | ${g.plannedMin} | ${g.actualMin} | ${g.status} |`);
+        }
+      } else {
+        const head = r.groupBy === 'task' ? 'Task' : (r.groupBy === 'week' ? 'Week' : 'Day');
+        console.log(`| ${head} | Focus done | Focus min | Completion |`);
+        console.log('| --- | --- | --- | --- |');
+        for (const g of r.groups) {
+          console.log(`| ${g.label} | ${g.completedFocusSessions}/${g.focusSessions} | ${g.focusMinutes} | ${pct(g.completionRate)} |`);
+        }
+      }
+    } catch (err) {
+      console.error(`❌ Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+pomodoroCmd
   .command('run')
   .description('Start a session and show a live countdown in the terminal')
   .option('--minutes <n>', 'Planned duration in minutes')

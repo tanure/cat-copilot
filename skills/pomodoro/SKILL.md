@@ -14,6 +14,7 @@ Use this skill when the user says things like:
 - "How much time is left?" / "Pomodoro status."
 - "Stop / finish / cancel my Pomodoro."
 - "How many focus sessions did I do today/this week?"
+- "Show my productivity report for this week." / "Focus report by day/week/task."
 
 ## Storage model (configuration-aware)
 Two files, both resolved from `data/config.json`:
@@ -38,8 +39,11 @@ If `storage.files.pomodoro` is absent, default to `pomodoro.md`.
 - `short-break` — default **5** min
 - `long-break` — default **15** min
 
-Durations can be overridden per call (`minutes`) or via an optional
-`pomodoro` block in config, e.g. `{ "pomodoro": { "focus": 50 } }`.
+Durations can be overridden per call (`minutes`) or via a top-level `pomodoro`
+block in config, e.g. `{ "pomodoro": { "focus": 50, "short-break": 10, "long-break": 20 } }`.
+`cat-pilot setup` prompts for these defaults and the canvas **Settings → Pomodoro
+durations** card edits them. When no `--minutes` is given, `start` honors the
+configured default for that session type (falling back to 25/5/15).
 
 ## History table format
 ```markdown
@@ -64,6 +68,13 @@ Durations can be overridden per call (`minutes`) or via an optional
 - **List:** show recent sessions (newest first).
 - **Stats:** report session counts and total focus minutes for `today`, `week`,
   `month`, or `all`.
+- **Report:** productivity report over a period (`today`, `this-week`,
+  `last-week`, `this-month`, `last-month`, `last-7`, `last-30`, `all`) grouped by
+  `day`, `week`, `task`, or `session`. Reports **completed focus sessions**, **focus
+  minutes**, and a **completion rate** (completed vs abandoned), plus a focus-only
+  completion rate. Exposed as `cat-pilot pomodoro report --period <p> --by <g>`
+  (add `--json` for machine output), the `pomodoro_report` MCP tool, and charts in
+  the canvas Pomodoro view.
 
 ## Task linking
 When the user references a task by id (`#7`/`7`) or exact title, store it as a

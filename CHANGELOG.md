@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.5.0] - 2026-07-22
+
+### Added
+- **Pomodoro productivity reports** — a new `report` capability across every surface
+  that measures **completed focus sessions**, **focus minutes**, and **completion rate**
+  (completed vs abandoned, plus a focus-only rate).
+  - Periods: `today`, `this-week`, `last-week`, `this-month`, `last-month`, `last-7`,
+    `last-30`, `all`. Grouping: `day`, `week` (ISO week), `task`, or `session`.
+  - CLI: `cat-pilot pomodoro report [--period <p>] [--by <day|week|task|session>]`
+    (add `--json` for machine output).
+  - MCP tool: `pomodoro_report`. Claude adapter handler: `pomodoro_report`.
+  - Canvas: a **Productivity** section in the Pomodoro view with a period/grouping
+    selector, a focus-minutes bar chart, a completed-vs-abandoned donut, and a grouped
+    table.
+- **Configurable, persistent Pomodoro durations** — focus / short-break / long-break
+  defaults now live in a top-level `pomodoro` block in `config.json`.
+  - `cat-pilot setup` prompts for the three durations (Enter accepts 25/5/15).
+  - The canvas **Settings → Pomodoro durations** card edits and saves them.
+  - `pomodoro start` with no `--minutes` honors the configured default for that type;
+    older configs are soft-defaulted so nothing breaks.
+
 ## [0.4.0] - 2026-07-21
 
 ### Added

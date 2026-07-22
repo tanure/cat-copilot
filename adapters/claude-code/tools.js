@@ -334,6 +334,15 @@ async function pomodoro_stats(params = {}) {
   }
 }
 
+async function pomodoro_report(params = {}) {
+  try {
+    const data = pomodoro.report(params, process.cwd());
+    return { success: true, data };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 /**
  * Tool dispatcher
  * Maps tool names to handler functions
@@ -354,7 +363,8 @@ async function handleToolCall(toolName, params) {
     pomodoro_complete,
     pomodoro_cancel,
     pomodoro_list,
-    pomodoro_stats
+    pomodoro_stats,
+    pomodoro_report
   };
 
   const handler = tools[toolName];
@@ -380,5 +390,6 @@ export {
   pomodoro_cancel,
   pomodoro_list,
   pomodoro_stats,
+  pomodoro_report,
   handleToolCall
 };

@@ -61,7 +61,7 @@ function assert(cond, msg) {
   const expected = ['task_add', 'task_list', 'journal_add', 'memo_create',
     'learning_add', 'growth_add', 'project_add', 'config_info',
     'pomodoro_start', 'pomodoro_status', 'pomodoro_complete',
-    'pomodoro_cancel', 'pomodoro_list', 'pomodoro_stats'];
+    'pomodoro_cancel', 'pomodoro_list', 'pomodoro_stats', 'pomodoro_report'];
   for (const name of expected) assert(names.includes(name), `exposes ${name}`);
 
   const add = await client.callTool({ name: 'task_add', arguments: { title: 'Smoke test task', priority: 'P1' } });
@@ -84,6 +84,9 @@ function assert(cond, msg) {
 
   const pomoComplete = await client.callTool({ name: 'pomodoro_complete', arguments: { notes: 'smoke' } });
   assert(!pomoComplete.isError && pomoComplete.content[0].text.includes('completed'), 'pomodoro_complete logs the session');
+
+  const pomoReport = await client.callTool({ name: 'pomodoro_report', arguments: { period: 'all', groupBy: 'day' } });
+  assert(!pomoReport.isError && pomoReport.content[0].text.includes('completionRate') && pomoReport.content[0].text.includes('groups'), 'pomodoro_report returns grouped productivity data');
 
   await client.close();
   fs.rmSync(tmp, { recursive: true, force: true });

@@ -81,6 +81,7 @@ export function writeConfig({ root, partitioning = "month" } = {}) {
             files: { ...DEFAULT_FILES },
         },
         migration: { mode: "adopt" },
+        pomodoro: { ...POMODORO_DEFAULTS },
     };
     fs.mkdirSync(GLOBAL_CONFIG_DIR, { recursive: true });
     fs.writeFileSync(GLOBAL_CONFIG_PATH, JSON.stringify(config, null, 2), "utf8");
@@ -486,6 +487,117 @@ export function pomodoroStats({ period = "all" } = {}) {
         focusSessions: focus.length,
         focusMinutes,
     };
+}
+
+// ---------------------------------------------------------------------------
+// Pomodoro reporting
+// ---------------------------------------------------------------------------
+function pomoPad2(n) { return String(n).padStart(2, "0"); }
+function pomoLocalDayKey(d) { return `${d.getFullYear()}-${pomoPad2(d.getMonth() + 1)}-${pomoPad2(d.getDate())}`; }
+function pomoIsoWeekKey(d) {
+    const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    const day = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+    const week = Math.ceil((((date - yearStart) / 864e5) + 1) / 7);
+    return `${date.getUTCFullYear()}-W${pomoPad2(week)}`;
+}
+function pomoRate(num, den) { return den > 0 ? Math.round((num / den) * 1000) / 1000 : 0; }
+
+function pomoResolvePeriodRange(period, now = Date.now()) {
+    const d = new Date(now);
+    const startOfDay = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const mondayOf = (x) => {
+        const s = new Date(x.getFullYear(), x.getMonth(), x.getDate());
+        const day = s.getDay() || 7;
+        s.setDate(s.getDate() - (day - 1));
+        return s.getTime();
+    };
+    switch (period) {
+        case "today": return { from: startOfDay(d), to: null };
+        case "this-week": return { from: mondayOf(d), to: null };
+        case "last-week": { const tw = mondayOf(d); return { from: tw - 7 * 864e5, to: tw }; }
+        case "this-month": return { from: new Date(d.getFullYear(), d.getMonth(), 1).getTime(), to: null };
+        case "last-month": return { from: new Date(d.getFullYear(), d.getMonth() - 1, 1).getTime(), to: new Date(d.getFullYear(), d.getMonth(), 1).getTime() };
+        case "last-7": case "week": return { from: now - 7 * 864e5, to: null };
+        case "last-30": case "month": return { from: now - 30 * 864e5, to: null };
+        case "all": default: return { from: null, to: null };
+    }
+}
+
+function pomoSummarize(rows) {
+    const total = rows.length;
+    const completed = rows.filter((s) => s.status === "completed");
+    const abandoned = rows.filter((s) => s.status !== "completed");
+    const focus = rows.filter((s) => s.type === "focus");
+    const completedFocus = focus.filter((s) => s.status === "completed");
+    const focusMinutes = completedFocus.reduce((sum, s) => sum + (parseInt(s.actualMin, 10) || 0), 0);
+    const breakMinutes = completed.filter((s) => s.type !== "focus").reduce((sum, s) => sum + (parseInt(s.actualMin, 10) || 0), 0);
+    return {
+        totalSessions: total,
+        completedSessions: completed.length,
+        abandonedSessions: abandoned.length,
+        focusSessions: focus.length,
+        completedFocusSessions: completedFocus.length,
+        focusMinutes,
+        breakMinutes,
+        completionRate: pomoRate(completed.length, total),
+        focusCompletionRate: pomoRate(completedFocus.length, focus.length),
+    };
+}
+
+export function pomodoroReport({ period = "this-week", groupBy = "day" } = {}) {
+    const config = loadConfig();
+    const { sessions } = loadPomodoroHistory(config);
+    const now = Date.now();
+    const { from, to } = pomoResolvePeriodRange(period, now);
+    const rows = sessions.filter((s) => {
+        const t = Date.parse(s.started);
+        if (!Number.isFinite(t)) return false;
+        if (from != null && t < from) return false;
+        if (to != null && t >= to) return false;
+        return true;
+    });
+
+    const summary = { period, from, to, ...pomoSummarize(rows) };
+    let groups = [];
+
+    if (groupBy === "session") {
+        groups = rows
+            .slice()
+            .sort((a, b) => Date.parse(b.started) - Date.parse(a.started))
+            .map((s) => ({
+                key: String(s.id),
+                label: s.started,
+                type: s.type,
+                task: s.task || "",
+                started: s.started,
+                plannedMin: parseInt(s.plannedMin, 10) || 0,
+                actualMin: parseInt(s.actualMin, 10) || 0,
+                status: s.status,
+            }));
+    } else {
+        const buckets = new Map();
+        for (const s of rows) {
+            let key;
+            if (groupBy === "week") key = pomoIsoWeekKey(new Date(Date.parse(s.started)));
+            else if (groupBy === "task") key = s.task || "(no task)";
+            else key = pomoLocalDayKey(new Date(Date.parse(s.started)));
+            if (!buckets.has(key)) buckets.set(key, []);
+            buckets.get(key).push(s);
+        }
+        groups = Array.from(buckets.entries()).map(([key, list]) => {
+            const sum = pomoSummarize(list);
+            return { key, label: key, ...sum };
+        });
+        if (groupBy === "task") {
+            groups.sort((a, b) => b.focusMinutes - a.focusMinutes || b.completedFocusSessions - a.completedFocusSessions);
+        } else {
+            groups.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+        }
+    }
+
+    return { period, groupBy, summary, groups };
 }
 
 // ---------------------------------------------------------------------------
@@ -1199,7 +1311,28 @@ export function getConfig() {
         partition,
         migration: config.migration?.mode || "adopt",
         allowExternalPaths: config.storage.allowExternalPaths !== false,
+        pomodoro: {
+            focus: pomodoroDefaultMinutes("focus", config),
+            "short-break": pomodoroDefaultMinutes("short-break", config),
+            "long-break": pomodoroDefaultMinutes("long-break", config),
+        },
     };
+}
+
+// Persist the Pomodoro session durations block into the active config file.
+export function savePomodoroDurations(durations = {}) {
+    const status = configStatus();
+    if (!status.configured) throw Object.assign(new Error("CatPilot is not set up yet."), { code: "NOT_CONFIGURED" });
+    const config = loadConfig();
+    const next = { ...POMODORO_DEFAULTS, ...(config.pomodoro || {}) };
+    for (const key of Object.keys(POMODORO_DEFAULTS)) {
+        const n = parseInt(durations[key], 10);
+        if (Number.isFinite(n) && n > 0) next[key] = n;
+    }
+    config.pomodoro = next;
+    const { __baseDir, __configPath, ...clean } = config;
+    fs.writeFileSync(config.__configPath, JSON.stringify(clean, null, 2), "utf8");
+    return { pomodoro: next };
 }
 
 // Build a preview of what changing the config would do — no writes.

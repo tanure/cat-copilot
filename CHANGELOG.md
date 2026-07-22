@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 ## [0.7.0] - 2026-07-22
 
 ### Added
+- **Tasks calendar view (canvas).** Tasks gained a third view mode alongside List and
+  Board: a **📅 Calendar** with **Month / Week** layouts, ‹ › + **Today** navigation, and
+  the current day highlighted. Each day lists its due tasks as colour-coded chips (left
+  edge by priority); a **Fields** menu chooses which extra info shows on each chip
+  (Priority / Status / Tags — title always shown). Clicking a task opens the same detail
+  popup as the List view. Undated tasks are noted below the grid.
 - **Global persistent Pomodoro mini-timer (canvas).** A running Pomodoro now shows a
   floating dock pinned to the bottom-right corner that stays visible and keeps ticking on
   **every** view (Tasks, Dashboard, etc.), not just the Pomodoro page. The dock shows a

@@ -500,6 +500,10 @@
     // ---------- Tasks ----------
     let taskViewMode = localStorage.getItem("cp-task-view") || "list";
     let taskDueFilter = localStorage.getItem("cp-task-filter") || "all"; // all | today | 7days
+    // Calendar sub-view state.
+    let taskCalMode = localStorage.getItem("cp-task-cal-mode") || "month"; // month | week
+    let taskCalAnchorISO = todayISO(); // which month/week is in view (module-persistent across re-renders)
+    let taskCalFields = (localStorage.getItem("cp-task-cal-fields") || "priority").split(",").filter(Boolean);
 
     // Apply the active due-date filter. Today = due today or overdue;
     // 7days = due within the next 7 days (includes overdue). Undated tasks are
@@ -522,8 +526,20 @@
         // view switcher in topbar
         const seg = el("div", { class: "segmented" },
             el("button", { class: taskViewMode === "list" ? "active" : "", text: "☰ List", onclick: () => { taskViewMode = "list"; localStorage.setItem("cp-task-view", "list"); go("tasks"); } }),
-            el("button", { class: taskViewMode === "board" ? "active" : "", text: "▦ Board", onclick: () => { taskViewMode = "board"; localStorage.setItem("cp-task-view", "board"); go("tasks"); } }));
+            el("button", { class: taskViewMode === "board" ? "active" : "", text: "▦ Board", onclick: () => { taskViewMode = "board"; localStorage.setItem("cp-task-view", "board"); go("tasks"); } }),
+            el("button", { class: taskViewMode === "calendar" ? "active" : "", text: "📅 Calendar", onclick: () => { taskViewMode = "calendar"; localStorage.setItem("cp-task-view", "calendar"); go("tasks"); } }));
         actionsHost.append(seg);
+
+        // Calendar mode uses the full task set (the due-window filter would hide most
+        // days) and its own toolbar; list/board keep the existing due filter.
+        if (taskViewMode === "calendar") {
+            const holderCal = el("div", { id: "task-holder" });
+            root.append(buildCalendarToolbar(allTasks), holderCal);
+            if (!allTasks.length) { holderCal.append(emptyState("🗒️", "No tasks yet", "Capture your first task and it will show up on the calendar.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
+            renderTaskCalendar(holderCal, allTasks);
+            root._tasks = allTasks;
+            return;
+        }
 
         const filterSeg = el("div", { class: "segmented" },
             ...[["all", "All"], ["today", "Today"], ["7days", "7 days"]].map(([key, label]) =>
@@ -651,6 +667,128 @@
                 blocked ? statusBadge("Blocked") : null,
                 t.dueDate ? el("span", { class: dueClass(t.dueDate, done), text: t.dueDate }) : null));
         return card;
+    }
+
+    // ---------- Tasks · Calendar view ----------
+    const CAL_FIELD_OPTS = [["priority", "Priority"], ["status", "Status"], ["tags", "Tags"]];
+    const pad2 = (n) => String(n).padStart(2, "0");
+    function fmtLocalISO(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
+    function parseISO(s) { const [y, m, d] = String(s).split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); }
+    function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+    function startOfWeekMon(d) { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x; }
+
+    function buildCalendarToolbar(tasks) {
+        const anchor = parseISO(taskCalAnchorISO);
+        // Human title for the current window.
+        let title;
+        if (taskCalMode === "week") {
+            const ws = startOfWeekMon(anchor), we = addDays(ws, 6);
+            const opt = { month: "short", day: "numeric" };
+            title = `${ws.toLocaleDateString(undefined, opt)} – ${we.toLocaleDateString(undefined, opt)}, ${we.getFullYear()}`;
+        } else {
+            title = anchor.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+        }
+        const step = (dir) => {
+            const a = parseISO(taskCalAnchorISO);
+            if (taskCalMode === "week") { taskCalAnchorISO = fmtLocalISO(addDays(a, dir * 7)); }
+            else { taskCalAnchorISO = fmtLocalISO(new Date(a.getFullYear(), a.getMonth() + dir, 1)); }
+            go("tasks");
+        };
+        const modeSeg = el("div", { class: "segmented" },
+            ...[["month", "Month"], ["week", "Week"]].map(([k, l]) =>
+                el("button", { class: taskCalMode === k ? "active" : "", text: l,
+                    onclick: () => { taskCalMode = k; localStorage.setItem("cp-task-cal-mode", k); go("tasks"); } })));
+
+        // "Show fields" dropdown — pick which task info appears on each day chip.
+        const menu = el("div", { class: "cal-fields-menu" },
+            CAL_FIELD_OPTS.map(([key, label]) => {
+                const cb = el("input", { type: "checkbox", ...(taskCalFields.includes(key) ? { checked: "checked" } : {}) });
+                cb.addEventListener("change", () => {
+                    const set = new Set(taskCalFields);
+                    if (cb.checked) set.add(key); else set.delete(key);
+                    taskCalFields = [...set];
+                    localStorage.setItem("cp-task-cal-fields", taskCalFields.join(","));
+                    go("tasks");
+                });
+                return el("label", { class: "cal-fields-opt" }, cb, el("span", { text: label }));
+            }));
+        const fields = el("details", { class: "cal-fields" },
+            el("summary", { class: "btn", html: "▾ Fields" }), menu);
+
+        const nav = el("div", { class: "cal-nav" },
+            el("button", { class: "btn btn-ghost", html: "‹", title: "Previous", onclick: () => step(-1) }),
+            el("span", { class: "cal-title", text: title }),
+            el("button", { class: "btn btn-ghost", html: "›", title: "Next", onclick: () => step(1) }),
+            el("button", { class: "btn", text: "Today", onclick: () => { taskCalAnchorISO = todayISO(); go("tasks"); } }));
+
+        return el("div", { class: "toolbar cal-toolbar" },
+            el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }),
+            nav,
+            el("span", { class: "spacer" }),
+            fields,
+            modeSeg,
+            el("input", { class: "search", placeholder: "Search tasks…", oninput: (e) => filterTasks(e.target.value) }));
+    }
+
+    function renderTaskCalendar(holder, tasks) {
+        const anchor = parseISO(taskCalAnchorISO);
+        const todayIso = todayISO();
+        // Bucket dated tasks by day; count undated for a footnote.
+        const byDay = new Map();
+        let undated = 0;
+        for (const t of tasks) {
+            if (!t.dueDate) { undated++; continue; }
+            (byDay.get(t.dueDate) || byDay.set(t.dueDate, []).get(t.dueDate)).push(t);
+        }
+
+        const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        let start, count;
+        if (taskCalMode === "week") { start = startOfWeekMon(anchor); count = 7; }
+        else { start = startOfWeekMon(new Date(anchor.getFullYear(), anchor.getMonth(), 1)); count = 42; }
+
+        const grid = el("div", { class: `cal-grid ${taskCalMode === "week" ? "cal-week" : "cal-month"}` });
+        weekdays.forEach((w) => grid.append(el("div", { class: "cal-wd", text: w })));
+
+        for (let i = 0; i < count; i++) {
+            const day = addDays(start, i);
+            const iso = fmtLocalISO(day);
+            const inMonth = taskCalMode === "week" || day.getMonth() === anchor.getMonth();
+            const isToday = iso === todayIso;
+            const cell = el("div", { class: `cal-day${inMonth ? "" : " other"}${isToday ? " today" : ""}` });
+            cell.append(el("div", { class: "cal-daynum" },
+                el("span", { class: "cal-dow-sm", text: taskCalMode === "week" ? weekdays[i] + " " : "" }),
+                el("span", { text: String(day.getDate()) })));
+            const list = el("div", { class: "cal-day-list" });
+            const items = (byDay.get(iso) || []).slice().sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority));
+            items.forEach((t) => list.append(calChip(t)));
+            cell.append(list);
+            grid.append(cell);
+        }
+        holder.append(grid);
+        if (undated) holder.append(el("p", { class: "muted small", style: "margin-top:12px",
+            text: `${undated} task${undated > 1 ? "s" : ""} without a due date ${undated > 1 ? "are" : "is"} not shown on the calendar.` }));
+    }
+
+    function priorityRank(p) {
+        const s = String(p || "").toLowerCase();
+        if (s === "p0" || s === "high") return 0;
+        if (s === "p1") return 1;
+        if (s === "p2" || s === "med") return 2;
+        if (s === "p3" || s === "low") return 3;
+        return 4;
+    }
+
+    function calChip(t) {
+        const done = t.status.toLowerCase() === "done";
+        const chip = el("div", { class: `cal-chip pr-${priorityRank(t.priority)}${done ? " done" : ""}`,
+            dataset: { taskTitle: t.title }, title: t.title, onclick: () => taskDetail(t) });
+        chip.append(el("div", { class: "cal-chip-title", text: t.title }));
+        const meta = el("div", { class: "cal-chip-meta" });
+        if (taskCalFields.includes("priority") && t.priority) meta.append(priorityBadge(t.priority));
+        if (taskCalFields.includes("status")) meta.append(statusBadge(t.status));
+        if (taskCalFields.includes("tags") && t.tags) meta.append(tagChips(t.tags));
+        if (meta.childNodes.length) chip.append(meta);
+        return chip;
     }
 
     async function removeTask(t) {

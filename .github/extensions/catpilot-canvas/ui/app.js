@@ -1030,9 +1030,8 @@
     // ---------------------------------------------------------------- pomodoro
     const POMO_TYPES = [["focus", "Focus"], ["short-break", "Short break"], ["long-break", "Long break"]];
     const POMO_DEFAULT_MIN = { focus: 25, "short-break": 5, "long-break": 15 };
-    let pomoTick = null;
-
-    function stopPomoTick() { if (pomoTick) { clearInterval(pomoTick); pomoTick = null; } }
+    const POMO_TYPE_LABEL = { focus: "Focus", "short-break": "Short break", "long-break": "Long break" };
+    const POMO_LONG_BREAK_EVERY = 4; // classic Pomodoro: long break after every 4th focus
 
     function fmtClock(sec) {
         const s = Math.max(0, Math.round(sec));
@@ -1046,33 +1045,232 @@
         const svg = document.createElementNS(NS, "svg");
         svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
         svg.setAttribute("width", size); svg.setAttribute("height", size);
-        const cx = size / 2, cy = size / 2, r = size / 2 - 16, C = 2 * Math.PI * r;
+        const stroke = Math.max(4, Math.round(size * 0.064));
+        const inset = Math.max(6, Math.round(size * 0.073));
+        const cx = size / 2, cy = size / 2, r = size / 2 - inset, C = 2 * Math.PI * r;
         const frac = plannedSec > 0 ? Math.max(0, Math.min(1, remainingSec / plannedSec)) : 0;
         const track = document.createElementNS(NS, "circle");
         track.setAttribute("cx", cx); track.setAttribute("cy", cy); track.setAttribute("r", r);
-        track.setAttribute("fill", "none"); track.setAttribute("stroke", "var(--panel-2)"); track.setAttribute("stroke-width", 14);
+        track.setAttribute("fill", "none"); track.setAttribute("stroke", "var(--panel-2)"); track.setAttribute("stroke-width", stroke);
         svg.append(track);
         const arc = document.createElementNS(NS, "circle");
         arc.setAttribute("cx", cx); arc.setAttribute("cy", cy); arc.setAttribute("r", r);
         arc.setAttribute("fill", "none"); arc.setAttribute("stroke", remainingSec === 0 ? "#4caf7d" : "#ff6b6b");
-        arc.setAttribute("stroke-width", 14); arc.setAttribute("stroke-linecap", "round");
+        arc.setAttribute("stroke-width", stroke); arc.setAttribute("stroke-linecap", "round");
         arc.setAttribute("stroke-dasharray", `${C * frac} ${C}`);
         arc.setAttribute("transform", `rotate(-90 ${cx} ${cy})`);
         svg.append(arc);
-        const t1 = document.createElementNS(NS, "text");
-        t1.setAttribute("x", cx); t1.setAttribute("y", cy - 2); t1.setAttribute("text-anchor", "middle");
-        t1.setAttribute("font-size", "40"); t1.setAttribute("font-weight", "800"); t1.setAttribute("fill", "var(--text)");
-        t1.textContent = fmtClock(remainingSec);
-        const t2 = document.createElementNS(NS, "text");
-        t2.setAttribute("x", cx); t2.setAttribute("y", cy + 22); t2.setAttribute("text-anchor", "middle");
-        t2.setAttribute("font-size", "12"); t2.setAttribute("fill", "var(--text-faint)");
-        t2.textContent = remainingSec === 0 ? "done" : "remaining";
-        svg.append(t1, t2);
+        // Compact rings (dock) are pure progress indicators; text only on the large ring.
+        if (size >= 90) {
+            const t1 = document.createElementNS(NS, "text");
+            t1.setAttribute("x", cx); t1.setAttribute("y", cy - 2); t1.setAttribute("text-anchor", "middle");
+            t1.setAttribute("font-size", String(Math.round(size * 0.18))); t1.setAttribute("font-weight", "800"); t1.setAttribute("fill", "var(--text)");
+            t1.textContent = fmtClock(remainingSec);
+            const t2 = document.createElementNS(NS, "text");
+            t2.setAttribute("x", cx); t2.setAttribute("y", cy + Math.round(size * 0.1)); t2.setAttribute("text-anchor", "middle");
+            t2.setAttribute("font-size", String(Math.round(size * 0.055))); t2.setAttribute("fill", "var(--text-faint)");
+            t2.textContent = remainingSec === 0 ? "done" : "remaining";
+            svg.append(t1, t2);
+        }
         return svg;
     }
 
+    // ------------------------------------------------- global pomodoro controller
+    // A single app-wide loop drives BOTH the floating mini-timer dock and (when
+    // visible) the full Pomodoro page, so the timer keeps running regardless of the
+    // current view. Replaces the old view-local `pomoTick`.
+    const pomo = { active: null, remaining: 0, planned: 0, expiredHandled: false, durations: null };
+    let pomoLoop = null;
+    let pomoSyncAccum = 0;
+    let pomoPageUpdater = null; // set by VIEWS.pomodoro while it is mounted
+    let pomoNotifyAsked = false;
+
+    async function pomoDurations() {
+        if (pomo.durations) return pomo.durations;
+        try { const cfg = await api("/api/config"); pomo.durations = (cfg && cfg.pomodoro) || POMO_DEFAULT_MIN; }
+        catch { pomo.durations = POMO_DEFAULT_MIN; }
+        return pomo.durations;
+    }
+
+    function pomoAskNotifyPermission() {
+        if (pomoNotifyAsked) return;
+        pomoNotifyAsked = true;
+        try {
+            if (typeof Notification !== "undefined" && Notification.permission === "default") {
+                Notification.requestPermission().catch(() => {});
+            }
+        } catch { /* webview may not support Notifications */ }
+    }
+
+    function pomoBeep() {
+        try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            const ctx = new Ctx();
+            const now = ctx.currentTime;
+            [0, 0.18].forEach((offset, i) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = "sine";
+                osc.frequency.value = i === 0 ? 880 : 660;
+                gain.gain.setValueAtTime(0.0001, now + offset);
+                gain.gain.exponentialRampToValueAtTime(0.25, now + offset + 0.02);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.16);
+                osc.connect(gain); gain.connect(ctx.destination);
+                osc.start(now + offset); osc.stop(now + offset + 0.18);
+            });
+            setTimeout(() => { try { ctx.close(); } catch { /* */ } }, 600);
+        } catch { /* audio not available */ }
+    }
+
+    /** Re-fetch authoritative state from the server and refresh dock + page. */
+    async function pomoSync() {
+        let active = null;
+        try { const res = await api("/api/pomodoro/status"); active = res && res.active; } catch { return; }
+        const hadId = pomo.active ? pomo.active.startedAt : null;
+        const newId = active ? active.startedAt : null;
+        pomo.active = active || null;
+        if (active) {
+            // A different (new) session appeared -> reset expiry latch and ask for notifications.
+            if (newId !== hadId) { pomo.expiredHandled = false; pomoAskNotifyPermission(); }
+            pomo.planned = active.plannedSec;
+            pomo.remaining = active.remainingSec;
+            if (active.remainingSec === 0 && !pomo.expiredHandled) { pomo.expiredHandled = true; onPomoExpire(active); }
+        } else {
+            pomo.remaining = 0; pomo.planned = 0;
+        }
+        renderPomoDock();
+        if (pomoPageUpdater) pomoPageUpdater();
+    }
+
+    function startPomoLoop() {
+        if (pomoLoop) return;
+        pomoSyncAccum = 0;
+        pomoLoop = setInterval(async () => {
+            pomoSyncAccum += 1;
+            if (pomo.active) {
+                pomo.remaining = Math.max(0, pomo.remaining - 1);
+                if (pomo.remaining === 0 && !pomo.expiredHandled) {
+                    pomo.expiredHandled = true;
+                    onPomoExpire(pomo.active);
+                }
+                renderPomoDock();
+                if (pomoPageUpdater) pomoPageUpdater();
+            }
+            // Periodic re-sync (~15s) corrects drift and catches CLI/other-surface changes.
+            if (pomoSyncAccum >= 15) { pomoSyncAccum = 0; pomoSync(); }
+        }, 1000);
+    }
+
+    function stopPomoLoop() { if (pomoLoop) { clearInterval(pomoLoop); pomoLoop = null; } }
+
+    async function pomoAction(path) {
+        await api(path, { method: "POST", body: {} });
+        await pomoSync();
+        if (state.view === "pomodoro") go("pomodoro");
+    }
+
+    /** Render / update the floating mini-timer dock (persists across navigation). */
+    function renderPomoDock() {
+        const host = $("#pomo-dock");
+        if (!host) return;
+        const a = pomo.active;
+        if (!a) { host.classList.add("hidden"); host.innerHTML = ""; return; }
+        host.classList.remove("hidden");
+        host.classList.toggle("is-done", pomo.remaining === 0);
+        host.innerHTML = "";
+        const focusOn = a.task || a.label || "";
+        const typeLabel = POMO_TYPE_LABEL[a.type] || a.type;
+        const ringHost = el("div", { class: "pomo-dock-ring", title: "Open Pomodoro",
+            onclick: () => go("pomodoro") }, pomoRing(pomo.remaining, pomo.planned, 46));
+        const info = el("div", { class: "pomo-dock-info", title: "Open Pomodoro", onclick: () => go("pomodoro") },
+            el("div", { class: "pomo-dock-time", text: fmtClock(pomo.remaining) }),
+            el("div", { class: "pomo-dock-label" },
+                el("span", { class: `badge st-${a.type === "focus" ? "inprogress" : "open"}`, text: typeLabel }),
+                focusOn ? el("span", { class: "muted small pomo-dock-task", text: focusOn }) : null));
+        const controls = el("div", { class: "pomo-dock-controls" },
+            el("button", { class: "icon-btn pomo-dock-btn", title: "Complete", "aria-label": "Complete session", html: "✓",
+                onclick: async () => { try { await pomoAction("/api/pomodoro/complete"); toast("Pomodoro completed", "Logged 🍅", "ok"); } catch (e) { toast("Error", e.message, "err"); } } }),
+            el("button", { class: "icon-btn pomo-dock-btn", title: "Cancel", "aria-label": "Cancel session", html: "✕",
+                onclick: async () => { try { await pomoAction("/api/pomodoro/cancel"); toast("Pomodoro cancelled", "", ""); } catch (e) { toast("Error", e.message, "err"); } } }));
+        host.append(ringHost, info, controls);
+    }
+
+    /** Fired once when a running session's countdown reaches zero. */
+    async function onPomoExpire(session) {
+        const finishedType = session.type;
+        const finishedTask = session.task || session.label || "";
+        pomoBeep();
+        try {
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+                new Notification("CatPilot 🍅", {
+                    body: finishedType === "focus" ? "Focus session done — time for a break?" : "Break's over — back to focus?",
+                    silent: true,
+                });
+            }
+        } catch { /* best-effort only */ }
+        toast("Time! ⏰", finishedType === "focus" ? "Focus session finished 🍅" : "Break finished", "ok");
+        renderPomoDock();
+
+        const durations = await pomoDurations();
+        const min = (t) => parseInt(durations[t], 10) || POMO_DEFAULT_MIN[t];
+
+        // Log the finished session, then start the chosen next one (if any).
+        async function choose(nextType, carryTask) {
+            try {
+                await api("/api/pomodoro/complete", { method: "POST", body: {} });
+                if (nextType) {
+                    const body = { type: nextType, minutes: min(nextType) };
+                    if (nextType === "focus" && carryTask) body.task = carryTask;
+                    await api("/api/pomodoro", { method: "POST", body });
+                    toast("Started", POMO_TYPE_LABEL[nextType], "ok");
+                }
+            } catch (e) { toast("Error", e.message, "err"); }
+            closeModal();
+            await pomoSync();
+            if (state.view === "pomodoro") go("pomodoro");
+        }
+
+        let suggestLong = false;
+        if (finishedType === "focus") {
+            try {
+                const stats = await api("/api/pomodoro/stats?period=today");
+                const done = parseInt(stats && stats.focusSessions, 10) || 0;
+                suggestLong = done > 0 && done % POMO_LONG_BREAK_EVERY === 0;
+            } catch { /* default to short */ }
+        }
+
+        const btn = (label, cls, onclick) => el("button", { class: `btn ${cls}`, html: label, onclick });
+        let foot;
+        let bodyText;
+        if (finishedType === "focus") {
+            bodyText = suggestLong
+                ? `Nice work — that's ${POMO_LONG_BREAK_EVERY} focus sessions. Time for a long break?`
+                : "Focus session complete. Take a short break?";
+            foot = el("div", { class: "toolbar", style: "flex-wrap:wrap;gap:8px" },
+                btn(`☕ Short break (${min("short-break")}m)`, suggestLong ? "" : "btn-primary", () => choose("short-break")),
+                btn(`🛋️ Long break (${min("long-break")}m)`, suggestLong ? "btn-primary" : "", () => choose("long-break")),
+                btn(`🍅 Another focus (${min("focus")}m)`, "", () => choose("focus", finishedTask)),
+                btn("Skip", "", () => choose(null)));
+        } else {
+            bodyText = "Break's over. Ready to focus again?";
+            foot = el("div", { class: "toolbar", style: "flex-wrap:wrap;gap:8px" },
+                btn(`🍅 Start focus (${min("focus")}m)`, "btn-primary", () => choose("focus")),
+                btn("Skip", "", () => choose(null)));
+        }
+        openModal({
+            title: finishedType === "focus" ? "Focus session done 🍅" : "Break over ☕",
+            width: 460,
+            body: el("div", {},
+                el("p", { text: bodyText }),
+                finishedTask ? el("p", { class: "muted small", text: `Was focusing on: ${finishedTask}` }) : null,
+                el("p", { class: "muted small", text: "You decide — nothing starts automatically." })),
+            foot,
+        });
+    }
+
     VIEWS.pomodoro = async (root) => {
-        stopPomoTick();
+        pomoPageUpdater = null;
         const [{ active }, stats, { sessions }, cfg] = await Promise.all([
             api("/api/pomodoro/status"),
             api("/api/pomodoro/stats?period=today"),
@@ -1080,47 +1278,50 @@
             api("/api/config").catch(() => ({})),
         ]);
         const durations = (cfg && cfg.pomodoro) || POMO_DEFAULT_MIN;
+        pomo.durations = durations;
         root.innerHTML = "";
 
         const timerCard = el("div", { class: "card", style: "text-align:center;padding:24px" });
         root.append(timerCard);
 
-        function renderTimer(activeSession) {
-            timerCard.innerHTML = "";
-            if (activeSession) {
-                const ringHost = el("div", { class: "pomo-ring" }, pomoRing(activeSession.remainingSec, activeSession.plannedSec));
-                const focusOn = activeSession.task || activeSession.label || activeSession.type;
-                timerCard.append(
-                    ringHost,
-                    el("div", { class: "pomo-meta" },
-                        el("span", { class: "badge st-inprogress", text: activeSession.type }),
-                        el("span", { class: "muted", text: `🎯 ${focusOn}` })),
-                    el("div", { class: "toolbar", style: "justify-content:center;margin-top:16px" },
-                        el("button", { class: "btn btn-primary", html: "✓ Complete", onclick: async () => {
-                            try { await api("/api/pomodoro/complete", { method: "POST", body: {} }); toast("Pomodoro completed", "Logged 🍅", "ok"); go("pomodoro"); }
-                            catch (e) { toast("Error", e.message, "err"); }
-                        } }),
-                        el("button", { class: "btn", html: "✕ Cancel", onclick: async () => {
-                            try { await api("/api/pomodoro/cancel", { method: "POST", body: {} }); toast("Pomodoro cancelled", "", ""); go("pomodoro"); }
-                            catch (e) { toast("Error", e.message, "err"); }
-                        } })));
+        let pageRingHost = null;
+        let pageRenderedFor = "__init__"; // startedAt of the session the page structure was built for
 
-                stopPomoTick();
-                let remaining = activeSession.remainingSec;
-                const planned = activeSession.plannedSec;
-                pomoTick = setInterval(() => {
-                    if (state.view !== "pomodoro") { stopPomoTick(); return; }
-                    remaining = Math.max(0, remaining - 1);
-                    ringHost.innerHTML = "";
-                    ringHost.append(pomoRing(remaining, planned));
-                    if (remaining === 0) { stopPomoTick(); toast("Time!", "Pomodoro finished 🔔", "ok"); setTimeout(() => { if (state.view === "pomodoro") go("pomodoro"); }, 800); }
-                }, 1000);
-            } else {
-                renderStartForm();
-            }
+        function renderRunning(activeSession) {
+            timerCard.innerHTML = "";
+            pageRingHost = el("div", { class: "pomo-ring" }, pomoRing(pomo.remaining, pomo.planned, 220));
+            const focusOn = activeSession.task || activeSession.label || activeSession.type;
+            timerCard.append(
+                pageRingHost,
+                el("div", { class: "pomo-meta" },
+                    el("span", { class: "badge st-inprogress", text: activeSession.type }),
+                    el("span", { class: "muted", text: `🎯 ${focusOn}` })),
+                el("div", { class: "toolbar", style: "justify-content:center;margin-top:16px" },
+                    el("button", { class: "btn btn-primary", html: "✓ Complete", onclick: async () => {
+                        try { await api("/api/pomodoro/complete", { method: "POST", body: {} }); toast("Pomodoro completed", "Logged 🍅", "ok"); await pomoSync(); go("pomodoro"); }
+                        catch (e) { toast("Error", e.message, "err"); }
+                    } }),
+                    el("button", { class: "btn", html: "✕ Cancel", onclick: async () => {
+                        try { await api("/api/pomodoro/cancel", { method: "POST", body: {} }); toast("Pomodoro cancelled", "", ""); await pomoSync(); go("pomodoro"); }
+                        catch (e) { toast("Error", e.message, "err"); }
+                    } })));
         }
 
+        // The global loop calls this every second while the Pomodoro page is mounted.
+        pomoPageUpdater = () => {
+            if (state.view !== "pomodoro") return;
+            const a = pomo.active;
+            const id = a ? a.startedAt : null;
+            if (id !== pageRenderedFor) {
+                pageRenderedFor = id;
+                if (a) renderRunning(a); else renderStartForm();
+                return;
+            }
+            if (a && pageRingHost) pageRingHost.replaceChildren(pomoRing(pomo.remaining, pomo.planned, 220));
+        };
+
         async function renderStartForm() {
+            pageRingHost = null;
             timerCard.innerHTML = "";
             const f = {};
             let tasks = [];
@@ -1143,12 +1344,15 @@
                 el("div", { class: "toolbar", style: "justify-content:center;margin-top:16px" },
                     el("button", { class: "btn btn-primary", html: "▶ Start", onclick: async () => {
                         const body = { type: typeSel.value, minutes: parseInt(minutes.value, 10) || undefined, task: taskSel.value || undefined };
-                        try { await api("/api/pomodoro", { method: "POST", body }); toast("Pomodoro started", body.type, "ok"); go("pomodoro"); }
+                        try { await api("/api/pomodoro", { method: "POST", body }); toast("Pomodoro started", body.type, "ok"); await pomoSync(); go("pomodoro"); }
                         catch (e) { toast("Error", e.message, "err"); }
                     } })));
         }
 
-        renderTimer(active);
+        // Seed the page from the controller's authoritative state.
+        pomo.active = active || null;
+        if (active) { pomo.planned = active.plannedSec; pomo.remaining = active.remainingSec; renderRunning(active); pageRenderedFor = active.startedAt; }
+        else { pomo.remaining = 0; pomo.planned = 0; await renderStartForm(); pageRenderedFor = null; }
 
         // Stats strip (today)
         root.append(el("div", { class: "grid stat-grid", style: "margin-top:16px" },
@@ -1468,6 +1672,8 @@
     async function startApp() {
         $("#app").classList.remove("hidden");
         await refreshSummary();
+        await pomoSync();
+        startPomoLoop();
         const initial = (location.hash || "").replace("#", "");
         go(NAV.some((n) => n.id === initial) ? initial : "dashboard");
     }

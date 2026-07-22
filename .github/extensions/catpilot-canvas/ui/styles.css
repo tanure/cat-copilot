@@ -317,6 +317,14 @@ table.tbl tr:focus-within .row-actions { opacity: 1; }
 .pomo-dock-controls { display: flex; gap: 6px; margin-left: 4px; padding-left: 10px; border-left: 1px solid var(--border-soft); }
 .pomo-dock-btn { width: 32px; height: 32px; font-size: 13px; border-radius: 9px; }
 .pomo-dock-btn:hover { background: var(--panel-hover); }
+.pomo-dock-stop:hover { background: rgba(255,107,107,.16); color: #ff8080; }
+.pomo-dock.is-paused { opacity: .92; }
+.pomo-dock.is-paused .pomo-dock-time { color: var(--text-muted); }
+/* Session-type & paused badges */
+.badge.st-focus { background: rgba(255,107,107,.16); color: #ff8080; border-color: transparent; }
+.badge.st-short { background: rgba(53,200,143,.16); color: #35c88f; border-color: transparent; }
+.badge.st-long { background: rgba(90,169,255,.16); color: #5aa9ff; border-color: transparent; }
+.badge.st-paused { background: rgba(255,176,32,.16); color: #ffb020; border-color: transparent; }
 @keyframes pomoPulse {
     0%, 100% { box-shadow: var(--shadow-lg); }
     50% { box-shadow: 0 0 0 3px color-mix(in srgb, #4caf7d 35%, transparent), var(--shadow-lg); }

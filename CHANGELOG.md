@@ -6,12 +6,21 @@ All notable changes to this project are documented in this file.
 
 ### Added
 - **Global persistent Pomodoro mini-timer (canvas).** A running Pomodoro now shows a
-  floating dock pinned to the bottom-left corner that stays visible and keeps ticking on
+  floating dock pinned to the bottom-right corner that stays visible and keeps ticking on
   **every** view (Tasks, Dashboard, etc.), not just the Pomodoro page. The dock shows a
-  live ring + MM:SS, the session type/task, and **Complete/Cancel** controls; clicking it
-  opens the full Pomodoro page. A single app-wide timer loop now drives both the dock and
-  the Pomodoro page (and re-syncs with the server every ~15s, so a session started from the
-  CLI also surfaces in the canvas).
+  live ring + MM:SS, a colour-coded session-type badge (focus / short break / long break),
+  and **Pause / Resume / Stop** controls; clicking it opens the full Pomodoro page. A single
+  app-wide timer loop now drives both the dock and the Pomodoro page (and re-syncs with the
+  server every ~15s, so a session started from the CLI also surfaces in the canvas).
+- **Pause / Resume.** Sessions can be paused and resumed from the dock or the Pomodoro page;
+  the countdown freezes while paused and continues seamlessly on resume (backed by
+  `POST /api/pomodoro/pause` and `/resume`, modelled via a `pausedAt` stamp so it survives
+  process death like the rest of the timer).
+- **Per-type colours.** The progress ring and status badge are colour-coded by session type
+  (focus = red, short break = green, long break = blue) so the running type is obvious.
+- **Dashboard focus analytics + period filter.** The dashboard gained a **Today / Week /
+  Month** filter and a 🍅 Focus section (focus sessions, focus time, completed, abandoned)
+  driven by that filter.
 - **End-of-session notification + break suggestion.** When a session's countdown reaches
   zero you get a sound, a best-effort OS/browser notification, and an in-app prompt. After a
   **focus** session it suggests a **Short break / Long break / Another focus / Skip** (long

@@ -118,6 +118,8 @@ async function handleApi(req, url) {
     if (p === "/api/pomodoro/report" && m === "GET") return store.pomodoroReport({ period: url.searchParams.get("period") || "this-week", groupBy: url.searchParams.get("by") || "day" });
     if (p === "/api/pomodoro/complete" && m === "POST") return store.pomodoroComplete(await readBody(req));
     if (p === "/api/pomodoro/cancel" && m === "POST") return store.pomodoroCancel(await readBody(req));
+    if (p === "/api/pomodoro/pause" && m === "POST") return store.pomodoroPause(await readBody(req));
+    if (p === "/api/pomodoro/resume" && m === "POST") return store.pomodoroResume(await readBody(req));
     if (p === "/api/pomodoro" && m === "GET") return store.pomodoroList({ limit: Number(url.searchParams.get("limit")) || undefined });
     if (p === "/api/pomodoro" && m === "POST") return store.pomodoroStart(await readBody(req));
 

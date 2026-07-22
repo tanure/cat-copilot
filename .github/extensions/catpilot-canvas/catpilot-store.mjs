@@ -332,9 +332,12 @@ function decoratePomodoro(session, at = Date.now()) {
     if (!session) return null;
     const started = Date.parse(session.startedAt);
     const plannedSec = Math.round((session.plannedMin || 0) * 60);
-    const elapsedSec = Math.max(0, Math.round((at - started) / 1000));
+    // While paused the clock freezes: measure elapsed up to the pause instant.
+    const paused = !!session.pausedAt;
+    const effectiveAt = paused ? Date.parse(session.pausedAt) : at;
+    const elapsedSec = Math.max(0, Math.round((effectiveAt - started) / 1000));
     const remainingSec = Math.max(0, plannedSec - elapsedSec);
-    return { ...session, elapsedSec, remainingSec, plannedSec, isExpired: remainingSec === 0 };
+    return { ...session, paused, elapsedSec, remainingSec, plannedSec, isExpired: remainingSec === 0 };
 }
 
 function readPomodoroActive(config) {
@@ -463,6 +466,31 @@ export function pomodoroCancel(params = {}) {
     const record = appendPomodoro(config, active, "abandoned", params.notes);
     fs.rmSync(pomodoroActivePath(config), { force: true });
     return { record };
+}
+
+export function pomodoroPause() {
+    const config = loadConfig();
+    const active = readPomodoroActive(config);
+    if (!active) throw new Error("No Pomodoro session is currently running.");
+    if (!active.pausedAt) {
+        active.pausedAt = new Date().toISOString();
+        fs.writeFileSync(pomodoroActivePath(config), JSON.stringify(active, null, 2), "utf8");
+    }
+    return { active: decoratePomodoro(active) };
+}
+
+export function pomodoroResume() {
+    const config = loadConfig();
+    const active = readPomodoroActive(config);
+    if (!active) throw new Error("No Pomodoro session is currently running.");
+    if (active.pausedAt) {
+        // Shift startedAt forward by the paused span so remaining continues seamlessly.
+        const pausedFor = Date.now() - Date.parse(active.pausedAt);
+        active.startedAt = new Date(Date.parse(active.startedAt) + Math.max(0, pausedFor)).toISOString();
+        delete active.pausedAt;
+        fs.writeFileSync(pomodoroActivePath(config), JSON.stringify(active, null, 2), "utf8");
+    }
+    return { active: decoratePomodoro(active) };
 }
 
 export function pomodoroList({ limit } = {}) {

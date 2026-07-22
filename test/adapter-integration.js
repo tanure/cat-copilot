@@ -32,7 +32,8 @@ fs.writeFileSync(
       allowExternalPaths: true,
       files: {
         tasks: 'tasks.md', journal: 'journal.md', milestones: 'milestones.md',
-        memos: 'memos', learning: 'learning', growth: 'growth', projects: 'projects'
+        memos: 'memos', learning: 'learning', growth: 'growth', projects: 'projects',
+        pomodoro: 'pomodoro.md'
       }
     },
     migration: { mode: 'move' }
@@ -111,6 +112,29 @@ async function testClaudeAdapter() {
     logTest('claude', 'add_task validation', false, err.message);
   }
 
+  // Test 3b: Blocked status round-trip (regression for the data-loss bug where
+  // any status other than Open/Done was silently dropped on save).
+  try {
+    const added = await claudeTools.add_task({ title: 'Blocked task from adapter', status: 'Blocked' });
+    const setRes = await claudeTools.set_task_status({ id: added.data?.id, status: 'Blocked' });
+    const listRes = await claudeTools.list_tasks({ status: 'blocked' });
+    const survived = listRes.data?.some(t => t.id === added.data?.id && t.status === 'Blocked');
+    const ok = added.success && added.data?.status === 'Blocked' && setRes.success && survived;
+    logTest('claude', 'blocked status round-trip', ok,
+      ok ? `Task #${added.data?.id} persisted as Blocked` : 'Blocked task was dropped or miscounted');
+  } catch (err) {
+    logTest('claude', 'blocked status round-trip', false, err.message);
+  }
+
+  // Test 3c: set_task_status validation
+  try {
+    const bad = await claudeTools.set_task_status({ id: 999999, status: 'Nope' });
+    logTest('claude', 'set_task_status validation', !bad.success,
+      'Correctly rejected invalid status');
+  } catch (err) {
+    logTest('claude', 'set_task_status validation', false, err.message);
+  }
+
   // Test 4: list_journal
   try {
     const journalResult = await claudeTools.list_journal({ days: 7 });
@@ -159,6 +183,44 @@ async function testClaudeAdapter() {
       'Tool dispatcher working');
   } catch (err) {
     logTest('claude', 'handleToolCall dispatcher', false, err.message);
+  }
+
+  // Test 9: pomodoro start → status → complete
+  try {
+    const startRes = await claudeTools.pomodoro_start({ type: 'focus', minutes: 25, task: 'Test task from adapter', force: true });
+    const statusRes = await claudeTools.pomodoro_status();
+    const completeRes = await claudeTools.pomodoro_complete({ notes: 'integration test' });
+    const ok = startRes.success && statusRes.success && statusRes.data?.remainingSec >= 0
+      && completeRes.success && completeRes.data?.status === 'completed';
+    logTest('claude', 'pomodoro start/status/complete', ok,
+      `Logged session #${completeRes.data?.id} (${completeRes.data?.type})`);
+  } catch (err) {
+    logTest('claude', 'pomodoro start/status/complete', false, err.message);
+  }
+
+  // Test 10: pomodoro cancel + stats
+  try {
+    await claudeTools.pomodoro_start({ type: 'short-break', force: true });
+    const cancelRes = await claudeTools.pomodoro_cancel({ notes: 'abandoned in test' });
+    const statsRes = await claudeTools.pomodoro_stats({ period: 'all' });
+    const ok = cancelRes.success && cancelRes.data?.status === 'abandoned'
+      && statsRes.success && typeof statsRes.data?.completedSessions === 'number';
+    logTest('claude', 'pomodoro cancel/stats', ok,
+      `${statsRes.data?.completedSessions} completed, ${statsRes.data?.focusMinutes} focus min`);
+  } catch (err) {
+    logTest('claude', 'pomodoro cancel/stats', false, err.message);
+  }
+
+  // Test 11: pomodoro_report (grouped productivity)
+  try {
+    const repRes = await claudeTools.pomodoro_report({ period: 'all', groupBy: 'day' });
+    const s = repRes.data?.summary;
+    const ok = repRes.success && s && typeof s.completionRate === 'number'
+      && typeof s.completedFocusSessions === 'number' && Array.isArray(repRes.data?.groups);
+    logTest('claude', 'pomodoro report (by day)', ok,
+      `${s?.totalSessions} sessions, ${Math.round((s?.completionRate || 0) * 100)}% completion, ${repRes.data?.groups?.length} group(s)`);
+  } catch (err) {
+    logTest('claude', 'pomodoro report (by day)', false, err.message);
   }
 }
 

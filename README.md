@@ -59,6 +59,13 @@ studies, and growth/review prep:
 - **`learning`** — certification & study tracker (goals, target dates, progress).
 - **`growth`** — accomplishment / brag-doc log + neutral review-prep summaries.
 - **`project-tracker`** — lightweight per-project status rollups.
+- **`pomodoro`** — focus timers with **configurable** focus/short-break/long-break
+  durations (default 25/5/15, set in `config.json` / setup / canvas settings) modeled
+  as timestamp + duration, so a running session is consistent across the CLI, MCP and
+  canvas and survives process restarts; sessions can optionally link to a task and are
+  logged to a partitioned `pomodoro.md` history. Includes **productivity reports** (by
+  session/day/week/task) measuring completed focus sessions, focus minutes, and
+  completion rate.
 - **`sanitize`** — a pre-write guardrail that flags employer-internal details before they
   ever hit disk, so growth/review content stays shareable.
 
@@ -86,10 +93,17 @@ so anyone can install it in one command (see [Install the canvas](#install-the-c
 What you get in the canvas:
 
 - **Dashboard** — hero, summary cards, last-3-days activity, charts, and productivity nudges.
-- **Tasks** — switch between **list (table)** and **board (kanban)** views, complete inline,
-  drag to done, edit/save locally, and open a detail popup — plus an add button.
+- **Tasks** — switch between **list (table)** and **board (kanban)** views with an
+  **Overdue · To do · Blocked · Done** board, pick a status (To do / Blocked / Done) on
+  create/edit, filter by due date (**All · Today · 7 days**), complete inline, drag between
+  columns, edit/save locally, and open a detail popup — plus an add button.
 - **Journal, Milestones, Memos** — browse, add, and open full detail views (memos render markdown).
 - **Learning, Growth, Projects** — card views with add buttons and detail popups.
+- **Pomodoro** — a live countdown ring for the running session, start controls
+  (type + minutes + optional task picker), complete/cancel, a today stats strip,
+  a recent-sessions table, and a **Productivity** section with a period/grouping
+  selector, focus-minutes bar chart, completion donut, and grouped table — all backed
+  by the same files the CLI/MCP use. Session durations are editable from **Settings**.
 - **Reports** — generate GitHub Copilot **executive reports** for any period (this week, last
   month, all time…), open them (markdown or HTML), and delete. Shares the same reports folder
   as the `report-generator` skill.
@@ -191,6 +205,10 @@ Today, `cat-tui` is a separate executable, not something embedded inside Copilot
 | List memos | Yes | Yes | Yes |
 | Read memo content | Yes | No | No |
 | Milestones | Yes | No | No |
+| Pomodoro timer (start/stop/status) | Yes | Yes | No |
+| Pomodoro history & stats | Yes | Yes | No |
+| Pomodoro productivity reports | Yes | Yes | No |
+| Configurable Pomodoro durations | Yes | Yes | No |
 | Daily summaries | Yes | No | No |
 | Executive reports | Yes | No | No |
 
@@ -374,8 +392,12 @@ cat-pilot doctor
 
 ```bash
 cat-pilot task add "Draft Q2 planning notes" --due 2026-03-25 --priority P1 --tags planning,leadership --context "Need first draft before leadership sync"
+cat-pilot task add "Waiting on legal sign-off" --status Blocked
 cat-pilot task list
 cat-pilot task list --status all
+cat-pilot task list --status blocked
+cat-pilot task block 12
+cat-pilot task unblock 12
 cat-pilot task complete 12
 cat-pilot task remove 12
 ```
@@ -528,7 +550,7 @@ npm update -g @alberttanure/catpilot-cli
 
 ## Release Notes
 
-- Current version: **v0.1.10**
+- Current version: **v0.4.0**
 - Changelog: [CHANGELOG.md](https://github.com/tanure/cat-copilot/blob/main/CHANGELOG.md)
 - GitHub releases: [Releases](https://github.com/tanure/cat-copilot/releases)
 

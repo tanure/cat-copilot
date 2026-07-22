@@ -36,7 +36,8 @@ function assert(cond, msg) {
         allowExternalPaths: true,
         files: {
           tasks: 'tasks.md', journal: 'journal.md', milestones: 'milestones.md',
-          memos: 'memos', learning: 'learning', growth: 'growth', projects: 'projects'
+          memos: 'memos', learning: 'learning', growth: 'growth', projects: 'projects',
+          pomodoro: 'pomodoro.md'
         }
       },
       migration: { mode: 'move' }
@@ -57,8 +58,10 @@ function assert(cond, msg) {
   const names = tools.map(t => t.name);
   console.log('Tools:', names.join(', '), '\n');
 
-  const expected = ['task_add', 'task_list', 'journal_add', 'memo_create',
-    'learning_add', 'growth_add', 'project_add', 'config_info'];
+  const expected = ['task_add', 'task_list', 'task_set_status', 'journal_add', 'memo_create',
+    'learning_add', 'growth_add', 'project_add', 'config_info',
+    'pomodoro_start', 'pomodoro_status', 'pomodoro_complete',
+    'pomodoro_cancel', 'pomodoro_list', 'pomodoro_stats', 'pomodoro_report'];
   for (const name of expected) assert(names.includes(name), `exposes ${name}`);
 
   const add = await client.callTool({ name: 'task_add', arguments: { title: 'Smoke test task', priority: 'P1' } });
@@ -67,11 +70,31 @@ function assert(cond, msg) {
   const list = await client.callTool({ name: 'task_list', arguments: { status: 'all' } });
   assert(list.content[0].text.includes('Smoke test task'), 'task_list returns the added task');
 
+  // Blocked status flows through task_set_status and survives a re-list (regression).
+  const addBlocked = await client.callTool({ name: 'task_add', arguments: { title: 'Blocked smoke task', status: 'Blocked' } });
+  assert(!addBlocked.isError && addBlocked.content[0].text.includes('Blocked'), 'task_add accepts Blocked status');
+  const blockedList = await client.callTool({ name: 'task_list', arguments: { status: 'blocked' } });
+  assert(blockedList.content[0].text.includes('Blocked smoke task'), 'task_list surfaces the Blocked task (not dropped)');
+  const setStatus = await client.callTool({ name: 'task_set_status', arguments: { id: 1, status: 'Blocked' } });
+  assert(!setStatus.isError && setStatus.content[0].text.includes('Blocked'), 'task_set_status updates status');
+
   const learn = await client.callTool({ name: 'learning_add', arguments: { title: 'AZ-104', goal: 'Pass cert', target_date: '2026-09-01' } });
   assert(!learn.isError && learn.content[0].text.includes('learning'), 'learning_add creates a frontmatter note');
 
   const cfg = await client.callTool({ name: 'config_info', arguments: {} });
   assert(cfg.content[0].text.includes('partition'), 'config_info returns resolved paths');
+
+  const pomoStart = await client.callTool({ name: 'pomodoro_start', arguments: { type: 'focus', minutes: 25, force: true } });
+  assert(!pomoStart.isError, 'pomodoro_start begins a session');
+
+  const pomoStatus = await client.callTool({ name: 'pomodoro_status', arguments: {} });
+  assert(!pomoStatus.isError && pomoStatus.content[0].text.includes('remainingSec'), 'pomodoro_status reports live timing');
+
+  const pomoComplete = await client.callTool({ name: 'pomodoro_complete', arguments: { notes: 'smoke' } });
+  assert(!pomoComplete.isError && pomoComplete.content[0].text.includes('completed'), 'pomodoro_complete logs the session');
+
+  const pomoReport = await client.callTool({ name: 'pomodoro_report', arguments: { period: 'all', groupBy: 'day' } });
+  assert(!pomoReport.isError && pomoReport.content[0].text.includes('completionRate') && pomoReport.content[0].text.includes('groups'), 'pomodoro_report returns grouped productivity data');
 
   await client.close();
   fs.rmSync(tmp, { recursive: true, force: true });

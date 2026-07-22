@@ -14,10 +14,17 @@ const __dirname = dirname(__filename);
 const program = new Command();
 const pluginRoot = path.resolve(__dirname, '..');
 
+// Single source of truth for the version: package.json (prevents the drift where
+// the CLI, MCP server and plugin manifest each hard-code a different number).
+let pkgVersion = '0.0.0';
+try {
+  pkgVersion = JSON.parse(fs.readFileSync(path.join(pluginRoot, 'package.json'), 'utf8')).version || pkgVersion;
+} catch { /* fall back to placeholder */ }
+
 program
   .name('cat-pilot')
   .description('CatPilot CLI: Standalone terminal tool for tasks, memos, journal, and milestones')
-  .version('0.2.2');
+  .version(pkgVersion);
 
 // ============================================================================
 // SETUP COMMANDS
@@ -104,6 +111,14 @@ const taskCmd = program
   .command('task')
   .description('Manage tasks');
 
+const TASK_STATUSES = ['Open', 'Blocked', 'Done'];
+function normalizeTaskStatus(value, fallback = 'Open') {
+  if (value === undefined || value === null || value === '') return fallback;
+  const match = TASK_STATUSES.find(s => s.toLowerCase() === String(value).trim().toLowerCase());
+  if (!match) throw new Error(`Invalid status "${value}". Use one of: ${TASK_STATUSES.join(', ')}`);
+  return match;
+}
+
 taskCmd
   .command('add <title>')
   .description('Add new task')
@@ -111,6 +126,7 @@ taskCmd
   .option('--priority <priority>', 'Priority (P0|P1|P2|P3)')
   .option('--tags <tags>', 'Tags (comma-separated)')
   .option('--context <context>', 'Context or notes')
+  .option('--status <status>', 'Status (Open|Blocked|Done)', 'Open')
   .action(async (title, options) => {
     try {
       const config = cliUtils.loadConfig();
@@ -118,9 +134,10 @@ taskCmd
       const content = cliUtils.readFileOrCreate(tasksPath, '## Open Tasks\n\n| ID | Status | Title | Due Date | Priority | Tags | Context |\n| --- | --- | --- | --- | --- | --- | --- |\n');
       const tasks = cliUtils.parseTasksTable(content);
 
+      const status = normalizeTaskStatus(options.status);
       const newTask = {
         id: cliUtils.getNextTaskId(tasks),
-        status: 'Open',
+        status,
         title,
         dueDate: options.due || '',
         priority: options.priority || '',
@@ -137,6 +154,7 @@ taskCmd
       console.log(`   📌 ID #${newTask.id}: ${title}`);
       if (options.due) console.log(`   📅 Due: ${options.due}`);
       if (options.priority) console.log(`   ⚡ Priority: ${options.priority}`);
+      if (status !== 'Open') console.log(`   🚦 Status: ${status}`);
     } catch (err) {
       console.error(`❌ Error: ${err.message}`);
       process.exit(1);
@@ -146,7 +164,7 @@ taskCmd
 taskCmd
   .command('list')
   .description('List tasks')
-  .option('--status <status>', 'Filter by status (open|done|all)', 'open')
+  .option('--status <status>', 'Filter by status (open|blocked|done|all)', 'open')
   .action((options) => {
     try {
       const config = cliUtils.loadConfig();
@@ -203,6 +221,38 @@ taskCmd
       console.error(`❌ Error: ${err.message}`);
       process.exit(1);
     }
+  });
+
+function setTaskStatusCli(id, status) {
+  const config = cliUtils.loadConfig();
+  const tasksPath = cliUtils.resolveFilePath('tasks', config);
+  const content = cliUtils.readFileOrCreate(tasksPath);
+  const tasks = cliUtils.parseTasksTable(content);
+
+  const task = tasks.find(t => t.id === parseInt(id, 10));
+  if (!task) {
+    console.error(`❌ Task #${id} not found`);
+    process.exit(1);
+  }
+  task.status = normalizeTaskStatus(status);
+  fs.writeFileSync(tasksPath, cliUtils.formatTasksTable(tasks), 'utf8');
+  console.log(`\n✅ Task #${id} status set to ${task.status}`);
+}
+
+taskCmd
+  .command('block <id>')
+  .description('Mark task as Blocked')
+  .action((id) => {
+    try { setTaskStatusCli(id, 'Blocked'); }
+    catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
+  });
+
+taskCmd
+  .command('unblock <id>')
+  .description('Move a Blocked task back to Open')
+  .action((id) => {
+    try { setTaskStatusCli(id, 'Open'); }
+    catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
   });
 
 taskCmd
@@ -344,6 +394,239 @@ memoCmd
       console.log();
     } catch (err) {
       console.error(`❌ Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+// ============================================================================
+// POMODORO COMMANDS
+// ============================================================================
+
+import * as pomodoro from '../lib/pomodoro.js';
+
+function fmtRemaining(sec) {
+  const s = Math.max(0, Math.round(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
+}
+
+function printActive(active) {
+  console.log(`   ⏱️  ${active.type} — ${fmtRemaining(active.remainingSec)} left of ${active.plannedMin} min`);
+  if (active.task) console.log(`   🎯 Task: ${active.task}`);
+  else if (active.label) console.log(`   🏷️  ${active.label}`);
+}
+
+const pomodoroCmd = program
+  .command('pomodoro')
+  .alias('pomo')
+  .description('Manage Pomodoro focus/break timers');
+
+pomodoroCmd
+  .command('start')
+  .description('Start a Pomodoro session')
+  .option('--minutes <n>', 'Planned duration in minutes')
+  .option('--type <type>', 'Session type (focus|short-break|long-break)', 'focus')
+  .option('--task <task>', 'Task to focus on (id or title)')
+  .option('--label <label>', 'Free-form label')
+  .option('--force', 'Override an already-running session')
+  .action((options) => {
+    try {
+      const res = pomodoro.start({
+        minutes: options.minutes != null ? parseInt(options.minutes, 10) : undefined,
+        type: options.type,
+        task: options.task,
+        label: options.label,
+        force: Boolean(options.force)
+      });
+      console.log('\n✅ Pomodoro started');
+      printActive(res.active);
+      console.log(`   📄 State: ${res.path}`);
+    } catch (err) {
+      console.error(`❌ ${err.message}`);
+      if (err.active) printActive(err.active);
+      process.exit(1);
+    }
+  });
+
+pomodoroCmd
+  .command('status')
+  .description('Show the running Pomodoro session')
+  .action(() => {
+    try {
+      const { active } = pomodoro.status();
+      if (!active) {
+        console.log('\nℹ️ No Pomodoro session is running.');
+        return;
+      }
+      console.log(`\n${active.isExpired ? '🔔 Pomodoro finished!' : '⏱️  Pomodoro running'}`);
+      printActive(active);
+    } catch (err) {
+      console.error(`❌ Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+pomodoroCmd
+  .command('stop')
+  .alias('complete')
+  .description('Complete the running Pomodoro and log it')
+  .option('--notes <notes>', 'Notes about the session')
+  .action((options) => {
+    try {
+      const res = pomodoro.complete({ notes: options.notes });
+      console.log(`\n✅ Pomodoro completed (${res.record.actualMin} min) — logged to ${res.path}`);
+    } catch (err) {
+      console.error(`❌ ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+pomodoroCmd
+  .command('cancel')
+  .description('Abandon the running Pomodoro and log it')
+  .option('--notes <notes>', 'Reason/notes')
+  .action((options) => {
+    try {
+      const res = pomodoro.cancel({ notes: options.notes });
+      console.log(`\n✅ Pomodoro cancelled — logged as abandoned to ${res.path}`);
+    } catch (err) {
+      console.error(`❌ ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+pomodoroCmd
+  .command('list')
+  .description('List past Pomodoro sessions')
+  .option('--limit <n>', 'Max sessions to show')
+  .action((options) => {
+    try {
+      const res = pomodoro.list({ limit: options.limit ? parseInt(options.limit, 10) : undefined });
+      if (res.count === 0) {
+        console.log(`\n📂 No Pomodoro sessions found in ${res.path}`);
+        return;
+      }
+      console.log(`\n🍅 Pomodoro sessions (${res.path})\n`);
+      console.log('| ID | Type | Task | Actual | Status |');
+      console.log('| --- | --- | --- | --- | --- |');
+      res.data.forEach(s => {
+        console.log(`| ${s.id} | ${s.type} | ${s.task || '-'} | ${s.actualMin || '-'} | ${s.status} |`);
+      });
+      console.log();
+    } catch (err) {
+      console.error(`❌ Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+pomodoroCmd
+  .command('stats')
+  .description('Show Pomodoro stats for a period')
+  .option('--period <period>', 'today|week|month|all', 'all')
+  .action((options) => {
+    try {
+      const s = pomodoro.stats({ period: options.period });
+      console.log(`\n📊 Pomodoro stats (${s.period})`);
+      console.log(`   🍅 Sessions: ${s.totalSessions} (✅ ${s.completedSessions} completed, 🚫 ${s.abandonedSessions} abandoned)`);
+      console.log(`   🎯 Focus sessions: ${s.focusSessions} — ${s.focusMinutes} min`);
+    } catch (err) {
+      console.error(`❌ Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+pomodoroCmd
+  .command('report')
+  .description('Productivity report by session, day, or week')
+  .option('--period <period>', 'today|this-week|last-week|this-month|last-month|last-7|last-30|all', 'this-week')
+  .option('--by <groupBy>', 'day|week|task|session', 'day')
+  .option('--json', 'Output raw JSON')
+  .action((options) => {
+    try {
+      const r = pomodoro.report({ period: options.period, groupBy: options.by });
+      if (options.json) {
+        console.log(JSON.stringify(r, null, 2));
+        return;
+      }
+      const s = r.summary;
+      const pct = (x) => `${Math.round((x || 0) * 100)}%`;
+      console.log(`\n📊 Pomodoro report — ${r.period} (grouped by ${r.groupBy})`);
+      console.log(`   🍅 Sessions: ${s.totalSessions} (✅ ${s.completedSessions} completed, 🚫 ${s.abandonedSessions} abandoned) — ${pct(s.completionRate)} completion`);
+      console.log(`   🎯 Focus: ${s.completedFocusSessions}/${s.focusSessions} completed (${pct(s.focusCompletionRate)}) — ${s.focusMinutes} focus min`);
+
+      if (!r.groups.length) {
+        console.log('\nℹ️ No sessions in this period.');
+        return;
+      }
+
+      console.log('');
+      if (r.groupBy === 'session') {
+        console.log('| Started | Type | Task | Planned | Actual | Status |');
+        console.log('| --- | --- | --- | --- | --- | --- |');
+        for (const g of r.groups) {
+          const when = new Date(g.started).toLocaleString();
+          console.log(`| ${when} | ${g.type} | ${g.task || '-'} | ${g.plannedMin} | ${g.actualMin} | ${g.status} |`);
+        }
+      } else {
+        const head = r.groupBy === 'task' ? 'Task' : (r.groupBy === 'week' ? 'Week' : 'Day');
+        console.log(`| ${head} | Focus done | Focus min | Completion |`);
+        console.log('| --- | --- | --- | --- |');
+        for (const g of r.groups) {
+          console.log(`| ${g.label} | ${g.completedFocusSessions}/${g.focusSessions} | ${g.focusMinutes} | ${pct(g.completionRate)} |`);
+        }
+      }
+    } catch (err) {
+      console.error(`❌ Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+pomodoroCmd
+  .command('run')
+  .description('Start a session and show a live countdown in the terminal')
+  .option('--minutes <n>', 'Planned duration in minutes')
+  .option('--type <type>', 'Session type (focus|short-break|long-break)', 'focus')
+  .option('--task <task>', 'Task to focus on (id or title)')
+  .option('--label <label>', 'Free-form label')
+  .option('--force', 'Override an already-running session')
+  .action(async (options) => {
+    try {
+      const res = pomodoro.start({
+        minutes: options.minutes != null ? parseInt(options.minutes, 10) : undefined,
+        type: options.type,
+        task: options.task,
+        label: options.label,
+        force: Boolean(options.force)
+      });
+      const focusOn = res.active.task || res.active.label || res.active.type;
+      console.log(`\n🍅 ${res.active.type} started — ${res.active.plannedMin} min · ${focusOn}`);
+      console.log('   (Ctrl+C stops the display; the timer keeps running — use `pomodoro stop` to log it)\n');
+
+      let cancelled = false;
+      process.on('SIGINT', () => { cancelled = true; });
+
+      // Live countdown loop; recompute from the persisted state each tick so the
+      // display stays correct even if the process was paused.
+      // eslint-disable-next-line no-constant-condition
+      while (!cancelled) {
+        const { active } = pomodoro.status();
+        if (!active) break;
+        process.stdout.write(`\r   ⏳ ${fmtRemaining(active.remainingSec)} remaining   `);
+        if (active.isExpired) {
+          process.stdout.write('\n');
+          const done = pomodoro.complete({ notes: '' });
+          console.log(`\n🔔 Time! Pomodoro completed (${done.record.actualMin} min) — logged to ${done.path}`);
+          break;
+        }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      if (cancelled) {
+        console.log('\n\nℹ️ Display stopped. Timer still running — `cat-pilot pomodoro status` to check.');
+      }
+    } catch (err) {
+      console.error(`❌ ${err.message}`);
+      if (err.active) printActive(err.active);
       process.exit(1);
     }
   });

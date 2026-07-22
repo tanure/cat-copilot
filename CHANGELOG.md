@@ -2,6 +2,103 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.7.0] - 2026-07-22
+
+### Added
+- **Tasks calendar view (canvas).** Tasks gained a third view mode alongside List and
+  Board: a **📅 Calendar** with **Month / Week** layouts, ‹ › + **Today** navigation, and
+  the current day highlighted. Each day lists its due tasks as colour-coded chips (left
+  edge by priority); a **Fields** menu chooses which extra info shows on each chip
+  (Priority / Status / Tags — title always shown). Clicking a task opens the same detail
+  popup as the List view. Undated tasks are noted below the grid.
+- **Global persistent Pomodoro mini-timer (canvas).** A running Pomodoro now shows a
+  floating dock pinned to the bottom-right corner that stays visible and keeps ticking on
+  **every** view (Tasks, Dashboard, etc.), not just the Pomodoro page. The dock shows a
+  live ring + MM:SS, a colour-coded session-type badge (focus / short break / long break),
+  and **Pause / Resume / Stop** controls; clicking it opens the full Pomodoro page. A single
+  app-wide timer loop now drives both the dock and the Pomodoro page (and re-syncs with the
+  server every ~15s, so a session started from the CLI also surfaces in the canvas).
+- **Pause / Resume.** Sessions can be paused and resumed from the dock or the Pomodoro page;
+  the countdown freezes while paused and continues seamlessly on resume (backed by
+  `POST /api/pomodoro/pause` and `/resume`, modelled via a `pausedAt` stamp so it survives
+  process death like the rest of the timer).
+- **Per-type colours.** The progress ring and status badge are colour-coded by session type
+  (focus = red, short break = green, long break = blue) so the running type is obvious.
+- **Dashboard focus analytics + period filter.** The dashboard gained a **Today / Week /
+  Month** filter and a 🍅 Focus section (focus sessions, focus time, completed, abandoned)
+  driven by that filter.
+- **End-of-session notification + break suggestion.** When a session's countdown reaches
+  zero you get a sound, a best-effort OS/browser notification, and an in-app prompt. After a
+  **focus** session it suggests a **Short break / Long break / Another focus / Skip** (long
+  break suggested after every 4th completed focus session, classic Pomodoro); after a break
+  it offers **Start focus / Skip**. Nothing auto-starts — you always choose.
+
+## [0.6.0] - 2026-07-22
+
+### Added
+- **"Blocked" task status** across every surface (CLI, MCP, Claude adapter, canvas, skill).
+  Canonical statuses are now **Open** (shown as "To do"), **Blocked**, and **Done**.
+  - CLI: `task add --status <Open|Blocked|Done>`, plus new `task block <id>` and
+    `task unblock <id>` commands; `task list --status blocked`.
+  - MCP: `task_add` gains an optional `status` enum and a new `task_set_status` tool.
+  - Claude adapter: `add_task` honors an optional `status`; new `set_task_status` handler.
+  - Canvas: the task **board** now has four columns — **Overdue · To do · Blocked · Done** —
+    with drag-and-drop between them; the task modal has a **Status** selector; the list view
+    shows a status badge; and a **All / Today / 7 days** due-date filter was added.
+
+### Fixed
+- **Data-loss bug:** the task write layer (`lib/cli-utils.js` and the canvas
+  `catpilot-store.mjs`) previously grouped tasks into only *Open* vs *Done* sections and
+  silently dropped any other status on save. A task set to `Blocked` would be deleted on the
+  next write. The first section now persists **all not-done tasks** (Open *and* Blocked),
+  keeping the real value in the `Status` cell. The on-disk markdown format is unchanged and
+  fully backward compatible.
+
+## [0.5.0] - 2026-07-22
+
+### Added
+- **Pomodoro productivity reports** — a new `report` capability across every surface
+  that measures **completed focus sessions**, **focus minutes**, and **completion rate**
+  (completed vs abandoned, plus a focus-only rate).
+  - Periods: `today`, `this-week`, `last-week`, `this-month`, `last-month`, `last-7`,
+    `last-30`, `all`. Grouping: `day`, `week` (ISO week), `task`, or `session`.
+  - CLI: `cat-pilot pomodoro report [--period <p>] [--by <day|week|task|session>]`
+    (add `--json` for machine output).
+  - MCP tool: `pomodoro_report`. Claude adapter handler: `pomodoro_report`.
+  - Canvas: a **Productivity** section in the Pomodoro view with a period/grouping
+    selector, a focus-minutes bar chart, a completed-vs-abandoned donut, and a grouped
+    table.
+- **Configurable, persistent Pomodoro durations** — focus / short-break / long-break
+  defaults now live in a top-level `pomodoro` block in `config.json`.
+  - `cat-pilot setup` prompts for the three durations (Enter accepts 25/5/15).
+  - The canvas **Settings → Pomodoro durations** card edits and saves them.
+  - `pomodoro start` with no `--minutes` honors the configured default for that type;
+    older configs are soft-defaulted so nothing breaks.
+
+## [0.4.0] - 2026-07-21
+
+### Added
+- **Pomodoro focus timers** — a new `pomodoro` domain with full parity across every
+  surface (standalone CLI, MCP server, Claude adapter, skill, agent, and the canvas UI).
+  - Stateless timer model: a running session is stored as a `startedAt` timestamp +
+    planned duration in an un-partitioned `pomodoro-active.json`, so `remaining` is
+    recomputed on read and a timer survives process restarts and month boundaries and
+    stays consistent no matter which surface you use.
+  - Session types **focus (25) / short-break (5) / long-break (15)** with per-call or
+    per-config overrides, an optional link to an existing task, and an append-only
+    partitioned `pomodoro.md` history table.
+  - CLI: `cat-pilot pomodoro start|status|stop|cancel|list|stats|run` (alias `pomo`),
+    where `run` shows a live blocking terminal countdown.
+  - MCP tools: `pomodoro_start|status|complete|cancel|list|stats`.
+  - Canvas: a **Pomodoro** view with a live countdown ring, start controls (type +
+    minutes + optional task picker), complete/cancel, a today stats strip, and a
+    recent-sessions table.
+
+### Changed
+- **Version is now read from `package.json`** by the CLI (`--version`) and the MCP
+  server instead of being hard-coded separately, removing the drift between the CLI,
+  MCP server, and plugin manifest. Consolidated all manifests to `0.4.0`.
+
 ## [0.3.0] - 2026-07-20
 
 ### Added

@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Changed
+- **Redesigned Kanban board (canvas).** The Tasks ▦ Board was reworked for clarity and
+  extensibility. Columns now have **colour-coded sticky headers** (dot · icon · title ·
+  count pill) matched to each status — Overdue (red), To do (violet), Blocked (amber),
+  Done (green) — with their own **height limit and vertical scroll** so long columns no
+  longer stretch the page. Each real status column gained a header **＋** and a footer
+  **＋ New** quick-add that opens the task modal with that column's status prefilled
+  (Overdue prefills a due date of today). Cards were rebuilt for readability: solid panel
+  background that stands out from the column, a **left accent bar coloured by priority**,
+  a clear **header row** (priority / Blocked / Overdue badges + `#id`), a prominent
+  **title** (click to open detail), and a divided **footer** with a due-date chip (📅,
+  highlighted when due today or overdue) and tag chips. Columns are declared in a single
+  `BOARD_COLS` config, so adding or reordering a column is a one-liner. Drag-and-drop
+  between columns still updates status.
+
 ## [0.7.0] - 2026-07-22
 
 ### Added

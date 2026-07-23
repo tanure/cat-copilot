@@ -62,6 +62,12 @@
     "react": "^18.0.0",
     "zod": "^4.4.3"
   },
+  "overrides": {
+    "fast-uri": "^4.0.0",
+    "hono": "^4.12.27",
+    "@hono/node-server": "^2.0.5",
+    "ws": "^8.21.0"
+  },
   "engines": {
     "node": ">=18"
   },

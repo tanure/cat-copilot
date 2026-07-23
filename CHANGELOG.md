@@ -43,10 +43,17 @@ All notable changes to this project are documented in this file.
   compatible with the old 5-column table.
 
 ### Changed
+- **Learning & Project detail are now full pages.** Clicking a learning path or project card
+  opens a dedicated contextualized page (route `#learning/<slug>` / `#projects/<slug>`) with a
+  back button, a stats dashboard, the steps/items checklist, linked tasks/milestones,
+  achievements and in-page actions (Edit · Mark complete · Delete · Ask Copilot) — replacing
+  the previous popup modal. Detail routes are shareable/bookmarkable via the URL hash.
+- **Consistent card headers (canvas).** Learning and Project cards now show the title and
+  status badge on a single aligned row, fixing the badge that sat alone above the title.
 - **Tags on every domain.** Knowledge, Learning, Projects and Achievements all carry a
   `tags` frontmatter list so an Obsidian vault graph connects them.
 - **Canvas navigation.** "Memos" renamed to **Knowledge**; dashboard cards and help guide
-  updated for the new domains.
+  updated for the new domains. Routing supports `base/param` sub-routes for detail pages.
 
 ### Notes
 - **Backward compatible.** New structures write to stable top-level folders

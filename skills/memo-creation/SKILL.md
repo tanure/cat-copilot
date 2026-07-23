@@ -1,6 +1,6 @@
 ---
 name: memo-creation
-description: "Creates short memos as markdown files in the configuration-resolved memos folder for Copilot CLI personal assistant workflows."
+description: "Creates and maintains Knowledge Base notes with folders and tags, while keeping legacy memo_* workflows compatible."
 license: MIT
 ---
 
@@ -10,60 +10,82 @@ license: MIT
 Use this skill when the user says things like:
 - "Create a memo about ..."
 - "Write a note on ..."
-- "Capture a memo ..."
+- "Capture this in my knowledge base ..."
+- "Save this under [folder] with tags ..."
+- "List notes tagged ..."
 
-## Inputs to capture (ask only if missing)
-**Required**
-- Memo title
-- Memo body/content
+## Knowledge Base model (configuration-aware)
+Memos have evolved into a foldered, tagged **Knowledge Base**. New writes go under:
+- `<storage.root>/knowledge/<folder>/<slug>.md`
 
-**Optional**
-- Date (default: today)
-- Tags
-
-## Output format (configuration-aware)
-Resolve memos target from `data/config.json` before any read/write.
-
-Resolved memos folder path:
-- `<storage.root>/<partition>/memos/`
-- Partition folder mapping:
-  - `day` -> `YYYY/YYYY-MM/YYYY-MM-DD`
-  - `week` -> `YYYY/Www` (ISO week)
-  - `month` -> `YYYY/YYYY-MM`
+Legacy flat notes under `memos/` remain readable and are merged into lists for
+backward compatibility, but new notes should be written to `knowledge/`.
 
 If `data/config.json` is missing or invalid, run `interactive-setup` first.
 
-Create memo file format:
-- File name: `YYYY-MM-DD_<slug>.md`
-- Content:
+## Note format (Obsidian/Dataview-ready frontmatter)
 ```markdown
-# <title>
+---
+catpilot: memo
+title: "Release handover"
+folder: "work"
+tags: [handover, release]
+created: "2026-07-23"
+updated: "2026-07-23"
+---
 
-Date: YYYY-MM-DD
-Tags: tag1, tag2
+# Release handover
 
 ## Notes
 <body>
 ```
 
-Rules:
-1. If file name collision occurs, append `-2`, `-3`, etc.
-2. Slug should be lowercase and hyphen-separated.
-3. Never overwrite an existing memo file.
-4. Do not include secrets, tokens, or passwords.
+## Inputs to capture (ask only if missing)
+**Required**
+- Title
+- Body/content
+
+**Optional**
+- Folder (default to a sensible folder such as `general` if the user does not specify one)
+- Tags (comma-separated or list)
+
+## MCP tools
+Prefer the Knowledge Base tools for new work:
+- `kb_add` — create a note (`title`, `folder`, `tags`, `body`).
+- `kb_list` — list notes, optionally filtered by folder or tag.
+- `kb_read` — read a note.
+- `kb_update` — edit title, folder, tags, or body.
+- `kb_remove` — delete a note.
+- `kb_folders` — return folder and tag counts.
+- `kb_move` — move a note to another folder.
+
+Compatible aliases still exist for older prompts and hosts:
+- `memo_create`, `memo_list`, `memo_read`.
 
 ## Procedure
-1. Resolve the memos folder from `data/config.json`.
-2. Ensure target folder exists.
-3. Build slug and target filename.
-4. Create memo file with structured content.
-5. Confirm what was written and where.
+1. Resolve storage from `data/config.json`.
+2. For new notes, choose or confirm the Knowledge Base folder and normalize tags.
+3. Create or update the note under `knowledge/<folder>/<slug>.md` with the frontmatter above.
+4. For list/read requests, include legacy `memos/` notes in results when the tool does so.
+5. Confirm what changed and where.
+
+Rules:
+1. If a file name collision occurs, append `-2`, `-3`, etc.
+2. Slugs should be lowercase and hyphen-separated.
+3. Never overwrite an existing note unless the user asked to update it.
+4. Do not include secrets, tokens, passwords, or confidential data.
+
+## Examples
+- "Save a knowledge note called Release handover in folder work tagged release,handover."
+- "List knowledge notes tagged learning."
+- "Move the onboarding note to folder team."
 
 ## Response style
-- Confirm memo creation with `🧠` and include the resulting file path.
+- Confirm Knowledge Base changes with `🧠` and include the resulting file path.
 - Use `⚠️` for missing title/body.
 - Use `❌` for write failures.
 
 ## Files
 - `data/config.json` (required to resolve target)
-- Resolved memos folder and memo file (authoritative target)
+- Resolved `knowledge/<folder>/<slug>.md` note (authoritative target for new writes)
+- Legacy `memos/` notes (readable for compatibility)

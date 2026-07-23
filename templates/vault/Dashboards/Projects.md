@@ -5,21 +5,39 @@ title: Projects
 
 # 🎯 Projects
 
-Each project is its own note (created by the `project-tracker` skill / `project_*`
-MCP tools) with a status rollup.
+Each project has an `index.md` note plus child `project-item` notes for requirements,
+tasks, and milestones. CatPilot rolls up progress from project items and linked main
+tasks.
 
 ## Active
 ```dataview
-TABLE status, owner, due, updated
+TABLE status, owner, start, due, summary
 FROM ""
 WHERE catpilot = "project" AND status != "Done"
-SORT updated DESC
+SORT due ASC
+```
+
+## Project items
+```dataview
+TABLE project, type, status, due, order
+FROM ""
+WHERE catpilot = "project-item"
+SORT project ASC, order ASC
 ```
 
 ## Done
 ```dataview
-TABLE completed_date, outcome
+TABLE owner, due, summary
 FROM ""
 WHERE catpilot = "project" AND status = "Done"
-SORT completed_date DESC
+SORT due DESC
+```
+
+## Tags
+```dataview
+LIST
+FROM ""
+WHERE catpilot = "project"
+FLATTEN tags as t
+GROUP BY t
 ```

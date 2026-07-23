@@ -23,28 +23,34 @@ Edit `data/config.json` in the CatPilot repo (or run `cat-pilot setup`) and set:
 }
 ```
 
-CatPilot writes partitioned data under the root, e.g.:
+CatPilot writes data under the root, e.g.:
 
 ```
 <vault>/2026/2026-06/tasks.md
 <vault>/2026/2026-06/journal.md
-<vault>/2026/2026-06/memos/2026-06-19_handover.md
-<vault>/2026/2026-06/learning/az-104.md
+<vault>/2026/2026-06/milestones.md
+<vault>/knowledge/work/handover.md
+<vault>/learning/az-104/index.md
+<vault>/learning/az-104/steps/identity.md
 <vault>/2026/2026-06/growth/shipped-mcp-server.md
-<vault>/2026/2026-06/projects/catpilot.md
+<vault>/projects/catpilot/index.md
+<vault>/projects/catpilot/items/support-knowledge.md
+<vault>/achievements/2026-06-19_passed-az-104.md
 ```
 
 ## 3. Recommended plugins (Obsidian)
 - **Dataview** — powers the dashboards in `Dashboards/`.
-- **Templates** (core) — use the notes in `_templates/` for new memos/learning/growth/projects.
+- **Templates** (core) — use the notes in `_templates/` for new knowledge, learning, growth, projects, and achievements.
 - **Calendar** (optional) — nice with the month partitioning.
 
 ## Folders
 - `Dashboards/` — Dataview Maps of Content (MOCs) that aggregate everything.
+  - `Home.md`, `Tasks.md`, `Knowledge.md`, `Learning.md`, `Growth.md`, `Projects.md`, `Achievements.md`
 - `_templates/` — Obsidian note templates with the frontmatter CatPilot/Dataview expect.
+  - `knowledge.md`, `memo.md` (legacy), `learning.md`, `growth.md`, `project.md`, `achievement.md`
 
-The data folders (`2026/...`) are created **on demand** by CatPilot; you don't
-pre-create them. Per-file domains (memos, learning, growth, projects) carry
-frontmatter so Dataview can query them.
+The data folders are created **on demand** by CatPilot; you don't pre-create them.
+Per-file domains (knowledge, learning, growth, projects, achievements) carry
+frontmatter and `tags: []` so Dataview and the Obsidian graph can query them.
 
 See `../../docs/OBSIDIAN_KNOWLEDGE_BASE.md` for the full guide.

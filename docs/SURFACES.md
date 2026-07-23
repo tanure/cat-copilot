@@ -11,10 +11,11 @@ sync no matter which directory you capture from.
 | Tasks | ✅ | ✅ | ✅ | ✅ | ✅ `task_*` |
 | Journal | ✅ | ✅ | ✅ | ✅ | ✅ `journal_*` |
 | Milestones | ➖ | ✅ | ✅ | ✅ | ➖ (skill) |
-| Memos | ✅ | ✅ | ✅ | ✅ | ✅ `memo_*` |
-| Learning | ✅ | ✅ | ✅ | ✅ | ✅ `learning_*` |
+| Knowledge Base | ✅ | ✅ | ✅ | ✅ | ✅ `kb_*` (`memo_*` aliases) |
+| Learning paths | ✅ | ✅ | ✅ | ✅ | ✅ `learning_path_*`, `learning_step_*` |
 | Growth | ✅ | ✅ | ✅ | ✅ | ✅ `growth_*` |
 | Projects | ✅ | ✅ | ✅ | ✅ | ✅ `project_*` |
+| Achievements | ✅ | ✅ | ✅ | ✅ | ✅ `achievement_*` |
 | Daily summary | ➖ | ✅ | ✅ | ✅ | ➖ (skill) |
 | Reports | ➖ | ✅ | ✅ | ✅ | ➖ (skill) |
 | Sanitize guardrail | ➖ | ✅ | ✅ | ✅ | ➖ (skill) |
@@ -28,6 +29,25 @@ Notes:
   exposes the deterministic data tools; the agent composes skills on top.
 - The **standalone CLI** is best for fast, scriptable capture and automation.
 - **MCP** is the portable core: any MCP-capable host gets the data tools.
+- Task statuses are `Open`, `In Progress`, `Blocked`, and `Done`; the canvas shows
+  `Open` as **To do** and derives **Overdue** from due dates.
+
+## Canvas views
+The browser canvas SPA provides richer review and editing views:
+- **Tasks:** Kanban columns for Backlog, Overdue, To do, In Progress, Blocked, and Done.
+- **Knowledge:** stats header, folder and tag filter rails, Grid/List/Folders/By-month
+  view modes, search, Markdown detail popup, and a full write/preview editor with
+  Save/Delete plus folder/tag editing.
+- **Learning:** dashboard stats and progress bars, filters for All/In progress/Completed/Reviews due,
+  path detail with a step checklist, and "✨ Generate with Copilot" to draft a goal
+  and ordered steps.
+- **Projects:** portfolio grid with status/progress and a project dashboard covering
+  timeline, requirements, tasks, milestones, linked tasks, linked milestones, and
+  achievements. "Ask Copilot about this project" sends project context to the agent
+  for suggestions, follow-ups, gaps, and recommendations.
+- **Achievements:** completed learning paths, completed projects, and manual achievements.
+- **Milestones:** supports filtering by optional links such as `project:<slug>` or
+  `learning:<slug>`.
 
 ## Which surface for what
 - **Capture on the go / scripting:** standalone CLI (`cat-pilot task add ...`).

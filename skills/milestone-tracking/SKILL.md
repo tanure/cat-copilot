@@ -12,6 +12,7 @@ Use this skill when the user says things like:
 - "Track milestone ..."
 - "Update milestone status ..."
 - "List milestones"
+- "Link this milestone to a project / learning path"
 
 ## Inputs to capture (ask only if missing)
 **Required**
@@ -21,6 +22,7 @@ Use this skill when the user says things like:
 - Target date (YYYY-MM-DD)
 - Status (`Planned`, `In Progress`, `Done`)
 - Notes
+- Link (`project:<slug>`, `learning:<slug>`, or empty)
 
 ## Output format (configuration-aware)
 Resolve milestones target from `data/config.json` before any read/write.
@@ -36,22 +38,27 @@ If `data/config.json` is missing or invalid, run `interactive-setup` first.
 
 Use a table format:
 
-| ID | Name | Target Date | Status | Notes |
-| --- | --- | --- | --- | --- |
-| <ID> | <NAME> | YYYY-MM-DD | Planned | <notes> |
+| ID | Name | Target Date | Status | Notes | Link |
+| --- | --- | --- | --- | --- | --- |
+| <ID> | <NAME> | YYYY-MM-DD | Planned | <notes> | project:<slug> |
+
+The sixth `Link` column is optional and backward compatible. Existing 5-column
+tables still parse; their link defaults to empty. A linked milestone appears on the
+matching project or learning dashboard.
 
 Rules:
 1. Every milestone gets a unique incremental ID.
-2. Keep all 5 columns; leave optional cells empty when missing.
+2. Keep all 6 columns for new or rewritten tables; leave optional cells empty when missing.
 3. Allowed status values: `Planned`, `In Progress`, `Done`.
-4. Avoid duplicate active milestones with very similar names.
+4. Link values are empty, `project:<slug>`, or `learning:<slug>`.
+5. Avoid duplicate active milestones with very similar names.
 
 ## Procedure
 1. Resolve the milestones file from `data/config.json`.
 2. Read the resolved milestones file; create it with table headers if missing.
 3. For add: insert new milestone row under the table.
-4. For update: find by ID or name and update selected fields.
-5. For list: return all rows in concise format.
+4. For update: find by ID or name and update selected fields, including `Link` when provided.
+5. For list: return all rows in concise format; mention link filters when relevant.
 6. Confirm what changed and where.
 
 ## Response style

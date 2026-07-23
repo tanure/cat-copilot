@@ -56,9 +56,26 @@ any directory, through four doors:
 New personal-management domains help you stay on track for projects, certifications,
 studies, and growth/review prep:
 
-- **`learning`** — certification & study tracker (goals, target dates, progress).
+- **`knowledge`** — a foldered, tagged **Knowledge Base** (evolved from memos): organize
+  notes into folders, connect them with tags (which feed the Obsidian graph), and browse
+  them in the canvas with Grid / List / Folders / By-month views, search, and a full
+  markdown editor. Legacy flat `memos/` notes stay readable. Tools: `kb_add`, `kb_list`,
+  `kb_read`, `kb_update`, `kb_remove`, `kb_folders`, `kb_move` (`memo_*` kept as aliases).
+- **`learning`** — certification & study **paths**: a goal + ordered **steps** with
+  progress derived from step completion, target dates, spaced reviews, and an
+  **achievement** recorded on completion. Copilot can draft a whole path for you. Steps
+  are kept separate from your main tasks. Tools: `learning_path_add/list/read/complete`,
+  `learning_step_add/update`.
+- **`projects`** — richer than a status line: an index plus **items**
+  (requirements / tasks / milestones), optional **linked main tasks** and **linked
+  milestones**, achievements, and derived progress — with an **"Ask Copilot about this
+  project"** button that grounds suggestions in the project's plan. Tools:
+  `project_create`, `project_read`, `project_item_add/update`, `project_complete`,
+  `project_board`.
+- **`achievements`** — a dedicated log of wins, auto-recorded when a learning path or
+  project completes (and addable manually), surfaced on the Learning and Project
+  dashboards. Tools: `achievement_add`, `achievement_list`.
 - **`growth`** — accomplishment / brag-doc log + neutral review-prep summaries.
-- **`project-tracker`** — lightweight per-project status rollups.
 - **`pomodoro`** — focus timers with **configurable** focus/short-break/long-break
   durations (default 25/5/15, set in `config.json` / setup / canvas settings) modeled
   as timestamp + duration, so a running session is consistent across the CLI, MCP and
@@ -93,12 +110,23 @@ so anyone can install it in one command (see [Install the canvas](#install-the-c
 What you get in the canvas:
 
 - **Dashboard** — hero, summary cards, last-3-days activity, charts, and productivity nudges.
-- **Tasks** — switch between **list (table)** and **board (kanban)** views with an
-  **Overdue · To do · Blocked · Done** board, pick a status (To do / Blocked / Done) on
-  create/edit, filter by due date (**All · Today · 7 days**), complete inline, drag between
-  columns, edit/save locally, and open a detail popup — plus an add button.
-- **Journal, Milestones, Memos** — browse, add, and open full detail views (memos render markdown).
-- **Learning, Growth, Projects** — card views with add buttons and detail popups.
+- **Tasks** — switch between **list (table)** and **board (kanban)** views with a
+  **Backlog · Overdue · To do · In Progress · Blocked · Done** board, pick a status
+  (To do / In Progress / Blocked / Done) on create/edit, filter by due date
+  (**All · Today · 7 days**), complete inline, drag between columns, edit/save locally,
+  and open a detail popup — plus an add button.
+- **Knowledge** — a foldered, tagged Knowledge Base (evolved memos) with a stats header,
+  folder + tag filter rails, **Grid / List / Folders / By-month** views, search, and a
+  detail popup that **renders markdown** and has a full editor (write/preview) with
+  Save/Delete and folder/tag editing.
+- **Journal & Milestones** — browse, add, and open full detail views. Milestones can be
+  **linked** to a project or learning path and filtered by that link.
+- **Learning** — certification/study **paths** with a progress dashboard, filters, a step
+  checklist you can toggle, achievements, and **✨ Generate with Copilot** path drafting.
+- **Projects** — a portfolio grid plus a **project dashboard** (timeline, requirements,
+  tasks, milestones, linked tasks/milestones, achievements) and an **Ask Copilot about
+  this project** button for grounded suggestions.
+- **Growth** — card views with add buttons and detail popups.
 - **Pomodoro** — a live countdown ring for the running session, start controls
   (type + minutes + optional task picker), complete/cancel, a today stats strip,
   a recent-sessions table, and a **Productivity** section with a period/grouping

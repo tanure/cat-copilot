@@ -32,6 +32,10 @@ import { fileURLToPath } from 'url';
 import * as core from '../adapters/claude-code/tools.js';
 import * as domains from '../lib/domains.js';
 import * as cliUtils from '../lib/cli-utils.js';
+import * as knowledge from '../lib/knowledge.js';
+import * as learningPaths from '../lib/learning.js';
+import * as projectsLib from '../lib/projects.js';
+import * as achievements from '../lib/achievements.js';
 
 // Pin working directory so config resolution is stable across MCP hosts.
 if (process.env.CATPILOT_ROOT) {
@@ -82,15 +86,16 @@ server.registerTool('task_add', {
     priority: z.string().optional().describe('P0/P1/P2/P3 or High/Med/Low'),
     tags: z.string().optional().describe('Comma-separated tags'),
     context: z.string().optional().describe('One-line context'),
-    status: z.enum(['Open', 'Blocked', 'Done']).optional().describe('Initial status (default Open)')
+    project: z.string().optional().describe('Optional project slug to link this task to'),
+    status: z.enum(['Open', 'In Progress', 'Blocked', 'Done']).optional().describe('Initial status (default Open)')
   }
 }, async (args) => fromCore(await core.add_task(args)));
 
 server.registerTool('task_list', {
   title: 'List tasks',
-  description: 'List tasks, optionally filtered by status (open/blocked/done/all).',
+  description: 'List tasks, optionally filtered by status (open/in progress/blocked/done/all).',
   inputSchema: {
-    status: z.enum(['open', 'blocked', 'done', 'all']).optional().describe('Filter by status')
+    status: z.enum(['open', 'in progress', 'blocked', 'done', 'all']).optional().describe('Filter by status')
   }
 }, async (args) => fromCore(await core.list_tasks(args)));
 
@@ -102,10 +107,10 @@ server.registerTool('task_complete', {
 
 server.registerTool('task_set_status', {
   title: 'Set task status',
-  description: 'Set a task status to Open, Blocked, or Done by its numeric ID.',
+  description: 'Set a task status to Open, In Progress, Blocked, or Done by its numeric ID.',
   inputSchema: {
     id: z.number().int().describe('Task ID'),
-    status: z.enum(['Open', 'Blocked', 'Done']).describe('New status')
+    status: z.enum(['Open', 'In Progress', 'Blocked', 'Done']).describe('New status')
   }
 }, async (args) => fromCore(await core.set_task_status(args)));
 
@@ -258,6 +263,193 @@ registerDomain('projects', 'project', {
   owner: z.string().optional().describe('Owner'),
   due: z.string().optional().describe('Due date YYYY-MM-DD')
 });
+
+// ----------------------------------------------------------------------------
+// Knowledge Base (evolved memos: folders + tags, stable non-partitioned tree)
+// ----------------------------------------------------------------------------
+server.registerTool('kb_add', {
+  title: 'Add knowledge doc',
+  description: 'Create a knowledge-base document with an optional folder and tags. Evolved memos; legacy memos remain readable.',
+  inputSchema: {
+    title: z.string().describe('Document title'),
+    folder: z.string().optional().describe('Folder path, e.g. "Azure/Networking" (default General)'),
+    tags: z.string().optional().describe('Comma-separated tags (feed the Obsidian graph)'),
+    body: z.string().optional().describe('Markdown body')
+  }
+}, async ({ title, folder, tags, body }) => {
+  try { return ok(knowledge.addDoc({ title, folder, tags, body })); } catch (err) { return fail(err.message); }
+});
+
+server.registerTool('kb_list', {
+  title: 'List knowledge docs',
+  description: 'List knowledge-base documents (new tree + legacy memos), optionally filtered by folder, tag or search text.',
+  inputSchema: {
+    folder: z.string().optional().describe('Filter by folder'),
+    tag: z.string().optional().describe('Filter by tag'),
+    q: z.string().optional().describe('Search title/tags')
+  }
+}, async (args) => { try { return ok(knowledge.listDocs(args || {})); } catch (err) { return fail(err.message); } });
+
+server.registerTool('kb_read', {
+  title: 'Read knowledge doc',
+  description: 'Read a knowledge doc by id (e.g. "knowledge/general/my-note").',
+  inputSchema: { id: z.string().describe('Doc id relative to storage root, no extension') }
+}, async ({ id }) => { try { return ok(knowledge.readById(id)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('kb_update', {
+  title: 'Update knowledge doc',
+  description: 'Update a knowledge doc (title, folder, tags, body). Editing a legacy memo migrates it into the knowledge tree.',
+  inputSchema: {
+    id: z.string().describe('Doc id'),
+    title: z.string().optional(),
+    folder: z.string().optional(),
+    tags: z.string().optional().describe('Comma-separated tags'),
+    body: z.string().optional()
+  }
+}, async ({ id, ...patch }) => { try { return ok(knowledge.updateDoc(id, patch)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('kb_remove', {
+  title: 'Remove knowledge doc',
+  description: 'Delete a knowledge doc by id.',
+  inputSchema: { id: z.string().describe('Doc id') }
+}, async ({ id }) => { try { return ok(knowledge.removeDoc(id)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('kb_folders', {
+  title: 'List knowledge folders',
+  description: 'List knowledge-base folders with document counts and all tags with counts.',
+  inputSchema: {}
+}, async () => { try { return ok({ folders: knowledge.listFolders(), tags: knowledge.listTags() }); } catch (err) { return fail(err.message); } });
+
+server.registerTool('kb_move', {
+  title: 'Move knowledge doc',
+  description: 'Move a knowledge doc to a different folder.',
+  inputSchema: { id: z.string().describe('Doc id'), folder: z.string().describe('Destination folder') }
+}, async ({ id, folder }) => { try { return ok(knowledge.moveDoc(id, folder)); } catch (err) { return fail(err.message); } });
+
+// ----------------------------------------------------------------------------
+// Learning paths (goal/cert plans with ordered steps + derived progress)
+// ----------------------------------------------------------------------------
+server.registerTool('learning_path_add', {
+  title: 'Add learning path',
+  description: 'Create a learning path (goal/certification study plan). Optionally seed ordered steps.',
+  inputSchema: {
+    title: z.string(),
+    goal: z.string().optional(),
+    target_date: z.string().optional().describe('YYYY-MM-DD'),
+    next_review: z.string().optional().describe('YYYY-MM-DD'),
+    tags: z.string().optional(),
+    steps: z.array(z.string()).optional().describe('Ordered step titles'),
+    body: z.string().optional()
+  }
+}, async (args) => { try { return ok(learningPaths.addPath(args)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('learning_path_list', {
+  title: 'List learning paths',
+  description: 'List learning paths with derived progress (new tree + legacy notes). Filter by status or review-due.',
+  inputSchema: { status: z.string().optional(), reviewDue: z.boolean().optional() }
+}, async (args) => { try { return ok(learningPaths.listPaths(args || {})); } catch (err) { return fail(err.message); } });
+
+server.registerTool('learning_path_read', {
+  title: 'Read learning path',
+  description: 'Read a learning path with its steps and progress.',
+  inputSchema: { slug: z.string() }
+}, async ({ slug }) => { try { return ok(learningPaths.readPath(slug)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('learning_step_add', {
+  title: 'Add learning step',
+  description: 'Add a step to a learning path. A step can carry a progress percent (0-100), a due date and notes/description.',
+  inputSchema: { slug: z.string(), title: z.string(), order: z.number().int().optional(), status: z.string().optional(), progress: z.number().int().min(0).max(100).optional(), due: z.string().optional(), notes: z.string().optional() }
+}, async ({ slug, ...p }) => { try { return ok(learningPaths.addStep(slug, p)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('learning_step_update', {
+  title: 'Update learning step',
+  description: 'Update a learning step (status Todo/In Progress/Done, progress 0-100, due date, notes, title, order). Progress and status stay in sync; all steps at 100% auto-completes the path.',
+  inputSchema: { slug: z.string(), stepId: z.string(), status: z.string().optional(), progress: z.number().int().min(0).max(100).optional(), due: z.string().optional(), notes: z.string().optional(), title: z.string().optional(), order: z.number().int().optional() }
+}, async ({ slug, stepId, ...p }) => { try { return ok(learningPaths.updateStep(slug, stepId, p)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('learning_path_complete', {
+  title: 'Complete learning path',
+  description: 'Mark a learning path complete and record an achievement.',
+  inputSchema: { slug: z.string() }
+}, async ({ slug }) => { try { return ok(learningPaths.completePath(slug)); } catch (err) { return fail(err.message); } });
+
+// ----------------------------------------------------------------------------
+// Projects (index + items: requirements/tasks/milestones + linked tasks rollup)
+// ----------------------------------------------------------------------------
+server.registerTool('project_create', {
+  title: 'Create project',
+  description: 'Create a project container (start/due/status/owner/summary/tags) with a stable folder for its plan and items.',
+  inputSchema: {
+    title: z.string(),
+    status: z.string().optional().describe('Active / Blocked / Done'),
+    start: z.string().optional().describe('YYYY-MM-DD'),
+    due: z.string().optional().describe('YYYY-MM-DD (optional)'),
+    owner: z.string().optional(),
+    summary: z.string().optional(),
+    tags: z.string().optional()
+  }
+}, async (args) => { try { return ok(projectsLib.addProject(args)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('project_board', {
+  title: 'List projects (portfolio)',
+  description: 'List projects with progress rollups (new tree + legacy notes). Filter by status.',
+  inputSchema: { status: z.string().optional() }
+}, async (args) => { try { return ok(projectsLib.listProjects(args || {})); } catch (err) { return fail(err.message); } });
+
+server.registerTool('project_read', {
+  title: 'Read project dashboard',
+  description: 'Read a project with requirements, tasks, milestones, linked main tasks, achievements and derived progress.',
+  inputSchema: { slug: z.string() }
+}, async ({ slug }) => { try { return ok(projectsLib.readProject(slug)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('project_item_add', {
+  title: 'Add project item',
+  description: 'Add a requirement, task, or milestone to a project plan. Tasks and milestones can carry a progress percent (0-100), due date and notes.',
+  inputSchema: {
+    slug: z.string(),
+    type: z.enum(['requirement', 'task', 'milestone']).optional(),
+    title: z.string(),
+    status: z.string().optional(),
+    progress: z.number().int().min(0).max(100).optional(),
+    due: z.string().optional(),
+    notes: z.string().optional(),
+    order: z.number().int().optional()
+  }
+}, async ({ slug, ...p }) => { try { return ok(projectsLib.addItem(slug, p)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('project_item_update', {
+  title: 'Update project item',
+  description: 'Update a project item (status Open/In Progress/Done, progress 0-100, due, notes, type, title, order). Progress and status stay in sync.',
+  inputSchema: { slug: z.string(), itemId: z.string(), status: z.string().optional(), progress: z.number().int().min(0).max(100).optional(), title: z.string().optional(), due: z.string().optional(), notes: z.string().optional(), type: z.enum(['requirement', 'task', 'milestone']).optional(), order: z.number().int().optional() }
+}, async ({ slug, itemId, ...p }) => { try { return ok(projectsLib.updateItem(slug, itemId, p)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('project_complete', {
+  title: 'Complete project',
+  description: 'Mark a project complete and record an achievement.',
+  inputSchema: { slug: z.string() }
+}, async ({ slug }) => { try { return ok(projectsLib.completeProject(slug)); } catch (err) { return fail(err.message); } });
+
+// ----------------------------------------------------------------------------
+// Achievements (dedicated log, linkable to learning/projects)
+// ----------------------------------------------------------------------------
+server.registerTool('achievement_add', {
+  title: 'Add achievement',
+  description: 'Record an achievement/win, optionally linked to a learning path or project.',
+  inputSchema: {
+    title: z.string(),
+    date: z.string().optional().describe('YYYY-MM-DD (default today)'),
+    source_type: z.string().optional().describe('learning | project | other'),
+    source: z.string().optional().describe('Linked slug'),
+    tags: z.string().optional(),
+    body: z.string().optional()
+  }
+}, async (args) => { try { return ok(achievements.addAchievement(args)); } catch (err) { return fail(err.message); } });
+
+server.registerTool('achievement_list', {
+  title: 'List achievements',
+  description: 'List achievements (newest first), optionally filtered by source_type/source.',
+  inputSchema: { source_type: z.string().optional(), source: z.string().optional() }
+}, async (args) => { try { return ok(achievements.listAchievements({ sourceType: args && args.source_type, source: args && args.source })); } catch (err) { return fail(err.message); } });
 
 // ----------------------------------------------------------------------------
 // Config introspection

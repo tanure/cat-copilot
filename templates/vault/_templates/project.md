@@ -2,11 +2,10 @@
 catpilot: project
 title: "{{title}}"
 status: "Active"
-owner: ""
+start: "{{date}}"
 due: ""
-updated: "{{date}}"
-completed_date: ""
-outcome: ""
+owner: ""
+summary: ""
 tags: [project]
 ---
 
@@ -14,10 +13,6 @@ tags: [project]
 
 ## Summary
 
-## Current status
+## Notes
 
-## Linked milestones / tasks
-- 
-
-## Next steps
-- 
+> Add requirements, tasks, and milestones under `projects/{{slug}}/items/` with `catpilot: project-item`.

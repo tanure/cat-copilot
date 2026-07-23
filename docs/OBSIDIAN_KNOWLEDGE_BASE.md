@@ -11,35 +11,46 @@ drive CatPilot from Copilot CLI, Copilot in VS Code, or the Copilot App.
 4. Point CatPilot's `data/config.json` `storage.root` at the vault path.
 
 ## 2. How CatPilot lays out data
-Storage is **config-driven and partitioned by month** (default):
+Storage is **config-driven**. Aggregate files remain partitioned by month by default,
+while newer graph-friendly domains use stable top-level folders:
 
 ```
 <vault>/
-├── Dashboards/            # Dataview MOCs (from the template)
-├── _templates/            # Obsidian note templates (from the template)
+├── Dashboards/                         # Dataview MOCs (from the template)
+├── _templates/                         # Obsidian note templates (from the template)
+├── knowledge/<folder>/<slug>.md        # frontmatter: catpilot: memo, tags: []
+├── learning/<slug>/index.md            # frontmatter: catpilot: learning, tags: []
+├── learning/<slug>/steps/<slug>.md     # frontmatter: catpilot: learning-step
+├── projects/<slug>/index.md            # frontmatter: catpilot: project, tags: []
+├── projects/<slug>/items/<slug>.md     # frontmatter: catpilot: project-item
+├── achievements/YYYY-MM-DD_slug.md     # frontmatter: catpilot: achievement, tags: []
 └── 2026/
     └── 2026-06/
-        ├── tasks.md       # markdown table (Open/Completed)
-        ├── journal.md     # append-only daily log
-        ├── milestones.md  # markdown table
-        ├── memos/         # one .md per memo  (frontmatter: catpilot: memo)
-        ├── learning/      # one .md per topic (frontmatter: catpilot: learning)
-        ├── growth/        # one .md per win   (frontmatter: catpilot: growth)
-        └── projects/      # one .md per project (frontmatter: catpilot: project)
+        ├── tasks.md                    # markdown table (Open/In Progress/Blocked/Done)
+        ├── journal.md                  # append-only daily log
+        ├── milestones.md               # markdown table; optional Link column
+        ├── memos/                      # legacy flat notes, still readable
+        └── growth/                     # one .md per win (frontmatter: catpilot: growth)
 ```
 
 Two storage styles, on purpose:
 - **Aggregate files** (`tasks`, `journal`, `milestones`) — compact, fast to scan/search.
-- **Per-file domains** (`memos`, `learning`, `growth`, `projects`) — each note carries
-  YAML frontmatter, so **Dataview** can query, group, and roll them up.
+- **Per-file domains** (`knowledge`, `learning`, `projects`, `achievements`, `growth`) —
+  each note carries YAML frontmatter, so **Dataview** can query, group, and roll them up.
+
+Legacy partitioned notes still read where compatibility is supported. In particular,
+flat `memos/` notes are merged into Knowledge Base reads/lists, while new writes go to
+`knowledge/`.
 
 ## 3. Dashboards (Dataview)
 The scaffold ships these in `Dashboards/`:
-- `Home.md` — projects, learning, recent growth, recent memos in one place.
-- `Tasks.md`, `Learning.md`, `Growth.md`, `Projects.md` — focused views.
+- `Home.md` — projects, learning, recent growth, recent knowledge, and achievements in one place.
+- `Tasks.md`, `Knowledge.md`, `Learning.md`, `Growth.md`, `Projects.md`, `Achievements.md` — focused views.
 
-Every queryable note has a `catpilot:` frontmatter key (`project`, `learning`,
-`growth`, `memo`) which the queries filter on. Example:
+Every queryable domain note has a `catpilot:` frontmatter key (`project`, `project-item`,
+`learning`, `learning-step`, `growth`, `memo`, `achievement`) and the major domains carry
+`tags: []` so the Obsidian graph connects related knowledge, projects, learning paths,
+and achievements. Example:
 
 ```dataview
 TABLE goal, progress, target_date
@@ -56,8 +67,9 @@ SORT target_date ASC
   (the `growth` skill) — your private, review-ready material.
 
 ## 5. Spaced review for certifications
-`learning` notes include a `next_review` date. The Learning dashboard surfaces
-topics due for review so cert prep doesn't go stale.
+Learning paths include a `next_review` date and ordered child steps. Progress is derived
+from step completion, and the Learning dashboard surfaces paths due for review so cert
+prep doesn't go stale.
 
 ## 6. Keep it private
 - The vault is **Layer 2** — never committed to the public repo.

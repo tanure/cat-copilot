@@ -11,6 +11,12 @@ All notable changes to this project are documented in this file.
   creates an unscheduled task; dragging a card **into** Backlog clears its due date, and
   dragging **out** to To do schedules it for today so cards no longer bounce back.
 
+### Fixed
+- **Due-date chip now clearly visible on board cards (canvas).** The 📅 date chip in the
+  card footer was rendering in a low-contrast muted colour that blended into the card, so
+  scheduled dates were easy to miss. It now uses full-contrast text on a subtle accent
+  tint with a bolder, tabular-figures style, making the due date legible at a glance.
+
 ## [0.8.0] - 2026-07-23
 
 ### Changed

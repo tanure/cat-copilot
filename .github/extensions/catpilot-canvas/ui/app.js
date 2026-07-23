@@ -628,11 +628,11 @@
     // `canAdd` gates the quick-add "＋" + footer for real statuses; Overdue is a
     // derived urgency bucket (open tasks past due) so it has no quick-add.
     const BOARD_COLS = [
-        { key: "backlog", title: "Backlog", icon: "📥", accent: "#8b93a7", status: "Open", canAdd: true, emptyHint: "No unscheduled tasks", filter: (t) => t.status.toLowerCase() === "open" && !t.dueDate },
-        { key: "overdue", title: "Overdue", icon: "⏰", accent: "#ff6b7d", status: "Open", addDue: true, canAdd: false, emptyHint: "Nothing overdue 🎉", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate < todayISO() },
-        { key: "open", title: "To do", icon: "🗒️", accent: "#7c5cff", status: "Open", addDue: true, canAdd: true, emptyHint: "No scheduled tasks", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate >= todayISO() },
-        { key: "blocked", title: "Blocked", icon: "⛔", accent: "#ff8c32", status: "Blocked", canAdd: true, emptyHint: "No blockers right now", filter: (t) => t.status.toLowerCase() === "blocked" },
-        { key: "done", title: "Done", icon: "✅", accent: "#35c88f", status: "Done", canAdd: true, emptyHint: "Nothing done yet", filter: (t) => t.status.toLowerCase() === "done" },
+        { key: "backlog", title: "Backlog", icon: "📥", accent: "#8b93a7", status: "Open", canAdd: true, emptyIcon: "📭", emptyHint: "No unscheduled tasks", filter: (t) => t.status.toLowerCase() === "open" && !t.dueDate },
+        { key: "overdue", title: "Overdue", icon: "⏰", accent: "#ff6b7d", status: "Open", addDue: true, canAdd: false, emptyIcon: "🎉", emptyHint: "Nothing overdue", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate < todayISO() },
+        { key: "open", title: "To do", icon: "🗒️", accent: "#7c5cff", status: "Open", addDue: true, canAdd: true, emptyIcon: "🗓️", emptyHint: "No scheduled tasks", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate >= todayISO() },
+        { key: "blocked", title: "Blocked", icon: "⛔", accent: "#ff8c32", status: "Blocked", canAdd: true, emptyIcon: "🧯", emptyHint: "No blockers right now", filter: (t) => t.status.toLowerCase() === "blocked" },
+        { key: "done", title: "Done", icon: "✅", accent: "#35c88f", status: "Done", canAdd: true, emptyIcon: "🌱", emptyHint: "Nothing done yet", filter: (t) => t.status.toLowerCase() === "done" },
     ];
 
     function renderTaskBoard(holder, tasks) {
@@ -651,7 +651,9 @@
 
             const bodyEl = el("div", { class: "board-col-body" });
             if (items.length) items.forEach((t) => bodyEl.append(boardCard(t)));
-            else bodyEl.append(el("div", { class: "board-col-empty", text: col.emptyHint }));
+            else bodyEl.append(el("div", { class: "board-col-empty" },
+                el("div", { class: "bce-emoji", text: col.emptyIcon || "🗒️" }),
+                el("div", { class: "bce-text", text: col.emptyHint })));
 
             colEl.append(head, bodyEl);
             if (col.canAdd) colEl.append(el("div", { class: "board-col-foot" },
@@ -702,10 +704,31 @@
         card.append(head, el("div", { class: "bc-title", text: t.title, title: t.title, onclick: () => taskDetail(t) }));
 
         const foot = el("div", { class: "bc-foot" });
-        if (t.dueDate) foot.append(el("span", { class: `bc-due${overdue ? " overdue" : (t.dueDate === todayISO() ? " today" : "")}`, html: `📅 ${esc(t.dueDate)}` }));
+        if (t.dueDate) {
+            const state = done ? "" : overdue ? " overdue" : (t.dueDate === todayISO() ? " today" : "");
+            const rel = dueLabel(t.dueDate, done);
+            foot.append(el("span", { class: `bc-due${state}`, title: `Due ${t.dueDate}` },
+                el("span", { class: "bc-due-ico", text: "📅" }),
+                el("span", { class: "bc-due-date", text: t.dueDate }),
+                rel ? el("span", { class: "bc-due-rel", text: rel }) : null));
+        }
         if (String(t.tags || "").trim()) foot.append(tagChips(t.tags));
         if (foot.childNodes.length) card.append(foot);
         return card;
+    }
+
+    // Human-friendly relative due label, e.g. "Today", "Tomorrow", "in 3d", "2d overdue".
+    function dueLabel(iso, done) {
+        if (!iso || done) return "";
+        const t0 = new Date(todayISO() + "T00:00:00");
+        const d = new Date(iso + "T00:00:00");
+        if (isNaN(d)) return "";
+        const diff = Math.round((d - t0) / 86400000);
+        if (diff < 0) return `${Math.abs(diff)}d overdue`;
+        if (diff === 0) return "Today";
+        if (diff === 1) return "Tomorrow";
+        if (diff <= 14) return `in ${diff}d`;
+        return "";
     }
 
     // ---------- Tasks · Calendar view ----------

@@ -2,6 +2,28 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+## [0.8.1] - 2026-07-23
+
+### Added
+- **Backlog column on the Kanban board (canvas).** Open tasks with **no due date** now
+  collect in a new **📥 Backlog** column (first in the board) instead of mixing into
+  **To do**, which is now reserved for scheduled tasks (due today or later). Its quick-add
+  creates an unscheduled task; dragging a card **into** Backlog clears its due date, and
+  dragging **out** to To do schedules it for today so cards no longer bounce back.
+- **Emoji empty-state for every board column (canvas).** Columns with no cards now show a
+  consistent pattern — a large emoji plus a short message (e.g. 📭 *No unscheduled tasks*,
+  🎉 *Nothing overdue*, 🧯 *No blockers right now*, 🌱 *Nothing done yet*) — instead of a
+  plain one-line hint.
+
+### Fixed
+- **Due date now clearly shown on board cards (canvas).** The card footer date was built
+  from an HTML string in a low-contrast muted colour and could be hard to see. It is now
+  rendered from explicit, high-contrast text nodes as a bold 📅 chip that shows the date
+  **and** a relative label (**Today**, **Tomorrow**, **in 3d**, **2d overdue**), so the due
+  date is legible at a glance on every scheduled card.
+
 ## [0.8.0] - 2026-07-23
 
 ### Changed

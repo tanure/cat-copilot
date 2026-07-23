@@ -39,12 +39,12 @@ The browser canvas SPA provides richer review and editing views:
   view modes, search, Markdown detail popup, and a full write/preview editor with
   Save/Delete plus folder/tag editing.
 - **Learning:** dashboard stats and progress bars, filters for All/In progress/Completed/Reviews due,
-  path detail with a step checklist, and "✨ Generate with Copilot" to draft a goal
-  and ordered steps.
-- **Projects:** portfolio grid with status/progress and a project dashboard covering
-  timeline, requirements, tasks, milestones, linked tasks, linked milestones, and
-  achievements. "Ask Copilot about this project" sends project context to the agent
-  for suggestions, follow-ups, gaps, and recommendations.
+  and a **full-page path detail** (route `#learning/<slug>`) with its own stats dashboard,
+  step checklist and in-page actions. "✨ Generate with Copilot" drafts a goal and ordered steps.
+- **Projects:** portfolio grid with status/progress and a **full-page project dashboard**
+  (route `#projects/<slug>`) covering timeline, requirements, tasks, milestones, linked
+  tasks, linked milestones, and achievements. "Ask Copilot about this project" sends project
+  context to the agent for suggestions, follow-ups, gaps, and recommendations.
 - **Achievements:** completed learning paths, completed projects, and manual achievements.
 - **Milestones:** supports filtering by optional links such as `project:<slug>` or
   `learning:<slug>`.

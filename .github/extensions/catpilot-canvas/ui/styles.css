@@ -441,7 +441,7 @@ table.tbl tr:focus-within .row-actions { opacity: 1; }
 }
 /* Keep toasts stacked clear above the dock's corner */
 .pomo-dock:not(.hidden) ~ .toasts { bottom: 92px; }
-.stat-grid { grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.stat-grid { grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 0 0 16px; }
 
 input, textarea, select {
     font-family: inherit; font-size: 14px; color: var(--text);
@@ -697,3 +697,14 @@ textarea { resize: vertical; min-height: 90px; }
 .ach-chip { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 10px; background: color-mix(in srgb, #ffb020 12%, var(--panel)); border: 1px solid color-mix(in srgb, #ffb020 30%, var(--border)); }
 .ach-chip strong { font-size: 12px; }
 .learn-card, .proj-card { gap: 10px; }
+
+/* card header: title left, status/badges right (learning + projects) */
+.learn-card .kb-card-top, .proj-card .kb-card-top { align-items: flex-start; gap: 10px; }
+.card-title { flex: 1; min-width: 0; margin: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-card-badges { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+
+/* full-page detail (learning / project) */
+.detail-back { margin-bottom: 14px; }
+.detail-hero { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.detail-hero > div:first-child { min-width: 0; }
+.detail-hero .pbar { max-width: 240px; }

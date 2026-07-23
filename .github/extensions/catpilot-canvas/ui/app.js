@@ -253,8 +253,8 @@
             const count = item.countKey ? counts[item.countKey] : null;
             const node = el("button", {
                 type: "button",
-                class: `nav-item ${state.view === item.id ? "active" : ""}`,
-                "aria-current": state.view === item.id ? "page" : null,
+                class: `nav-item ${state.view.split("/")[0] === item.id ? "active" : ""}`,
+                "aria-current": state.view.split("/")[0] === item.id ? "page" : null,
                 onclick: () => go(item.id),
             },
                 el("span", { class: "nav-ic", text: item.icon, "aria-hidden": "true" }),
@@ -276,22 +276,28 @@
     // current navigation.
     let navToken = 0;
     let actionsHost = $("#view-actions");
+    // Detail (full-page) renderers, keyed by base segment. Invoked as
+    // DETAIL_VIEWS[base](stage, param) when a route like "learning/<slug>" is used.
+    const DETAIL_VIEWS = {};
     async function go(view) {
         if (view === "memos") view = "knowledge"; // legacy alias
         const token = ++navToken;
         state.view = view;
         location.hash = view;
-        $("#view-title").textContent = NAV.find((n) => n.id === view)?.label || "CatPilot";
-        $("#view-sub").textContent = VIEW_SUB[view] || "";
+        const [base, ...rest] = String(view).split("/");
+        const param = rest.join("/");
+        const detail = param ? DETAIL_VIEWS[base] : null;
+        $("#view-title").textContent = NAV.find((n) => n.id === base)?.label || "CatPilot";
+        $("#view-sub").textContent = detail ? "" : (VIEW_SUB[view] || "");
         renderNav();
         const stage = el("div");
         const actionStage = el("div");
         actionsHost = actionStage;
-        stage.append(el("div", { class: "spinner" }));
         $("#content").innerHTML = "";
         $("#content").append(el("div", { class: "spinner" }));
         try {
-            await VIEWS[view](stage);
+            if (detail) await detail(stage, decodeURIComponent(param));
+            else await VIEWS[base](stage);
         } catch (err) {
             stage.innerHTML = "";
             stage.append(errorBox(err));
@@ -1259,7 +1265,7 @@
             el("div", { class: "card stat-card stat-progress" },
                 el("div", { class: "stat-progress-head" },
                     el("div", { class: "muted small", text: "Overall progress" }),
-                    paths.length ? el("button", { class: "btn btn-ghost btn-xs", text: "Details ›", onclick: () => progressDetailsModal("Learning progress", paths.map((p) => ({ title: p.title, progress: p.progress, sub: p.stepCount ? `${p.doneCount}/${p.stepCount} steps` : "no steps", slug: p.slug, legacy: p.legacy })), (it) => { if (!it.legacy) learningDetail(it.slug); }) }) : null),
+                    paths.length ? el("button", { class: "btn btn-ghost btn-xs", text: "Details ›", onclick: () => progressDetailsModal("Learning progress", paths.map((p) => ({ title: p.title, progress: p.progress, sub: p.stepCount ? `${p.doneCount}/${p.stepCount} steps` : "no steps", slug: p.slug, legacy: p.legacy })), (it) => { if (!it.legacy) go("learning/" + it.slug); }) }) : null),
                 progressBar(avg))));
 
         let shown = paths;
@@ -1286,9 +1292,10 @@
     }
     function learningCard(p) {
         const isLegacy = p.legacy;
-        return el("div", { class: "card note-card hoverable learn-card", onclick: () => isLegacy ? toast("Legacy note", "Read-only legacy learning note", "") : learningDetail(p.slug) },
-            el("div", { class: "kb-card-top" }, statusBadge(p.status || "In Progress"), isLegacy ? el("span", { class: "badge st-planned", text: "legacy" }) : null),
-            el("h4", { text: p.title }),
+        return el("div", { class: "card note-card hoverable learn-card", onclick: () => isLegacy ? toast("Legacy note", "Read-only legacy learning note", "") : go("learning/" + p.slug) },
+            el("div", { class: "kb-card-top" },
+                el("h4", { class: "card-title", text: p.title }),
+                el("div", { class: "kb-card-badges" }, statusBadge(p.status || "In Progress"), isLegacy ? el("span", { class: "badge st-planned", text: "legacy" }) : null)),
             p.goal ? el("p", { class: "muted small", text: p.goal }) : null,
             progressBar(p.progress),
             el("div", { class: "note-foot" },
@@ -1297,23 +1304,49 @@
                 p.targetDate ? el("span", { class: "tag", text: "🎯 " + p.targetDate }) : null));
     }
 
-    async function learningDetail(slug) {
+    DETAIL_VIEWS.learning = async (root, slug) => {
+        const myToken = navToken;
         let path;
         try { ({ path } = await api(`/api/learning-paths/${encodeURIComponent(slug)}`)); }
-        catch (e) { toast("Error", e.message, "err"); return; }
-        const body = el("div", {});
-        const header = el("div", { class: "detail-head" },
-            el("div", {}, statusBadge(path.status), path.goal ? el("p", { class: "muted", text: path.goal }) : null),
-            progressBar(path.progress));
-        body.append(header);
-        const meta = el("div", { class: "chip-row", style: "margin:8px 0 14px" });
+        catch (e) { root.innerHTML = ""; root.append(errorBox(e)); return; }
+        if (navToken !== myToken) return; // superseded by a newer navigation
+        root.innerHTML = "";
+        const rerender = () => go("learning/" + slug);
+        $("#view-title").textContent = path.title;
+        $("#view-sub").textContent = path.goal || "Learning path";
+
+        // top-right actions
+        const complete = el("button", { class: "btn btn-sm btn-primary", text: path.progress >= 100 ? "Completed" : "Mark complete", disabled: path.progress >= 100, onclick: async () => {
+            try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/complete`, { method: "POST", body: {} }); toast("🏆 Path completed", path.title, "ok"); await refreshSummary(); go("learning"); }
+            catch (e) { toast("Error", e.message, "err"); }
+        } });
+        actionsHost.append(
+            el("button", { class: "btn btn-sm", text: "Edit", onclick: () => learningModal(path) }),
+            complete);
+
+        // back link + hero
+        root.append(el("button", { class: "btn btn-ghost btn-sm detail-back", html: "← Back to Learning", onclick: () => go("learning") }));
+        root.append(el("div", { class: "detail-hero" },
+            el("div", {}, statusBadge(path.status), path.goal ? el("p", { class: "muted", style: "margin:8px 0 0", text: path.goal }) : null),
+            progressBar(path.progress)));
+
+        const meta = el("div", { class: "chip-row", style: "margin:0 0 14px" });
         if (path.targetDate) meta.append(el("span", { class: "tag", text: "🎯 Target " + path.targetDate }));
         if (path.nextReview) meta.append(el("span", { class: "tag", text: "🔔 Review " + path.nextReview }));
         (path.tags || []).forEach((t) => meta.append(el("span", { class: "tag", text: "#" + t })));
-        body.append(meta);
+        if (meta.childNodes.length) root.append(meta);
+
+        // dashboard stats
+        root.append(el("div", { class: "grid stat-grid" },
+            miniStat("🎓", path.stepCount, "steps"),
+            miniStat("✓", path.doneCount, "done"),
+            miniStat("⏳", Math.max(0, path.stepCount - path.doneCount), "remaining"),
+            el("div", { class: "card stat-card stat-progress" },
+                el("div", { class: "stat-progress-head" }, el("div", { class: "muted small", text: "Progress" })),
+                progressBar(path.progress))));
 
         // steps checklist
-        body.append(el("div", { class: "detail-row" },
+        root.append(el("div", { class: "detail-row", style: "margin-top:18px" },
             el("span", { class: "k", text: `Steps (${path.doneCount}/${path.stepCount})` }),
             el("button", { class: "btn btn-sm btn-primary", html: "＋ Add step", onclick: () => stepModal(slug) })));
         const list = el("div", { class: "step-list" });
@@ -1322,7 +1355,7 @@
             const doneS = p >= 100;
             list.append(el("div", { class: "step-row rich" + (doneS ? " done" : ""), onclick: (e) => { if (e.target.closest("button")) return; stepModal(slug, s); } },
                 el("button", { class: "step-check" + (doneS ? " on" : ""), title: doneS ? "Reopen" : "Mark done", text: doneS ? "✓" : "", onclick: async () => {
-                    try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps/${encodeURIComponent(s.id)}`, { method: "PUT", body: { progress: doneS ? 0 : 100 } }); await refreshSummary(); learningDetail(slug); }
+                    try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps/${encodeURIComponent(s.id)}`, { method: "PUT", body: { progress: doneS ? 0 : 100 } }); await refreshSummary(); rerender(); }
                     catch (e) { toast("Error", e.message, "err"); }
                 } }),
                 el("div", { class: "step-main" },
@@ -1331,37 +1364,33 @@
                     s.notes ? el("div", { class: "step-notes muted small", text: s.notes.split("\n")[0].slice(0, 120) }) : null),
                 el("button", { class: "icon-btn sm", title: "Remove step", text: "✕", onclick: async () => {
                     if (!confirm(`Remove step "${s.title}"?`)) return;
-                    try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps/${encodeURIComponent(s.id)}`, { method: "DELETE" }); learningDetail(slug); }
+                    try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps/${encodeURIComponent(s.id)}`, { method: "DELETE" }); await refreshSummary(); rerender(); }
                     catch (e) { toast("Error", e.message, "err"); }
                 } })));
         });
         if (!path.steps.length) list.append(el("p", { class: "muted small", text: "No steps yet — add one above, or quick-add below." }));
         const stepInput = el("input", { class: "search", placeholder: "Quick add a step and press Enter…", onkeydown: async (e) => {
             if (e.key !== "Enter" || !e.target.value.trim()) return;
-            try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps`, { method: "POST", body: { title: e.target.value.trim() } }); await refreshSummary(); learningDetail(slug); }
+            try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps`, { method: "POST", body: { title: e.target.value.trim() } }); await refreshSummary(); rerender(); }
             catch (err) { toast("Error", err.message, "err"); }
         } });
-        body.append(list, el("div", { class: "toolbar" }, stepInput));
+        root.append(list, el("div", { class: "toolbar" }, stepInput));
+
         if (path.linkedMilestones && path.linkedMilestones.length) {
-            body.append(el("div", { class: "detail-row", style: "margin-top:10px" }, el("span", { class: "k", text: `⚑ Linked milestones (${path.linkedMilestones.length})` })));
+            root.append(el("div", { class: "detail-row", style: "margin-top:16px" }, el("span", { class: "k", text: `⚑ Linked milestones (${path.linkedMilestones.length})` })));
             const lm = el("div", { class: "step-list" });
             path.linkedMilestones.forEach((mst) => lm.append(el("div", { class: "step-row" }, statusBadge(mst.status || "Planned"), el("span", { class: "step-title", text: mst.name }), mst.targetDate ? el("span", { class: "muted small", text: mst.targetDate }) : null)));
-            body.append(lm);
+            root.append(lm);
         }
-        if (path.body) body.append(el("div", { class: "detail-row", style: "margin-top:12px" }, el("span", { class: "k", text: "Notes" })), mdRender(path.body));
+        if (path.body) { root.append(el("div", { class: "detail-row", style: "margin-top:16px" }, el("span", { class: "k", text: "Notes" }))); root.append(mdRender(path.body)); }
 
-        const editBtn = el("button", { class: "btn", text: "Edit", onclick: () => learningModal(path) });
-        const complete = el("button", { class: "btn btn-primary", text: path.progress >= 100 ? "Completed" : "Mark complete", disabled: path.progress >= 100, onclick: async () => {
-            try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/complete`, { method: "POST", body: {} }); toast("🏆 Path completed", path.title, "ok"); closeModal(); await refreshSummary(); go("learning"); }
-            catch (e) { toast("Error", e.message, "err"); }
-        } });
-        const del = el("button", { class: "btn btn-ghost btn-danger", text: "Delete", onclick: async () => {
-            if (!confirm(`Delete learning path "${path.title}"?`)) return;
-            try { await api(`/api/learning-paths/${encodeURIComponent(slug)}`, { method: "DELETE" }); toast("Deleted", path.title, "ok"); closeModal(); await refreshSummary(); go("learning"); }
-            catch (e) { toast("Error", e.message, "err"); }
-        } });
-        openModal({ title: path.title, width: 720, body, foot: [del, editBtn, el("span", { class: "spacer", style: "flex:1" }), complete] });
-    }
+        root.append(el("div", { class: "toolbar", style: "margin-top:20px" },
+            el("button", { class: "btn btn-ghost btn-danger", text: "Delete path", onclick: async () => {
+                if (!confirm(`Delete learning path "${path.title}"?`)) return;
+                try { await api(`/api/learning-paths/${encodeURIComponent(slug)}`, { method: "DELETE" }); toast("Deleted", path.title, "ok"); await refreshSummary(); go("learning"); }
+                catch (e) { toast("Error", e.message, "err"); }
+            } })));
+    };
 
     function learningModal(existing) {
         const f = {};
@@ -1383,7 +1412,7 @@
             try {
                 if (existing) await api(`/api/learning-paths/${encodeURIComponent(existing.slug)}`, { method: "PUT", body: payload });
                 else await api("/api/learning-paths", { method: "POST", body: payload });
-                toast("Saved", title, "ok"); closeModal(); await refreshSummary(); go("learning");
+                toast("Saved", title, "ok"); closeModal(); await refreshSummary(); go(existing ? "learning/" + existing.slug : "learning");
             } catch (e) { toast("Error", e.message, "err"); }
         } });
         openModal({ title: existing ? "Edit learning path" : "New learning path", width: 640, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
@@ -1420,11 +1449,11 @@
             existing, zero: "Todo",
             statuses: ["Todo", "In Progress", "Blocked", "Done"],
             showType: false,
-            onCancel: () => learningDetail(slug),
+            onCancel: () => closeModal(),
             onSave: async (payload) => {
                 if (existing) await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps/${encodeURIComponent(existing.id)}`, { method: "PUT", body: payload });
                 else await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps`, { method: "POST", body: payload });
-                toast("Saved", payload.title, "ok"); await refreshSummary(); learningDetail(slug);
+                toast("Saved", payload.title, "ok"); closeModal(); await refreshSummary(); go("learning/" + slug);
             },
         });
     }
@@ -1455,7 +1484,7 @@
             el("div", { class: "card stat-card stat-progress" },
                 el("div", { class: "stat-progress-head" },
                     el("div", { class: "muted small", text: "Portfolio progress" }),
-                    projects.length ? el("button", { class: "btn btn-ghost btn-xs", text: "Details ›", onclick: () => progressDetailsModal("Portfolio progress", projects.map((p) => ({ title: p.title, progress: p.progress, sub: `${p.itemCount} items · ${p.taskCount} tasks`, slug: p.slug, legacy: p.legacy })), (it) => { if (!it.legacy) projectDetail(it.slug); }) }) : null),
+                    projects.length ? el("button", { class: "btn btn-ghost btn-xs", text: "Details ›", onclick: () => progressDetailsModal("Portfolio progress", projects.map((p) => ({ title: p.title, progress: p.progress, sub: `${p.itemCount} items · ${p.taskCount} tasks`, slug: p.slug, legacy: p.legacy })), (it) => { if (!it.legacy) go("projects/" + it.slug); }) }) : null),
                 progressBar(avg))));
 
         let shown = projects;
@@ -1467,9 +1496,10 @@
     };
     function projectCard(p) {
         const isLegacy = p.legacy;
-        return el("div", { class: "card note-card hoverable proj-card", onclick: () => isLegacy ? toast("Legacy note", "Read-only legacy project note", "") : projectDetail(p.slug) },
-            el("div", { class: "kb-card-top" }, statusBadge(p.status || "Active"), isLegacy ? el("span", { class: "badge st-planned", text: "legacy" }) : null),
-            el("h4", { text: p.title }),
+        return el("div", { class: "card note-card hoverable proj-card", onclick: () => isLegacy ? toast("Legacy note", "Read-only legacy project note", "") : go("projects/" + p.slug) },
+            el("div", { class: "kb-card-top" },
+                el("h4", { class: "card-title", text: p.title }),
+                el("div", { class: "kb-card-badges" }, statusBadge(p.status || "Active"), isLegacy ? el("span", { class: "badge st-planned", text: "legacy" }) : null)),
             p.summary ? el("p", { class: "muted small", text: p.summary }) : null,
             progressBar(p.progress),
             el("div", { class: "note-foot" },
@@ -1478,39 +1508,62 @@
                 el("span", { class: "muted small", text: `${p.itemCount} items · ${p.taskCount} tasks` })));
     }
 
-    async function projectDetail(slug) {
+    DETAIL_VIEWS.projects = async (root, slug) => {
+        const myToken = navToken;
         let pr;
         try { ({ project: pr } = await api(`/api/projects/${encodeURIComponent(slug)}`)); }
-        catch (e) { toast("Error", e.message, "err"); return; }
-        const body = el("div", {});
-        body.append(el("div", { class: "detail-head" },
-            el("div", {}, statusBadge(pr.status), pr.summary ? el("p", { class: "muted", text: pr.summary }) : null),
+        catch (e) { root.innerHTML = ""; root.append(errorBox(e)); return; }
+        if (navToken !== myToken) return; // superseded by a newer navigation
+        root.innerHTML = "";
+        const rerender = () => go("projects/" + slug);
+        $("#view-title").textContent = pr.title;
+        $("#view-sub").textContent = pr.summary || "Project";
+
+        const complete = el("button", { class: "btn btn-sm btn-primary", text: pr.progress >= 100 || (pr.status || "").toLowerCase() === "done" ? "Completed" : "Mark complete", disabled: (pr.status || "").toLowerCase() === "done", onclick: async () => {
+            try { await api(`/api/projects/${encodeURIComponent(slug)}/complete`, { method: "POST", body: {} }); toast("🏆 Project completed", pr.title, "ok"); await refreshSummary(); go("projects"); }
+            catch (e) { toast("Error", e.message, "err"); }
+        } });
+        actionsHost.append(
+            el("button", { class: "btn btn-sm", html: "✨ Ask Copilot", onclick: () => askProject(pr) }),
+            el("button", { class: "btn btn-sm", text: "Edit", onclick: () => projectModal(pr) }),
+            complete);
+
+        root.append(el("button", { class: "btn btn-ghost btn-sm detail-back", html: "← Back to Projects", onclick: () => go("projects") }));
+        root.append(el("div", { class: "detail-hero" },
+            el("div", {}, statusBadge(pr.status), pr.summary ? el("p", { class: "muted", style: "margin:8px 0 0", text: pr.summary }) : null),
             progressBar(pr.progress)));
-        const meta = el("div", { class: "chip-row", style: "margin:8px 0 14px" });
+        const meta = el("div", { class: "chip-row", style: "margin:0 0 14px" });
         if (pr.owner) meta.append(el("span", { class: "tag", text: "👤 " + pr.owner }));
         if (pr.start) meta.append(el("span", { class: "tag", text: "▶ " + pr.start }));
         if (pr.due) meta.append(el("span", { class: "tag", text: "🎯 " + pr.due }));
         (pr.tags || []).forEach((t) => meta.append(el("span", { class: "tag", text: "#" + t })));
-        body.append(meta);
+        if (meta.childNodes.length) root.append(meta);
 
-        body.append(el("div", { class: "toolbar" },
-            el("button", { class: "btn btn-sm btn-primary", html: "✨ Ask Copilot about this project", onclick: () => askProject(pr) }),
-            el("button", { class: "btn btn-sm", text: "Edit", onclick: () => projectModal(pr) })));
+        // dashboard stats
+        const allItems = [...(pr.requirements || []), ...(pr.tasks || []), ...(pr.milestones || [])];
+        const doneItems = allItems.filter((it) => (it.progress != null ? it.progress : (String(it.status).toLowerCase() === "done" ? 100 : 0)) >= 100).length;
+        root.append(el("div", { class: "grid stat-grid" },
+            miniStat("📋", (pr.requirements || []).length, "requirements"),
+            miniStat("✓", `${doneItems}/${allItems.length}`, "items done"),
+            miniStat("⚑", (pr.milestones || []).length, "milestones"),
+            el("div", { class: "card stat-card stat-progress" },
+                el("div", { class: "stat-progress-head" }, el("div", { class: "muted small", text: "Progress" })),
+                progressBar(pr.progress))));
 
         // item sections
         const sections = [["requirement", "📋 Requirements", pr.requirements], ["task", "✓ Tasks", pr.tasks], ["milestone", "⚑ Milestones", pr.milestones]];
         for (const [type, label, items] of sections) {
             const doneCt = items.filter((it) => (it.progress != null ? it.progress : (String(it.status).toLowerCase() === "done" ? 100 : 0)) >= 100).length;
-            body.append(el("div", { class: "detail-row", style: "margin-top:10px" },
+            root.append(el("div", { class: "detail-row", style: "margin-top:16px" },
                 el("span", { class: "k", text: `${label} (${doneCt}/${items.length})` }),
-                el("button", { class: "btn btn-sm", html: "＋ Add", onclick: () => itemModal(slug, type, null, reload) })));
+                el("button", { class: "btn btn-sm", html: "＋ Add", onclick: () => itemModal(slug, type, null, rerender) })));
             const list = el("div", { class: "step-list" });
             items.forEach((it) => {
                 const p = it.progress != null ? it.progress : (String(it.status).toLowerCase() === "done" ? 100 : 0);
                 const doneS = p >= 100;
-                list.append(el("div", { class: "step-row rich" + (doneS ? " done" : ""), onclick: (e) => { if (e.target.closest("button")) return; itemModal(slug, type, it, reload); } },
+                list.append(el("div", { class: "step-row rich" + (doneS ? " done" : ""), onclick: (e) => { if (e.target.closest("button")) return; itemModal(slug, type, it, rerender); } },
                     el("button", { class: "step-check" + (doneS ? " on" : ""), text: doneS ? "✓" : "", title: doneS ? "Reopen" : "Mark done", onclick: async () => {
-                        try { const r = await api(`/api/projects/${encodeURIComponent(slug)}/items/${encodeURIComponent(it.id)}`, { method: "PUT", body: { progress: doneS ? 0 : 100 } }); reload(r.project); await refreshSummary(); }
+                        try { await api(`/api/projects/${encodeURIComponent(slug)}/items/${encodeURIComponent(it.id)}`, { method: "PUT", body: { progress: doneS ? 0 : 100 } }); await refreshSummary(); rerender(); }
                         catch (e) { toast("Error", e.message, "err"); }
                     } }),
                     el("div", { class: "step-main" },
@@ -1519,50 +1572,45 @@
                         it.notes ? el("div", { class: "step-notes muted small", text: it.notes.split("\n")[0].slice(0, 120) }) : null),
                     el("button", { class: "icon-btn sm", text: "✕", title: "Remove", onclick: async () => {
                         if (!confirm(`Remove "${it.title}"?`)) return;
-                        try { const r = await api(`/api/projects/${encodeURIComponent(slug)}/items/${encodeURIComponent(it.id)}`, { method: "DELETE" }); reload(r.project); }
+                        try { await api(`/api/projects/${encodeURIComponent(slug)}/items/${encodeURIComponent(it.id)}`, { method: "DELETE" }); await refreshSummary(); rerender(); }
                         catch (e) { toast("Error", e.message, "err"); }
                     } })));
             });
             const addInput = el("input", { class: "search", placeholder: `Quick add ${type}…`, onkeydown: async (e) => {
                 if (e.key !== "Enter" || !e.target.value.trim()) return;
-                try { const r = await api(`/api/projects/${encodeURIComponent(slug)}/items`, { method: "POST", body: { title: e.target.value.trim(), type } }); e.target.value = ""; reload(r.project); await refreshSummary(); }
+                try { await api(`/api/projects/${encodeURIComponent(slug)}/items`, { method: "POST", body: { title: e.target.value.trim(), type } }); e.target.value = ""; await refreshSummary(); rerender(); }
                 catch (err) { toast("Error", err.message, "err"); }
             } });
-            body.append(list, el("div", { class: "toolbar", style: "margin-bottom:6px" }, addInput));
+            root.append(list, el("div", { class: "toolbar", style: "margin-bottom:6px" }, addInput));
         }
 
         if (pr.linkedTasks && pr.linkedTasks.length) {
-            body.append(el("div", { class: "detail-row", style: "margin-top:10px" }, el("span", { class: "k", text: `🔗 Linked tasks (${pr.linkedTasks.length})` })));
+            root.append(el("div", { class: "detail-row", style: "margin-top:16px" }, el("span", { class: "k", text: `🔗 Linked tasks (${pr.linkedTasks.length})` })));
             const lt = el("div", { class: "step-list" });
             pr.linkedTasks.forEach((t) => lt.append(el("div", { class: "step-row" }, statusBadge(t.status), el("span", { class: "step-title", text: t.title }))));
-            body.append(lt);
+            root.append(lt);
         }
         if (pr.linkedMilestones && pr.linkedMilestones.length) {
-            body.append(el("div", { class: "detail-row", style: "margin-top:10px" }, el("span", { class: "k", text: `⚑ Linked milestones (${pr.linkedMilestones.length})` })));
+            root.append(el("div", { class: "detail-row", style: "margin-top:16px" }, el("span", { class: "k", text: `⚑ Linked milestones (${pr.linkedMilestones.length})` })));
             const lm = el("div", { class: "step-list" });
             pr.linkedMilestones.forEach((mst) => lm.append(el("div", { class: "step-row" }, statusBadge(mst.status || "Planned"), el("span", { class: "step-title", text: mst.name }), mst.targetDate ? el("span", { class: "muted small", text: mst.targetDate }) : null)));
-            body.append(lm);
+            root.append(lm);
         }
         if (pr.achievements && pr.achievements.length) {
-            body.append(el("div", { class: "detail-row", style: "margin-top:10px" }, el("span", { class: "k", text: "🏆 Achievements" })));
+            root.append(el("div", { class: "detail-row", style: "margin-top:16px" }, el("span", { class: "k", text: "🏆 Achievements" })));
             const strip = el("div", { class: "ach-strip" });
             pr.achievements.forEach((a) => strip.append(el("div", { class: "ach-chip" }, el("span", { text: "🏆" }), el("div", {}, el("strong", { text: a.title }), el("span", { class: "muted small", text: " " + (a.date || "") })))));
-            body.append(strip);
+            root.append(strip);
         }
-        if (pr.body) body.append(el("div", { class: "detail-row", style: "margin-top:12px" }, el("span", { class: "k", text: "Notes" })), mdRender(pr.body));
+        if (pr.body) { root.append(el("div", { class: "detail-row", style: "margin-top:16px" }, el("span", { class: "k", text: "Notes" }))); root.append(mdRender(pr.body)); }
 
-        const complete = el("button", { class: "btn btn-primary", text: pr.progress >= 100 || (pr.status || "").toLowerCase() === "done" ? "Completed" : "Mark complete", disabled: (pr.status || "").toLowerCase() === "done", onclick: async () => {
-            try { await api(`/api/projects/${encodeURIComponent(slug)}/complete`, { method: "POST", body: {} }); toast("🏆 Project completed", pr.title, "ok"); closeModal(); await refreshSummary(); go("projects"); }
-            catch (e) { toast("Error", e.message, "err"); }
-        } });
-        const del = el("button", { class: "btn btn-ghost btn-danger", text: "Delete", onclick: async () => {
-            if (!confirm(`Delete project "${pr.title}"? Items are removed too.`)) return;
-            try { await api(`/api/projects/${encodeURIComponent(slug)}`, { method: "DELETE" }); toast("Deleted", pr.title, "ok"); closeModal(); await refreshSummary(); go("projects"); }
-            catch (e) { toast("Error", e.message, "err"); }
-        } });
-        const modal = openModal({ title: pr.title, width: 780, body, foot: [del, el("span", { class: "spacer", style: "flex:1" }), complete] });
-        function reload(next) { pr = next; projectDetail(slug); } // re-fetch for a clean rerender
-    }
+        root.append(el("div", { class: "toolbar", style: "margin-top:20px" },
+            el("button", { class: "btn btn-ghost btn-danger", text: "Delete project", onclick: async () => {
+                if (!confirm(`Delete project "${pr.title}"? Items are removed too.`)) return;
+                try { await api(`/api/projects/${encodeURIComponent(slug)}`, { method: "DELETE" }); toast("Deleted", pr.title, "ok"); await refreshSummary(); go("projects"); }
+                catch (e) { toast("Error", e.message, "err"); }
+            } })));
+    };
 
     function itemModal(slug, type, existing, reload) {
         childItemModal({
@@ -1570,13 +1618,12 @@
             existing, presetType: type, zero: "Open",
             statuses: ["Open", "In Progress", "Blocked", "Done"],
             showType: true,
-            onCancel: () => projectDetail(slug),
+            onCancel: () => closeModal(),
             onSave: async (payload) => {
-                let r;
-                if (existing) r = await api(`/api/projects/${encodeURIComponent(slug)}/items/${encodeURIComponent(existing.id)}`, { method: "PUT", body: payload });
-                else r = await api(`/api/projects/${encodeURIComponent(slug)}/items`, { method: "POST", body: payload });
-                toast("Saved", payload.title, "ok"); await refreshSummary();
-                if (reload) reload(r.project); else projectDetail(slug);
+                if (existing) await api(`/api/projects/${encodeURIComponent(slug)}/items/${encodeURIComponent(existing.id)}`, { method: "PUT", body: payload });
+                else await api(`/api/projects/${encodeURIComponent(slug)}/items`, { method: "POST", body: payload });
+                toast("Saved", payload.title, "ok"); closeModal(); await refreshSummary();
+                if (reload) reload(); else go("projects/" + slug);
             },
         });
     }
@@ -1613,7 +1660,7 @@
             try {
                 if (existing) await api(`/api/projects/${encodeURIComponent(existing.slug)}`, { method: "PUT", body: payload });
                 else await api("/api/projects", { method: "POST", body: payload });
-                toast("Saved", title, "ok"); closeModal(); await refreshSummary(); go("projects");
+                toast("Saved", title, "ok"); closeModal(); await refreshSummary(); go(existing ? "projects/" + existing.slug : "projects");
             } catch (e) { toast("Error", e.message, "err"); }
         } });
         openModal({ title: existing ? "Edit project" : "New project", width: 680, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
@@ -2543,12 +2590,12 @@
         await pomoSync();
         startPomoLoop();
         const initial = (location.hash || "").replace("#", "");
-        go(NAV.some((n) => n.id === initial) ? initial : "dashboard");
+        go(NAV.some((n) => n.id === initial.split("/")[0]) ? initial : "dashboard");
     }
 
     window.addEventListener("hashchange", () => {
         const v = (location.hash || "").replace("#", "");
-        if (v && v !== state.view && NAV.some((n) => n.id === v)) go(v);
+        if (v && v !== state.view && NAV.some((n) => n.id === v.split("/")[0])) go(v);
     });
 
     boot();

@@ -628,8 +628,9 @@
     // `canAdd` gates the quick-add "＋" + footer for real statuses; Overdue is a
     // derived urgency bucket (open tasks past due) so it has no quick-add.
     const BOARD_COLS = [
+        { key: "backlog", title: "Backlog", icon: "📥", accent: "#8b93a7", status: "Open", canAdd: true, emptyHint: "No unscheduled tasks", filter: (t) => t.status.toLowerCase() === "open" && !t.dueDate },
         { key: "overdue", title: "Overdue", icon: "⏰", accent: "#ff6b7d", status: "Open", addDue: true, canAdd: false, emptyHint: "Nothing overdue 🎉", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate < todayISO() },
-        { key: "open", title: "To do", icon: "🗒️", accent: "#7c5cff", status: "Open", canAdd: true, emptyHint: "No tasks queued — add one", filter: (t) => t.status.toLowerCase() === "open" && !(t.dueDate && t.dueDate < todayISO()) },
+        { key: "open", title: "To do", icon: "🗒️", accent: "#7c5cff", status: "Open", addDue: true, canAdd: true, emptyHint: "No scheduled tasks", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate >= todayISO() },
         { key: "blocked", title: "Blocked", icon: "⛔", accent: "#ff8c32", status: "Blocked", canAdd: true, emptyHint: "No blockers right now", filter: (t) => t.status.toLowerCase() === "blocked" },
         { key: "done", title: "Done", icon: "✅", accent: "#35c88f", status: "Done", canAdd: true, emptyHint: "Nothing done yet", filter: (t) => t.status.toLowerCase() === "done" },
     ];
@@ -662,11 +663,17 @@
             colEl.addEventListener("drop", async (e) => {
                 e.preventDefault(); colEl.classList.remove("drop");
                 const id = e.dataTransfer.getData("text/plain");
+                const task = tasks.find((x) => String(x.id) === String(id));
                 try {
-                    // Overdue and To do both map to the stored "Open" status; the card
-                    // lands in the right column based on its due date.
-                    if (col.status === "Done") await api(`/api/tasks/${id}/complete`, { method: "POST" });
-                    else await api(`/api/tasks/${id}`, { method: "PUT", body: { status: col.status } });
+                    if (col.key === "done") { await api(`/api/tasks/${id}/complete`, { method: "POST" }); }
+                    else {
+                        // Backlog / To do share the stored "Open" status; the due date is what
+                        // routes a card between them, so adjust it on drop.
+                        const body = { status: col.status };
+                        if (col.key === "backlog") body.dueDate = "";
+                        else if (col.key === "open" && task && !task.dueDate) body.dueDate = todayISO();
+                        await api(`/api/tasks/${id}`, { method: "PUT", body });
+                    }
                     await refreshSummary(); go("tasks");
                 } catch (err) { toast("Error", err.message, "err"); }
             });

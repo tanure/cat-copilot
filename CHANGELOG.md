@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented in this file.
 
-## [Unreleased]
+## [0.8.0] - 2026-07-23
 
 ### Changed
 - **Redesigned Kanban board (canvas).** The Tasks ▦ Board was reworked for clarity and

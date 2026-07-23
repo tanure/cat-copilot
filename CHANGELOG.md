@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-07-23
+
+### Fixed
+- **Board card footer no longer clipped (canvas).** In the **To do** column, cards with
+  many siblings had their footer — the 📅 due-date pill and tag chips — sliced off. The
+  column's flex layout was shrinking each card below its natural content height while
+  `overflow: hidden` hid the overflow, so the footer only showed in short columns (e.g.
+  Done). Cards are now `flex: 0 0 auto`, keeping full height and letting the column scroll,
+  so the due date and tags render consistently on every card.
+
+### Added
+- **"No due date" chip on undated board cards (canvas).** Open cards without a due date now
+  show a muted **🗓️ No due date** chip in the footer, matching the layout of scheduled
+  cards (priority → title → due/no-due chip → tags).
+
+### Changed
+- **Hardened canvas asset cache-busting (canvas).** The extension now injects a fresh
+  per-request version token into `index.html` and sends strict no-cache headers, so the
+  WebView always loads the latest `app.js`/`styles.css` after an update.
+
 ## [0.8.1] - 2026-07-23
 
 ### Added

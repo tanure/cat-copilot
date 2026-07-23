@@ -25,6 +25,10 @@ This is the user's **private** growth log and review-prep source. It stays in th
 Always run the `sanitize` skill before producing anything intended to be shared
 outside the vault (remove customer names, codenames, confidential metrics, secrets).
 
+Achievements are a separate dedicated log for completed learning paths, completed
+projects, and manual accomplishments. Cross-reference achievements when they help
+support a growth summary, but keep growth notes focused on review-ready impact.
+
 ## Storage model (configuration-aware)
 Growth entries are **per-file notes** (one per accomplishment), stored under:
 - `<storage.root>/<partition>/growth/<YYYY-MM-DD_slug>.md`
@@ -40,7 +44,7 @@ title: "Shipped the CatPilot MCP server"
 area: "delivery"
 date: "2026-06-19"
 impact: "Unified tasks/journal across CLI, VS Code, and App"
-tags: [growth]
+tags: [growth, delivery]
 ---
 
 # 🌱 Shipped the CatPilot MCP server
@@ -51,20 +55,23 @@ tags: [growth]
 ## Who benefited / collaborators
 ```
 
+The `tags` frontmatter feeds the Obsidian graph and should include useful themes
+such as `delivery`, `leadership`, `learning`, or `collaboration`.
+
 ## Inputs to capture (ask only if missing)
 **Required**
 - Title (the accomplishment)
 
 **Optional**
-- Area (delivery, leadership, learning, collaboration, ...), impact statement, date
+- Area (delivery, leadership, learning, collaboration, ...), impact statement, date, tags
 
 ## Procedure
 - **Log a win:** create a growth note; prompt for a one-line quantified impact.
 - **Impact summary / review prep:**
-  1. Gather signal from the growth notes (and optionally journal + milestones).
+  1. Gather signal from growth notes (and optionally journal, milestones, and achievements).
   2. Group by `area`; produce concise STAR-style bullets (Situation, Task, Action, Result).
   3. Run `sanitize` and present a neutral, shareable summary.
-  4. Offer to save the summary as a memo via `memo-creation`.
+  4. Offer to save the summary as a Knowledge Base note via `memo-creation`.
 
 ## Response style
 - Use `🌱` for confirmations, `⚠️` for missing inputs, `❌` for failures.
@@ -73,4 +80,4 @@ tags: [growth]
 ## Files
 - `data/config.json` (required to resolve target)
 - Resolved growth note (authoritative target)
-- Optionally reads journal/milestones for summaries
+- Optionally reads journal/milestones/achievements for summaries

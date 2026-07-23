@@ -5,7 +5,6 @@ goal: ""
 status: "In Progress"
 progress: "0%"
 target_date: ""
-completed_date: ""
 next_review: ""
 tags: [learning]
 ---
@@ -17,7 +16,6 @@ tags: [learning]
 ## Resources
 - 
 
-## Progress log
-- {{date}} — started
-
 ## Notes
+
+> Add ordered steps under `learning/{{slug}}/steps/` with `catpilot: learning-step`.

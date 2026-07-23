@@ -102,7 +102,7 @@
         { id: "tasks", icon: "✓", label: "Tasks", countKey: "tasksOpen" },
         { id: "journal", icon: "✎", label: "Journal", countKey: "journal" },
         { id: "milestones", icon: "⚑", label: "Milestones", countKey: "milestones" },
-        { id: "memos", icon: "▤", label: "Memos", countKey: "memos" },
+        { id: "knowledge", icon: "📚", label: "Knowledge", countKey: "knowledge" },
         { id: "learning", icon: "🎓", label: "Learning", countKey: "learning" },
         { id: "growth", icon: "↗", label: "Growth", countKey: "growth" },
         { id: "projects", icon: "❏", label: "Projects", countKey: "projects" },
@@ -118,10 +118,10 @@
         tasks: "Capture, organize and complete work",
         journal: "Daily notes and decisions",
         milestones: "Track goals to completion",
-        memos: "Handoffs, summaries and notes",
-        learning: "Certifications and study topics",
+        knowledge: "A tagged, foldered knowledge base",
+        learning: "Certification paths, steps and progress",
         growth: "Accomplishments and impact log",
-        projects: "Lightweight project status",
+        projects: "Goals, plans, milestones and dashboards",
         pomodoro: "Focus timers and logged sessions",
         reports: "Executive reports from your data",
         settings: "Storage, migration and preferences",
@@ -277,6 +277,7 @@
     let navToken = 0;
     let actionsHost = $("#view-actions");
     async function go(view) {
+        if (view === "memos") view = "knowledge"; // legacy alias
         const token = ++navToken;
         state.view = view;
         location.hash = view;
@@ -376,9 +377,9 @@
             { n: c.tasksOpen, label: "Open tasks", ic: "✓", tone: "tone-accent", sub: `${c.tasksDone} completed` },
             { n: c.tasksOverdue, label: "Overdue", ic: "⏰", tone: c.tasksOverdue ? "tone-danger" : "tone-ok", sub: `${c.tasksDueToday} due today` },
             { n: c.milestones, label: "Milestones", ic: "⚑", tone: "tone-accent", sub: `${s.milestoneStatus.Done || 0} done` },
-            { n: c.memos, label: "Memos", ic: "▤", tone: "", sub: `${c.journal} journal entries` },
-            { n: c.learning, label: "Learning", ic: "🎓", tone: "", sub: "topics tracked" },
-            { n: c.growth, label: "Growth", ic: "↗", tone: "tone-ok", sub: "impact entries" },
+            { n: c.knowledge, label: "Knowledge", ic: "📚", tone: "", sub: `${c.journal} journal entries` },
+            { n: c.learning, label: "Learning", ic: "🎓", tone: "", sub: `${c.achievements || 0} achievements` },
+            { n: c.projects, label: "Projects", ic: "❏", tone: "tone-ok", sub: `${c.growth} growth entries` },
         ];
         root.append(el("div", { class: "grid cards", style: "margin-top:16px" },
             cards.map((cd) => el("div", { class: `card stat hoverable ${cd.tone}` },
@@ -550,7 +551,7 @@
             el("input", { class: "search", placeholder: "Search tasks…", oninput: (e) => filterTasks(e.target.value) }),
             filterSeg,
             el("span", { class: "spacer" }),
-            el("span", { class: "muted small", text: `${tasks.filter((t) => t.status.toLowerCase() === "open").length} open · ${tasks.filter((t) => t.status.toLowerCase() === "blocked").length} blocked · ${tasks.filter((t) => t.status.toLowerCase() === "done").length} done` }));
+            el("span", { class: "muted small", text: `${tasks.filter((t) => t.status.toLowerCase() === "open").length} open · ${tasks.filter((t) => t.status.toLowerCase() === "in progress").length} in progress · ${tasks.filter((t) => t.status.toLowerCase() === "blocked").length} blocked · ${tasks.filter((t) => t.status.toLowerCase() === "done").length} done` }));
         root.append(toolbar);
 
         const holder = el("div", { id: "task-holder" });
@@ -572,9 +573,10 @@
 
     function renderTaskList(holder, tasks) {
         const open = tasks.filter((t) => t.status.toLowerCase() === "open");
+        const inProgress = tasks.filter((t) => t.status.toLowerCase() === "in progress");
         const blocked = tasks.filter((t) => t.status.toLowerCase() === "blocked");
         const done = tasks.filter((t) => t.status.toLowerCase() === "done");
-        const ordered = [...open, ...blocked, ...done];
+        const ordered = [...inProgress, ...open, ...blocked, ...done];
         const tbody = el("tbody");
         ordered.forEach((t) => tbody.append(taskRow(t)));
         holder.append(el("div", { class: "table-wrap" },
@@ -631,6 +633,7 @@
         { key: "backlog", title: "Backlog", icon: "📥", accent: "#8b93a7", status: "Open", canAdd: true, emptyIcon: "📭", emptyHint: "No unscheduled tasks", filter: (t) => t.status.toLowerCase() === "open" && !t.dueDate },
         { key: "overdue", title: "Overdue", icon: "⏰", accent: "#ff6b7d", status: "Open", addDue: true, canAdd: false, emptyIcon: "🎉", emptyHint: "Nothing overdue", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate < todayISO() },
         { key: "open", title: "To do", icon: "🗒️", accent: "#7c5cff", status: "Open", addDue: true, canAdd: true, emptyIcon: "🗓️", emptyHint: "No scheduled tasks", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate >= todayISO() },
+        { key: "inprogress", title: "In Progress", icon: "🚧", accent: "#3db8c8", status: "In Progress", canAdd: true, emptyIcon: "💤", emptyHint: "Nothing in progress", filter: (t) => t.status.toLowerCase() === "in progress" },
         { key: "blocked", title: "Blocked", icon: "⛔", accent: "#ff8c32", status: "Blocked", canAdd: true, emptyIcon: "🧯", emptyHint: "No blockers right now", filter: (t) => t.status.toLowerCase() === "blocked" },
         { key: "done", title: "Done", icon: "✅", accent: "#35c88f", status: "Done", canAdd: true, emptyIcon: "🌱", emptyHint: "Nothing done yet", filter: (t) => t.status.toLowerCase() === "done" },
     ];
@@ -697,6 +700,7 @@
         // from the title so the card reads cleanly.
         const head = el("div", { class: "bc-head" });
         if (t.priority) head.append(priorityBadge(t.priority));
+        if (t.status.toLowerCase() === "in progress") head.append(statusBadge("In Progress"));
         if (blocked) head.append(statusBadge("Blocked"));
         if (overdue) head.append(el("span", { class: "badge st-overdue", html: "⏰ Overdue" }));
         head.append(el("span", { class: "bc-id", text: `#${t.id}` }));
@@ -851,7 +855,7 @@
             el("div", { class: "form-row" },
                 field("Due date", f, "due", { value: t?.dueDate || prefill.due, type: "date" }),
                 selectField("Priority", f, "priority", ["", "P0", "P1", "P2", "P3", "High", "Med", "Low"], t?.priority || prefill.priority)),
-            selectField("Status", f, "status", ["Open", "Blocked", "Done"], t?.status || prefill.status || "Open", { Open: "To do", Blocked: "Blocked", Done: "Done" }),
+            selectField("Status", f, "status", ["Open", "In Progress", "Blocked", "Done"], t?.status || prefill.status || "Open", { Open: "To do", "In Progress": "In Progress", Blocked: "Blocked", Done: "Done" }),
             field("Tags", f, "tags", { value: t?.tags, placeholder: "comma,separated" }),
             mdField("Context", f, "context", { value: t?.context, placeholder: "One-line context (markdown supported)" }));
         const save = el("button", { class: "btn btn-primary", text: editing ? "Save changes" : "Add task", onclick: async () => {
@@ -915,41 +919,69 @@
     }
 
     // ---------- Milestones ----------
+    let msLinkFilter = localStorage.getItem("cp-ms-link") || "all";
+
+    // Build link <select> options + a label resolver from projects + learning paths.
+    async function milestoneLinkOptions() {
+        let projects = [], paths = [];
+        try { projects = (await api("/api/projects")).projects || []; } catch { /* ignore */ }
+        try { paths = (await api("/api/learning-paths")).paths || []; } catch { /* ignore */ }
+        const opts = [{ value: "", label: "— None —" }];
+        projects.filter((p) => !p.legacy).forEach((p) => opts.push({ value: `project:${p.slug}`, label: `❏ ${p.title}` }));
+        paths.filter((p) => !p.legacy).forEach((p) => opts.push({ value: `learning:${p.slug}`, label: `🎓 ${p.title}` }));
+        const labelOf = (link) => (opts.find((o) => o.value === link) || {}).label || (link ? link : "");
+        return { opts, labelOf };
+    }
+
     VIEWS.milestones = async (root) => {
-        const { milestones } = await api("/api/milestones");
+        const [{ milestones }, links] = await Promise.all([api("/api/milestones"), milestoneLinkOptions()]);
         root.innerHTML = "";
+        const linked = milestones.filter((m) => m.link);
         root.append(el("div", { class: "toolbar" },
             el("button", { class: "btn btn-primary", html: "＋ Add milestone", onclick: () => milestoneModal() }),
             el("span", { class: "spacer" }),
-            el("span", { class: "muted small", text: `${milestones.length} milestone${milestones.length === 1 ? "" : "s"}` })));
-        if (!milestones.length) { root.append(emptyState("⚑", "No milestones", "Set goals with target dates and track them to done.", el("button", { class: "btn btn-primary", html: "＋ Add milestone", onclick: () => milestoneModal() }))); return; }
+            el("span", { class: "muted small", text: `${milestones.length} milestone${milestones.length === 1 ? "" : "s"}${linked.length ? ` · ${linked.length} linked` : ""}` })));
+        if (!milestones.length) { root.append(emptyState("⚑", "No milestones", "Set goals with target dates and track them to done. Link a milestone to a project or learning path to see it on that dashboard.", el("button", { class: "btn btn-primary", html: "＋ Add milestone", onclick: () => milestoneModal() }))); return; }
+
+        // Link filter (only shown once at least one milestone is linked)
+        if (linked.length) {
+            const linkVals = ["all", ...new Set(linked.map((m) => m.link))];
+            const seg = el("div", { class: "segmented", style: "margin-bottom:12px" }, ...linkVals.map((v) =>
+                el("button", { class: msLinkFilter === v ? "active" : "", html: v === "all" ? "All" : links.labelOf(v), onclick: () => { msLinkFilter = v; localStorage.setItem("cp-ms-link", v); go("milestones"); } })));
+            root.append(seg);
+        }
+        const shown = msLinkFilter === "all" ? milestones : milestones.filter((m) => m.link === msLinkFilter);
+
         const tbody = el("tbody");
-        milestones.forEach((m) => {
+        shown.forEach((m) => {
             const sel = el("select", { class: "inline-edit", style: "width:auto", onchange: async (e) => { try { await api(`/api/milestones/${m.id}`, { method: "PUT", body: { status: e.target.value } }); toast("Status updated", m.name, "ok"); await refreshSummary(); } catch (err) { toast("Error", err.message, "err"); } } });
             ["Planned", "In Progress", "Done"].forEach((o) => { const opt = el("option", { value: o, text: o }); if ((m.status || "Planned") === o) opt.selected = true; sel.append(opt); });
             tbody.append(el("tr", { dataset: { taskTitle: m.name } },
-                el("td", {}, el("span", { class: "cell-title", text: m.name, onclick: () => noteLikeDetail(`Milestone #${m.id}`, [["Name", m.name], ["Target date", m.targetDate || "—"], ["Status", m.status || "Planned"], ["Notes", m.notes || "—"]]) })),
+                el("td", {}, el("span", { class: "cell-title", text: m.name, onclick: () => noteLikeDetail(`Milestone #${m.id}`, [["Name", m.name], ["Target date", m.targetDate || "—"], ["Status", m.status || "Planned"], ["Linked to", m.link ? links.labelOf(m.link) : "—"], ["Notes", m.notes || "—"]]) })),
                 el("td", {}, m.targetDate ? el("span", { class: dueClass(m.targetDate, (m.status || "").toLowerCase() === "done"), text: m.targetDate }) : el("span", { class: "muted small", text: "—" })),
                 el("td", {}, sel),
+                el("td", {}, m.link ? el("span", { class: "tag", text: links.labelOf(m.link), title: m.link }) : el("span", { class: "muted small", text: "—" })),
                 el("td", {}, el("span", { class: "muted small", text: m.notes || "—" }))));
         });
         root.append(el("div", { class: "table-wrap" }, el("table", { class: "tbl" },
-            el("thead", {}, el("tr", {}, el("th", { text: "Milestone" }), el("th", { text: "Target" }), el("th", { text: "Status" }), el("th", { text: "Notes" }))),
+            el("thead", {}, el("tr", {}, el("th", { text: "Milestone" }), el("th", { text: "Target" }), el("th", { text: "Status" }), el("th", { text: "Linked to" }), el("th", { text: "Notes" }))),
             tbody)));
     };
 
-    function milestoneModal() {
+    async function milestoneModal() {
+        const { opts } = await milestoneLinkOptions();
         const f = {};
         const body = el("div", { class: "form" },
             field("Name", f, "name", { placeholder: "Milestone name", required: true }),
             el("div", { class: "form-row" },
                 field("Target date", f, "targetDate", { type: "date" }),
                 selectField("Status", f, "status", ["Planned", "In Progress", "Done"], "Planned")),
+            selectField("Link to (optional)", f, "link", opts.map((o) => o.value), "", Object.fromEntries(opts.map((o) => [o.value, o.label]))),
             mdField("Notes", f, "notes", { placeholder: "Optional notes (markdown supported)" }));
         const save = el("button", { class: "btn btn-primary", text: "Add milestone", onclick: async () => {
             const name = f.name.value.trim();
             if (!name) { toast("Name required", "", "err"); return; }
-            try { await api("/api/milestones", { method: "POST", body: { name, targetDate: f.targetDate.value, status: f.status.value, notes: f.notes.value.trim() } }); toast("Milestone added", name, "ok"); closeModal(); await refreshSummary(); if (state.view === "milestones") go("milestones"); }
+            try { await api("/api/milestones", { method: "POST", body: { name, targetDate: f.targetDate.value, status: f.status.value, link: f.link.value, notes: f.notes.value.trim() } }); toast("Milestone added", name, "ok"); closeModal(); await refreshSummary(); if (state.view === "milestones") go("milestones"); }
             catch (e) { toast("Error", e.message, "err"); }
         } });
         openModal({ title: "New milestone", body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
@@ -957,51 +989,642 @@
     }
 
     // ---------- Memos ----------
-    VIEWS.memos = async (root) => {
-        const { memos } = await api("/api/memos");
+    // ---------- Knowledge Base (evolved memos: folders + tags + views) ----------
+    let kbView = localStorage.getItem("cp-kb-view") || "grid";
+    const kbFilter = { folder: null, tag: null, q: "" };
+    const FOLDER_COLORS = ["#7c5cff", "#3db8c8", "#35c88f", "#ffb020", "#ff6b7d", "#c874ff", "#5c9cff", "#ff8c32"];
+    const folderColor = (name) => FOLDER_COLORS[[...String(name)].reduce((a, c) => a + c.charCodeAt(0), 0) % FOLDER_COLORS.length];
+
+    VIEWS.knowledge = async (root) => {
+        const [{ docs }, stats] = await Promise.all([
+            api(`/api/knowledge${kbQuery()}`),
+            api("/api/knowledge/folders"),
+        ]);
         root.innerHTML = "";
+
+        // view switcher in the topbar
+        const seg = el("div", { class: "segmented" },
+            ...[["grid", "▦ Grid"], ["list", "☰ List"], ["folders", "🗂 Folders"], ["month", "🗓 By month"]].map(([k, label]) =>
+                el("button", { class: kbView === k ? "active" : "", text: label, onclick: () => { kbView = k; localStorage.setItem("cp-kb-view", k); go("knowledge"); } })));
+        actionsHost.append(seg);
+
+        // stats header
+        const totalTags = stats.tags.length;
+        root.append(el("div", { class: "kb-stats" },
+            kbStat("📄", docs.length, "documents", "showing"),
+            kbStat("🗂", stats.folders.length, "folders"),
+            kbStat("🏷", totalTags, "tags")));
+
+        // toolbar: add + search + active-filter reset
+        const search = el("input", { class: "search", placeholder: "Search knowledge…", value: kbFilter.q, oninput: (e) => { kbFilter.q = e.target.value; debouncedKb(); } });
         root.append(el("div", { class: "toolbar" },
-            el("button", { class: "btn btn-primary", html: "＋ New memo", onclick: () => memoModal() }),
+            el("button", { class: "btn btn-primary", html: "＋ New document", onclick: () => kbModal() }),
+            search,
             el("span", { class: "spacer" }),
-            el("span", { class: "muted small", text: `${memos.length} memo${memos.length === 1 ? "" : "s"}` })));
-        if (!memos.length) { root.append(emptyState("▤", "No memos", "Create handoff notes, retros and summaries as markdown.", el("button", { class: "btn btn-primary", html: "＋ New memo", onclick: () => memoModal() }))); return; }
-        const grid = el("div", { class: "grid note-grid" });
-        memos.forEach((m) => grid.append(el("div", { class: "card note-card hoverable", onclick: () => memoDetail(m.filename) },
-            el("h4", { text: m.title }),
-            el("div", { class: "note-foot" }, el("span", { class: "tag", text: m.date || "" }), el("span", { class: "muted small", text: "📄 memo" })))));
-        root.append(grid);
+            (kbFilter.folder || kbFilter.tag)
+                ? el("button", { class: "btn btn-sm btn-ghost", html: "✕ Clear filters", onclick: () => { kbFilter.folder = null; kbFilter.tag = null; go("knowledge"); } })
+                : null));
+
+        // folder + tag filter rails
+        if (stats.folders.length || stats.tags.length) {
+            const rail = el("div", { class: "kb-rail" });
+            if (stats.folders.length) {
+                const chips = el("div", { class: "chip-row" },
+                    el("button", { class: "chip" + (kbFilter.folder ? "" : " active"), onclick: () => { kbFilter.folder = null; go("knowledge"); } }, "All folders"));
+                stats.folders.forEach((f) => chips.append(el("button", {
+                    class: "chip kb-folder-chip" + (kbFilter.folder === f.folder ? " active" : ""),
+                    style: `--fc:${folderColor(f.folder)}`,
+                    onclick: () => { kbFilter.folder = kbFilter.folder === f.folder ? null : f.folder; go("knowledge"); },
+                }, `${f.folder} · ${f.count}`)));
+                rail.append(el("div", { class: "kb-rail-row" }, el("span", { class: "kb-rail-label", text: "🗂" }), chips));
+            }
+            if (stats.tags.length) {
+                const chips = el("div", { class: "chip-row" });
+                stats.tags.slice(0, 24).forEach((t) => chips.append(el("button", {
+                    class: "chip tag-chip" + (kbFilter.tag === t.tag ? " active" : ""),
+                    onclick: () => { kbFilter.tag = kbFilter.tag === t.tag ? null : t.tag; go("knowledge"); },
+                }, `#${t.tag} · ${t.count}`)));
+                rail.append(el("div", { class: "kb-rail-row" }, el("span", { class: "kb-rail-label", text: "🏷" }), chips));
+            }
+            root.append(rail);
+        }
+
+        if (!docs.length) {
+            root.append(emptyState("📚", "No documents here", "Capture notes, handoffs and references as markdown — organized in folders and tags for your Obsidian graph.", el("button", { class: "btn btn-primary", html: "＋ New document", onclick: () => kbModal() })));
+            return;
+        }
+
+        if (kbView === "folders") root.append(kbGrouped(docs, (d) => d.folder, "🗂"));
+        else if (kbView === "month") root.append(kbGrouped(docs, (d) => (d.updated || d.created || "").slice(0, 7) || "Undated", "🗓"));
+        else if (kbView === "list") root.append(kbListTable(docs));
+        else root.append(kbGrid(docs));
     };
 
-    async function memoDetail(filename) {
-        try {
-            const { memo } = await api(`/api/memos/${encodeURIComponent(filename)}`);
-            openModal({ title: memo.title, width: 680, body: mdRender(memo.content || "(empty)"),
-                foot: [el("button", { class: "btn", text: "Close", onclick: closeModal })] });
-        } catch (e) { toast("Error", e.message, "err"); }
+    function kbQuery() {
+        const p = new URLSearchParams();
+        if (kbFilter.folder) p.set("folder", kbFilter.folder);
+        if (kbFilter.tag) p.set("tag", kbFilter.tag);
+        if (kbFilter.q.trim()) p.set("q", kbFilter.q.trim());
+        const s = p.toString();
+        return s ? `?${s}` : "";
+    }
+    let kbDebounce = null;
+    function debouncedKb() { clearTimeout(kbDebounce); kbDebounce = setTimeout(() => { if (state.view === "knowledge") go("knowledge"); }, 300); }
+    function kbStat(icon, value, label, tail) {
+        return el("div", { class: "kb-stat" },
+            el("span", { class: "kb-stat-ic", text: icon }),
+            el("div", {}, el("strong", { text: String(value) }), el("span", { class: "muted small", text: " " + label + (tail ? ` ${tail}` : "") })));
+    }
+    function kbCard(d) {
+        return el("div", { class: "card note-card hoverable kb-card", style: `--fc:${folderColor(d.folder)}`, onclick: () => kbDetail(d.id) },
+            el("div", { class: "kb-card-top" }, el("span", { class: "kb-folder-tag", text: `🗂 ${d.folder}` }), d.legacy ? el("span", { class: "badge st-planned", text: "legacy" }) : null),
+            el("h4", { text: d.title }),
+            d.tags.length ? el("div", { class: "tags" }, d.tags.slice(0, 5).map((t) => el("span", { class: "tag", text: "#" + t }))) : null,
+            el("div", { class: "note-foot" }, el("span", { class: "muted small", text: "🕑 " + (d.updated || d.created || "") })));
+    }
+    function kbGrid(docs) { const g = el("div", { class: "grid note-grid" }); docs.forEach((d) => g.append(kbCard(d))); return g; }
+    function kbGrouped(docs, keyFn, icon) {
+        const groups = new Map();
+        docs.forEach((d) => { const k = keyFn(d) || "—"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(d); });
+        const wrap = el("div", {});
+        [...groups.keys()].sort().forEach((k) => {
+            wrap.append(el("div", { class: "kb-group-head" }, el("span", { text: `${icon} ${k}` }), el("span", { class: "muted small", text: `${groups.get(k).length}` })));
+            wrap.append(kbGrid(groups.get(k)));
+        });
+        return wrap;
+    }
+    function kbListTable(docs) {
+        const tbody = el("tbody");
+        docs.forEach((d) => tbody.append(el("tr", { dataset: { taskTitle: d.title } },
+            el("td", {}, el("div", { class: "cell-title", text: d.title, onclick: () => kbDetail(d.id) })),
+            el("td", {}, el("span", { class: "kb-folder-tag", text: d.folder })),
+            el("td", {}, d.tags.length ? el("div", { class: "tags" }, d.tags.slice(0, 4).map((t) => el("span", { class: "tag", text: "#" + t }))) : el("span", { class: "muted small", text: "—" })),
+            el("td", {}, el("span", { class: "muted small", text: d.updated || d.created || "" })),
+            el("td", {}, el("div", { class: "row-actions" }, el("button", { class: "btn btn-sm btn-ghost", text: "Open", onclick: () => kbDetail(d.id) }))))));
+        return el("div", { class: "table-wrap" }, el("table", { class: "tbl" },
+            el("thead", {}, el("tr", {}, el("th", { text: "Document" }), el("th", { text: "Folder" }), el("th", { text: "Tags" }), el("th", { text: "Updated" }), el("th", { text: "" }))),
+            tbody));
     }
 
-    function memoModal() {
+    async function kbDetail(id) {
+        let doc;
+        try { ({ doc } = await api(`/api/knowledge/doc?id=${encodeURIComponent(id)}`)); }
+        catch (e) { toast("Error", e.message, "err"); return; }
         const f = {};
-        const body = el("div", { class: "form" },
-            field("Title", f, "title", { placeholder: "Memo title", required: true }),
-            mdField("Content", f, "content", { placeholder: "Markdown content…", minRows: 8 }));
-        const save = el("button", { class: "btn btn-primary", text: "Create memo", onclick: async () => {
-            const title = f.title.value.trim();
-            if (!title) { toast("Title required", "", "err"); return; }
-            try { await api("/api/memos", { method: "POST", body: { title, content: f.content.value } }); toast("Memo created", title, "ok"); closeModal(); await refreshSummary(); if (state.view === "memos") go("memos"); }
+        const editor = mdEditor({ value: doc.body || "", placeholder: "Markdown content…", minRows: 12 });
+        f.body = editor.textarea;
+        const meta = el("div", { class: "form-row" },
+            field("Title", f, "title", { value: doc.title }),
+            field("Folder", f, "folder", { value: doc.legacy ? "" : doc.folder, placeholder: "e.g. DevOps/Redis" }),
+            field("Tags", f, "tags", { value: doc.tags.join(", "), placeholder: "comma,separated" }));
+        const body = el("div", { class: "form" }, meta, el("div", { class: "md-label" }, el("span", { text: "Content" }), editor.node));
+        const save = el("button", { class: "btn btn-primary", text: "Save", onclick: async () => {
+            try {
+                const r = await api(`/api/knowledge/doc?id=${encodeURIComponent(id)}`, { method: "PUT", body: { title: f.title.value.trim() || doc.title, folder: f.folder.value.trim(), tags: f.tags.value, body: f.body.value } });
+                toast("Saved", r.doc.title, "ok"); closeModal(); await refreshSummary(); if (state.view === "knowledge") go("knowledge");
+            } catch (e) { toast("Error", e.message, "err"); }
+        } });
+        const del = el("button", { class: "btn btn-ghost btn-danger", text: "Delete", onclick: async () => {
+            if (!confirm(`Delete "${doc.title}"?`)) return;
+            try { await api(`/api/knowledge/doc?id=${encodeURIComponent(id)}`, { method: "DELETE" }); toast("Deleted", doc.title, "ok"); closeModal(); await refreshSummary(); if (state.view === "knowledge") go("knowledge"); }
             catch (e) { toast("Error", e.message, "err"); }
         } });
-        openModal({ title: "New memo", body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
+        openModal({ title: doc.title, width: 760, body, foot: [del, el("span", { class: "spacer", style: "flex:1" }), el("button", { class: "btn", text: "Close", onclick: closeModal }), save] });
+    }
+
+    function kbModal() {
+        const f = {};
+        const editor = mdEditor({ value: "", placeholder: "Markdown content…", minRows: 8 });
+        f.body = editor.textarea;
+        const body = el("div", { class: "form" },
+            el("div", { class: "form-row" },
+                field("Title", f, "title", { required: true, placeholder: "Document title" }),
+                field("Folder", f, "folder", { placeholder: "General" }),
+                field("Tags", f, "tags", { placeholder: "comma,separated" })),
+            el("div", { class: "md-label" }, el("span", { text: "Content" }), editor.node));
+        const save = el("button", { class: "btn btn-primary", text: "Create", onclick: async () => {
+            const title = f.title.value.trim();
+            if (!title) { toast("Title required", "", "err"); return; }
+            try { await api("/api/knowledge", { method: "POST", body: { title, folder: f.folder.value.trim(), tags: f.tags.value, body: f.body.value } }); toast("Document created", title, "ok"); closeModal(); await refreshSummary(); if (state.view === "knowledge") go("knowledge"); }
+            catch (e) { toast("Error", e.message, "err"); }
+        } });
+        openModal({ title: "New knowledge document", width: 720, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
         setTimeout(() => f.title.focus(), 50);
     }
 
-    // ---------- Domain notes: learning / growth / projects ----------
-    const DOMAIN_META = {
-        learning: { icon: "🎓", fields: [["goal", "Goal"], ["target_date", "Target date", "date"], ["next_review", "Next review", "date"], ["status", "Status"]] },
-        growth: { icon: "↗", fields: [["area", "Area"], ["impact", "Impact"]] },
-        projects: { icon: "❏", fields: [["status", "Status"], ["owner", "Owner"], ["due", "Due", "date"]] },
+    // ---------- shared: progress bar ----------
+    function progressBar(pct, opts = {}) {
+        pct = Math.max(0, Math.min(100, Math.round(pct || 0)));
+        const tone = pct >= 100 ? "done" : pct >= 60 ? "high" : pct >= 30 ? "mid" : "low";
+        return el("div", { class: "pbar" + (opts.sm ? " pbar-sm" : "") },
+            el("div", { class: "pbar-track" }, el("div", { class: `pbar-fill pf-${tone}`, style: `width:${pct}%` })),
+            opts.hideLabel ? null : el("span", { class: "pbar-label", text: pct + "%" }));
+    }
+    function statusFromPctClient(p, zero) { return p >= 100 ? "Done" : p > 0 ? "In Progress" : zero; }
+
+    // Compact, scrollable progress breakdown popup. rows: {title, progress, sub, slug, legacy}
+    function progressDetailsModal(title, rows, onPick) {
+        const list = el("div", { class: "details-list" });
+        if (!rows.length) list.append(el("p", { class: "muted small", text: "Nothing to show yet." }));
+        rows.forEach((r) => {
+            const clickable = onPick && !r.legacy;
+            const row = el("div", { class: "details-row" + (clickable ? " clickable" : "") },
+                el("div", { class: "details-row-top" },
+                    el("span", { class: "details-title", text: r.title }),
+                    r.legacy ? el("span", { class: "badge st-planned", text: "legacy" }) : null,
+                    el("span", { class: "details-pct", text: r.progress + "%" })),
+                progressBar(r.progress, { sm: true, hideLabel: true }),
+                r.sub ? el("div", { class: "muted small", text: r.sub }) : null);
+            if (clickable) row.onclick = () => { closeModal(); onPick(r); };
+            list.append(row);
+        });
+        openModal({ title, width: 460, body: list, foot: [el("button", { class: "btn", text: "Close", onclick: closeModal })] });
+    }
+
+    // Rich editor for a learning step / project item: status, live progress slider,
+    // due date and markdown notes. Reused for add + edit on both surfaces.
+    function childItemModal({ title, existing, zero, statuses, showType, presetType, onSave, onCancel }) {
+        const f = {};
+        const curProgress = existing && existing.progress != null ? existing.progress : 0;
+        const editor = mdEditor({ value: existing?.notes || "", placeholder: "Description, acceptance criteria, resources…", minRows: 5 });
+        f.notes = editor.textarea;
+
+        const slider = el("input", { type: "range", min: "0", max: "100", step: "5", value: String(curProgress), class: "range" });
+        const pctLabel = el("span", { class: "range-val", text: curProgress + "%" });
+        const statusSel = el("select", {});
+        statuses.forEach((s) => { const o = el("option", { value: s, text: s }); if (existing ? existing.status === s : statusFromPctClient(curProgress, zero) === s) o.selected = true; statusSel.append(o); });
+        f.status = statusSel;
+        slider.addEventListener("input", () => { const p = parseInt(slider.value, 10); pctLabel.textContent = p + "%"; statusSel.value = statusFromPctClient(p, zero); });
+        statusSel.addEventListener("change", () => {
+            const k = statusSel.value.toLowerCase().replace(/\s/g, "");
+            let p = parseInt(slider.value, 10);
+            if (k === "done") p = 100; else if (k === zero.toLowerCase()) p = 0; else p = p > 0 && p < 100 ? p : 50;
+            slider.value = String(p); pctLabel.textContent = p + "%";
+        });
+
+        let typeSel = null;
+        if (showType) { typeSel = el("select", {}); ["requirement", "task", "milestone"].forEach((t) => { const o = el("option", { value: t, text: t[0].toUpperCase() + t.slice(1) }); if (existing ? existing.type === t : presetType === t) o.selected = true; typeSel.append(o); }); f.type = typeSel; }
+
+        const body = el("div", { class: "form" },
+            field("Title", f, "title", { required: true, value: existing?.title, placeholder: "What needs to happen?" }),
+            el("div", { class: "form-row" },
+                typeSel ? el("label", {}, el("span", { text: "Type" }), typeSel) : null,
+                el("label", {}, el("span", { text: "Status" }), statusSel),
+                field("Due", f, "due", { type: "date", value: existing?.due })),
+            el("label", { class: "range-field" }, el("span", {}, "Progress ", pctLabel), slider),
+            el("div", { class: "md-label" }, el("span", { text: "Notes" }), editor.node));
+
+        const save = el("button", { class: "btn btn-primary", text: existing ? "Save" : "Add", onclick: async () => {
+            const t = f.title.value.trim();
+            if (!t) { toast("Title required", "", "err"); return; }
+            const payload = { title: t, status: f.status.value, progress: parseInt(slider.value, 10), due: f.due.value, notes: f.notes.value };
+            if (showType) payload.type = f.type.value;
+            try { await onSave(payload); } catch (e) { toast("Error", e.message, "err"); }
+        } });
+        openModal({ title, width: 560, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: () => (onCancel ? onCancel() : closeModal()) }), save] });
+        setTimeout(() => f.title.focus(), 50);
+    }
+
+    // ================================================================
+    // Learning paths (goal + steps + progress + dashboard)
+    // ================================================================
+    let learnFilter = localStorage.getItem("cp-learn-filter") || "all";
+    VIEWS.learning = async (root) => {
+        const [{ paths }, { achievements }] = await Promise.all([
+            api("/api/learning-paths"),
+            api("/api/achievements?sourceType=learning").catch(() => ({ achievements: [] })),
+        ]);
+        root.innerHTML = "";
+        actionsHost.append(el("button", { class: "btn btn-primary btn-sm", html: "＋ New path", onclick: () => learningModal() }),
+            el("button", { class: "btn btn-sm", html: "✨ Generate with Copilot", onclick: () => learningGenerateModal() }));
+
+        // dashboard summary
+        const active = paths.filter((p) => p.progress < 100);
+        const done = paths.filter((p) => p.progress >= 100);
+        const today = new Date().toISOString().slice(0, 10);
+        const dueReview = paths.filter((p) => p.nextReview && p.nextReview <= today && p.progress < 100);
+        const avg = paths.length ? Math.round(paths.reduce((a, p) => a + p.progress, 0) / paths.length) : 0;
+
+        // filters — on top of the page
+        const filters = [["all", "All"], ["In Progress", "In progress"], ["Done", "Completed"], ["review", "Reviews due"]];
+        const seg = el("div", { class: "segmented" }, ...filters.map(([k, label]) =>
+            el("button", { class: learnFilter === k ? "active" : "", text: label, onclick: () => { learnFilter = k; localStorage.setItem("cp-learn-filter", k); go("learning"); } })));
+        root.append(el("div", { class: "toolbar toolbar-top" }, seg));
+
+        root.append(el("div", { class: "grid stat-grid" },
+            miniStat("🎓", paths.length, "paths"),
+            miniStat("🔥", active.length, "in progress"),
+            miniStat("🏆", done.length, "completed"),
+            miniStat("🔔", dueReview.length, "reviews due"),
+            el("div", { class: "card stat-card stat-progress" },
+                el("div", { class: "stat-progress-head" },
+                    el("div", { class: "muted small", text: "Overall progress" }),
+                    paths.length ? el("button", { class: "btn btn-ghost btn-xs", text: "Details ›", onclick: () => progressDetailsModal("Learning progress", paths.map((p) => ({ title: p.title, progress: p.progress, sub: p.stepCount ? `${p.doneCount}/${p.stepCount} steps` : "no steps", slug: p.slug, legacy: p.legacy })), (it) => { if (!it.legacy) learningDetail(it.slug); }) }) : null),
+                progressBar(avg))));
+
+        let shown = paths;
+        if (learnFilter === "review") shown = dueReview;
+        else if (learnFilter === "Done") shown = done;
+        else if (learnFilter === "In Progress") shown = active;
+
+        if (!shown.length) { root.append(emptyState("🎓", "No learning paths", "Plan a certification or study goal as an ordered path of steps — Copilot can draft one for you.", el("button", { class: "btn btn-primary", html: "✨ Generate with Copilot", onclick: () => learningGenerateModal() }))); }
+        else {
+            const grid = el("div", { class: "grid note-grid" });
+            shown.forEach((p) => grid.append(learningCard(p)));
+            root.append(grid);
+        }
+
+        if (achievements.length) {
+            root.append(el("h3", { class: "section-h", text: "🏆 Recent achievements" }));
+            const strip = el("div", { class: "ach-strip" });
+            achievements.slice(0, 8).forEach((a) => strip.append(el("div", { class: "ach-chip" }, el("span", { text: "🏆" }), el("div", {}, el("strong", { text: a.title }), el("span", { class: "muted small", text: " " + (a.date || "") })))));
+            root.append(strip);
+        }
     };
-    for (const domain of ["learning", "growth", "projects"]) {
+    function miniStat(icon, value, label) {
+        return el("div", { class: "card stat-card" }, el("div", { class: "stat-ic", text: icon }), el("div", { class: "stat-v", text: String(value) }), el("div", { class: "muted small", text: label }));
+    }
+    function learningCard(p) {
+        const isLegacy = p.legacy;
+        return el("div", { class: "card note-card hoverable learn-card", onclick: () => isLegacy ? toast("Legacy note", "Read-only legacy learning note", "") : learningDetail(p.slug) },
+            el("div", { class: "kb-card-top" }, statusBadge(p.status || "In Progress"), isLegacy ? el("span", { class: "badge st-planned", text: "legacy" }) : null),
+            el("h4", { text: p.title }),
+            p.goal ? el("p", { class: "muted small", text: p.goal }) : null,
+            progressBar(p.progress),
+            el("div", { class: "note-foot" },
+                el("span", { class: "muted small", text: p.stepCount ? `${p.doneCount}/${p.stepCount} steps` : "no steps" }),
+                p.nextReview ? el("span", { class: "tag", text: "🔔 " + p.nextReview }) : null,
+                p.targetDate ? el("span", { class: "tag", text: "🎯 " + p.targetDate }) : null));
+    }
+
+    async function learningDetail(slug) {
+        let path;
+        try { ({ path } = await api(`/api/learning-paths/${encodeURIComponent(slug)}`)); }
+        catch (e) { toast("Error", e.message, "err"); return; }
+        const body = el("div", {});
+        const header = el("div", { class: "detail-head" },
+            el("div", {}, statusBadge(path.status), path.goal ? el("p", { class: "muted", text: path.goal }) : null),
+            progressBar(path.progress));
+        body.append(header);
+        const meta = el("div", { class: "chip-row", style: "margin:8px 0 14px" });
+        if (path.targetDate) meta.append(el("span", { class: "tag", text: "🎯 Target " + path.targetDate }));
+        if (path.nextReview) meta.append(el("span", { class: "tag", text: "🔔 Review " + path.nextReview }));
+        (path.tags || []).forEach((t) => meta.append(el("span", { class: "tag", text: "#" + t })));
+        body.append(meta);
+
+        // steps checklist
+        body.append(el("div", { class: "detail-row" },
+            el("span", { class: "k", text: `Steps (${path.doneCount}/${path.stepCount})` }),
+            el("button", { class: "btn btn-sm btn-primary", html: "＋ Add step", onclick: () => stepModal(slug) })));
+        const list = el("div", { class: "step-list" });
+        path.steps.forEach((s) => {
+            const p = s.progress != null ? s.progress : 0;
+            const doneS = p >= 100;
+            list.append(el("div", { class: "step-row rich" + (doneS ? " done" : ""), onclick: (e) => { if (e.target.closest("button")) return; stepModal(slug, s); } },
+                el("button", { class: "step-check" + (doneS ? " on" : ""), title: doneS ? "Reopen" : "Mark done", text: doneS ? "✓" : "", onclick: async () => {
+                    try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps/${encodeURIComponent(s.id)}`, { method: "PUT", body: { progress: doneS ? 0 : 100 } }); await refreshSummary(); learningDetail(slug); }
+                    catch (e) { toast("Error", e.message, "err"); }
+                } }),
+                el("div", { class: "step-main" },
+                    el("div", { class: "step-line" }, el("span", { class: "step-title", text: s.title }), statusBadge(s.status)),
+                    el("div", { class: "step-meta" }, progressBar(p, { sm: true }), s.due ? el("span", { class: "tag", text: "🎯 " + s.due }) : null),
+                    s.notes ? el("div", { class: "step-notes muted small", text: s.notes.split("\n")[0].slice(0, 120) }) : null),
+                el("button", { class: "icon-btn sm", title: "Remove step", text: "✕", onclick: async () => {
+                    if (!confirm(`Remove step "${s.title}"?`)) return;
+                    try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps/${encodeURIComponent(s.id)}`, { method: "DELETE" }); learningDetail(slug); }
+                    catch (e) { toast("Error", e.message, "err"); }
+                } })));
+        });
+        if (!path.steps.length) list.append(el("p", { class: "muted small", text: "No steps yet — add one above, or quick-add below." }));
+        const stepInput = el("input", { class: "search", placeholder: "Quick add a step and press Enter…", onkeydown: async (e) => {
+            if (e.key !== "Enter" || !e.target.value.trim()) return;
+            try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps`, { method: "POST", body: { title: e.target.value.trim() } }); await refreshSummary(); learningDetail(slug); }
+            catch (err) { toast("Error", err.message, "err"); }
+        } });
+        body.append(list, el("div", { class: "toolbar" }, stepInput));
+        if (path.linkedMilestones && path.linkedMilestones.length) {
+            body.append(el("div", { class: "detail-row", style: "margin-top:10px" }, el("span", { class: "k", text: `⚑ Linked milestones (${path.linkedMilestones.length})` })));
+            const lm = el("div", { class: "step-list" });
+            path.linkedMilestones.forEach((mst) => lm.append(el("div", { class: "step-row" }, statusBadge(mst.status || "Planned"), el("span", { class: "step-title", text: mst.name }), mst.targetDate ? el("span", { class: "muted small", text: mst.targetDate }) : null)));
+            body.append(lm);
+        }
+        if (path.body) body.append(el("div", { class: "detail-row", style: "margin-top:12px" }, el("span", { class: "k", text: "Notes" })), mdRender(path.body));
+
+        const editBtn = el("button", { class: "btn", text: "Edit", onclick: () => learningModal(path) });
+        const complete = el("button", { class: "btn btn-primary", text: path.progress >= 100 ? "Completed" : "Mark complete", disabled: path.progress >= 100, onclick: async () => {
+            try { await api(`/api/learning-paths/${encodeURIComponent(slug)}/complete`, { method: "POST", body: {} }); toast("🏆 Path completed", path.title, "ok"); closeModal(); await refreshSummary(); go("learning"); }
+            catch (e) { toast("Error", e.message, "err"); }
+        } });
+        const del = el("button", { class: "btn btn-ghost btn-danger", text: "Delete", onclick: async () => {
+            if (!confirm(`Delete learning path "${path.title}"?`)) return;
+            try { await api(`/api/learning-paths/${encodeURIComponent(slug)}`, { method: "DELETE" }); toast("Deleted", path.title, "ok"); closeModal(); await refreshSummary(); go("learning"); }
+            catch (e) { toast("Error", e.message, "err"); }
+        } });
+        openModal({ title: path.title, width: 720, body, foot: [del, editBtn, el("span", { class: "spacer", style: "flex:1" }), complete] });
+    }
+
+    function learningModal(existing) {
+        const f = {};
+        const editor = mdEditor({ value: existing?.body || "", placeholder: "Overview, resources, notes…", minRows: 6 });
+        f.body = editor.textarea;
+        const body = el("div", { class: "form" },
+            field("Title", f, "title", { required: true, value: existing?.title, placeholder: "e.g. AZ-204 Certification" }),
+            field("Goal", f, "goal", { value: existing?.goal, placeholder: "What does success look like?" }),
+            el("div", { class: "form-row" },
+                selectField("Status", f, "status", ["In Progress", "Blocked", "Done"], existing?.status || "In Progress"),
+                field("Target date", f, "target_date", { type: "date", value: existing?.targetDate }),
+                field("Next review", f, "next_review", { type: "date", value: existing?.nextReview })),
+            field("Tags", f, "tags", { value: (existing?.tags || []).join(", "), placeholder: "comma,separated" }),
+            el("div", { class: "md-label" }, el("span", { text: "Notes" }), editor.node));
+        const save = el("button", { class: "btn btn-primary", text: existing ? "Save" : "Create", onclick: async () => {
+            const title = f.title.value.trim();
+            if (!title) { toast("Title required", "", "err"); return; }
+            const payload = { title, goal: f.goal.value.trim(), status: f.status.value, target_date: f.target_date.value, next_review: f.next_review.value, tags: f.tags.value, body: f.body.value };
+            try {
+                if (existing) await api(`/api/learning-paths/${encodeURIComponent(existing.slug)}`, { method: "PUT", body: payload });
+                else await api("/api/learning-paths", { method: "POST", body: payload });
+                toast("Saved", title, "ok"); closeModal(); await refreshSummary(); go("learning");
+            } catch (e) { toast("Error", e.message, "err"); }
+        } });
+        openModal({ title: existing ? "Edit learning path" : "New learning path", width: 640, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
+        setTimeout(() => f.title.focus(), 50);
+    }
+
+    function learningGenerateModal() {
+        const f = {};
+        const body = el("div", { class: "form" },
+            field("Goal / certification", f, "goal", { required: true, placeholder: "e.g. Pass AZ-204 in 8 weeks" }),
+            el("p", { class: "muted small", text: "Copilot drafts a titled path with an ordered list of study steps, then saves it. This uses the chat session." }));
+        const gen = el("button", { class: "btn btn-primary", html: "✨ Generate path", onclick: async () => {
+            const goal = f.goal.value.trim();
+            if (!goal) { toast("Describe the goal", "", "err"); return; }
+            gen.disabled = true; gen.innerHTML = "⏳ Drafting…";
+            const prompt = `Create a learning path for this goal: "${goal}". Respond with ONLY minified JSON, no code fences, shaped: {"title":"...","goal":"...","target_date":"","tags":["..."],"steps":["step 1","step 2",...]}. 6-12 concrete ordered steps.`;
+            try {
+                const r = await api("/api/agent/generate", { method: "POST", body: { prompt, timeout: 120000 } });
+                let data = null;
+                try { const mt = (r.content || "").match(/\{[\s\S]*\}/); data = mt ? JSON.parse(mt[0]) : null; } catch { data = null; }
+                if (!data || !data.title) { toast("Couldn't parse Copilot output", "Try again or create manually", "err"); return; }
+                await api("/api/learning-paths", { method: "POST", body: { title: data.title, goal: data.goal || goal, target_date: data.target_date || "", tags: (data.tags || []).join(","), steps: data.steps || [] } });
+                toast("Path created", data.title, "ok"); closeModal(); await refreshSummary(); go("learning");
+            } catch (e) { toast("Generate failed", e.message, "err"); }
+            finally { gen.disabled = false; gen.innerHTML = "✨ Generate path"; }
+        } });
+        openModal({ title: "Generate learning path", width: 560, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), gen] });
+        setTimeout(() => f.goal.focus(), 50);
+    }
+
+    function stepModal(slug, existing) {
+        childItemModal({
+            title: existing ? "Edit step" : "New step",
+            existing, zero: "Todo",
+            statuses: ["Todo", "In Progress", "Blocked", "Done"],
+            showType: false,
+            onCancel: () => learningDetail(slug),
+            onSave: async (payload) => {
+                if (existing) await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps/${encodeURIComponent(existing.id)}`, { method: "PUT", body: payload });
+                else await api(`/api/learning-paths/${encodeURIComponent(slug)}/steps`, { method: "POST", body: payload });
+                toast("Saved", payload.title, "ok"); await refreshSummary(); learningDetail(slug);
+            },
+        });
+    }
+
+    // ================================================================
+    // Projects (goals + plan/items + linked tasks + dashboard)
+    // ================================================================
+    let projFilter = localStorage.getItem("cp-proj-filter") || "all";
+    VIEWS.projects = async (root) => {
+        const { projects } = await api("/api/projects");
+        root.innerHTML = "";
+        actionsHost.append(el("button", { class: "btn btn-primary btn-sm", html: "＋ New project", onclick: () => projectModal() }));
+
+        const active = projects.filter((p) => (p.status || "").toLowerCase() !== "done");
+        const done = projects.filter((p) => (p.status || "").toLowerCase() === "done");
+        const avg = projects.length ? Math.round(projects.reduce((a, p) => a + p.progress, 0) / projects.length) : 0;
+
+        // filters — on top of the page
+        const filters = [["all", "All"], ["Active", "Active"], ["Blocked", "Blocked"], ["Done", "Completed"]];
+        const seg = el("div", { class: "segmented" }, ...filters.map(([k, label]) =>
+            el("button", { class: projFilter === k ? "active" : "", text: label, onclick: () => { projFilter = k; localStorage.setItem("cp-proj-filter", k); go("projects"); } })));
+        root.append(el("div", { class: "toolbar toolbar-top" }, seg));
+
+        root.append(el("div", { class: "grid stat-grid" },
+            miniStat("❏", projects.length, "projects"),
+            miniStat("🔥", active.length, "active"),
+            miniStat("🏆", done.length, "completed"),
+            el("div", { class: "card stat-card stat-progress" },
+                el("div", { class: "stat-progress-head" },
+                    el("div", { class: "muted small", text: "Portfolio progress" }),
+                    projects.length ? el("button", { class: "btn btn-ghost btn-xs", text: "Details ›", onclick: () => progressDetailsModal("Portfolio progress", projects.map((p) => ({ title: p.title, progress: p.progress, sub: `${p.itemCount} items · ${p.taskCount} tasks`, slug: p.slug, legacy: p.legacy })), (it) => { if (!it.legacy) projectDetail(it.slug); }) }) : null),
+                progressBar(avg))));
+
+        let shown = projects;
+        if (projFilter !== "all") shown = projects.filter((p) => (p.status || (projFilter === "Active" ? "Active" : "")).toLowerCase() === projFilter.toLowerCase());
+        if (!shown.length) { root.append(emptyState("❏", "No projects", "Track goals, plans, milestones and linked tasks — with a Copilot assistant grounded in each project.", el("button", { class: "btn btn-primary", html: "＋ New project", onclick: () => projectModal() }))); return; }
+        const grid = el("div", { class: "grid note-grid" });
+        shown.forEach((p) => grid.append(projectCard(p)));
+        root.append(grid);
+    };
+    function projectCard(p) {
+        const isLegacy = p.legacy;
+        return el("div", { class: "card note-card hoverable proj-card", onclick: () => isLegacy ? toast("Legacy note", "Read-only legacy project note", "") : projectDetail(p.slug) },
+            el("div", { class: "kb-card-top" }, statusBadge(p.status || "Active"), isLegacy ? el("span", { class: "badge st-planned", text: "legacy" }) : null),
+            el("h4", { text: p.title }),
+            p.summary ? el("p", { class: "muted small", text: p.summary }) : null,
+            progressBar(p.progress),
+            el("div", { class: "note-foot" },
+                p.owner ? el("span", { class: "tag", text: "👤 " + p.owner }) : null,
+                (p.start || p.due) ? el("span", { class: "muted small", text: `${p.start || "?"} → ${p.due || "…"}` }) : null,
+                el("span", { class: "muted small", text: `${p.itemCount} items · ${p.taskCount} tasks` })));
+    }
+
+    async function projectDetail(slug) {
+        let pr;
+        try { ({ project: pr } = await api(`/api/projects/${encodeURIComponent(slug)}`)); }
+        catch (e) { toast("Error", e.message, "err"); return; }
+        const body = el("div", {});
+        body.append(el("div", { class: "detail-head" },
+            el("div", {}, statusBadge(pr.status), pr.summary ? el("p", { class: "muted", text: pr.summary }) : null),
+            progressBar(pr.progress)));
+        const meta = el("div", { class: "chip-row", style: "margin:8px 0 14px" });
+        if (pr.owner) meta.append(el("span", { class: "tag", text: "👤 " + pr.owner }));
+        if (pr.start) meta.append(el("span", { class: "tag", text: "▶ " + pr.start }));
+        if (pr.due) meta.append(el("span", { class: "tag", text: "🎯 " + pr.due }));
+        (pr.tags || []).forEach((t) => meta.append(el("span", { class: "tag", text: "#" + t })));
+        body.append(meta);
+
+        body.append(el("div", { class: "toolbar" },
+            el("button", { class: "btn btn-sm btn-primary", html: "✨ Ask Copilot about this project", onclick: () => askProject(pr) }),
+            el("button", { class: "btn btn-sm", text: "Edit", onclick: () => projectModal(pr) })));
+
+        // item sections
+        const sections = [["requirement", "📋 Requirements", pr.requirements], ["task", "✓ Tasks", pr.tasks], ["milestone", "⚑ Milestones", pr.milestones]];
+        for (const [type, label, items] of sections) {
+            const doneCt = items.filter((it) => (it.progress != null ? it.progress : (String(it.status).toLowerCase() === "done" ? 100 : 0)) >= 100).length;
+            body.append(el("div", { class: "detail-row", style: "margin-top:10px" },
+                el("span", { class: "k", text: `${label} (${doneCt}/${items.length})` }),
+                el("button", { class: "btn btn-sm", html: "＋ Add", onclick: () => itemModal(slug, type, null, reload) })));
+            const list = el("div", { class: "step-list" });
+            items.forEach((it) => {
+                const p = it.progress != null ? it.progress : (String(it.status).toLowerCase() === "done" ? 100 : 0);
+                const doneS = p >= 100;
+                list.append(el("div", { class: "step-row rich" + (doneS ? " done" : ""), onclick: (e) => { if (e.target.closest("button")) return; itemModal(slug, type, it, reload); } },
+                    el("button", { class: "step-check" + (doneS ? " on" : ""), text: doneS ? "✓" : "", title: doneS ? "Reopen" : "Mark done", onclick: async () => {
+                        try { const r = await api(`/api/projects/${encodeURIComponent(slug)}/items/${encodeURIComponent(it.id)}`, { method: "PUT", body: { progress: doneS ? 0 : 100 } }); reload(r.project); await refreshSummary(); }
+                        catch (e) { toast("Error", e.message, "err"); }
+                    } }),
+                    el("div", { class: "step-main" },
+                        el("div", { class: "step-line" }, el("span", { class: "step-title", text: it.title }), statusBadge(it.status)),
+                        el("div", { class: "step-meta" }, type === "requirement" ? null : progressBar(p, { sm: true }), it.due ? el("span", { class: "tag", text: "🎯 " + it.due }) : null),
+                        it.notes ? el("div", { class: "step-notes muted small", text: it.notes.split("\n")[0].slice(0, 120) }) : null),
+                    el("button", { class: "icon-btn sm", text: "✕", title: "Remove", onclick: async () => {
+                        if (!confirm(`Remove "${it.title}"?`)) return;
+                        try { const r = await api(`/api/projects/${encodeURIComponent(slug)}/items/${encodeURIComponent(it.id)}`, { method: "DELETE" }); reload(r.project); }
+                        catch (e) { toast("Error", e.message, "err"); }
+                    } })));
+            });
+            const addInput = el("input", { class: "search", placeholder: `Quick add ${type}…`, onkeydown: async (e) => {
+                if (e.key !== "Enter" || !e.target.value.trim()) return;
+                try { const r = await api(`/api/projects/${encodeURIComponent(slug)}/items`, { method: "POST", body: { title: e.target.value.trim(), type } }); e.target.value = ""; reload(r.project); await refreshSummary(); }
+                catch (err) { toast("Error", err.message, "err"); }
+            } });
+            body.append(list, el("div", { class: "toolbar", style: "margin-bottom:6px" }, addInput));
+        }
+
+        if (pr.linkedTasks && pr.linkedTasks.length) {
+            body.append(el("div", { class: "detail-row", style: "margin-top:10px" }, el("span", { class: "k", text: `🔗 Linked tasks (${pr.linkedTasks.length})` })));
+            const lt = el("div", { class: "step-list" });
+            pr.linkedTasks.forEach((t) => lt.append(el("div", { class: "step-row" }, statusBadge(t.status), el("span", { class: "step-title", text: t.title }))));
+            body.append(lt);
+        }
+        if (pr.linkedMilestones && pr.linkedMilestones.length) {
+            body.append(el("div", { class: "detail-row", style: "margin-top:10px" }, el("span", { class: "k", text: `⚑ Linked milestones (${pr.linkedMilestones.length})` })));
+            const lm = el("div", { class: "step-list" });
+            pr.linkedMilestones.forEach((mst) => lm.append(el("div", { class: "step-row" }, statusBadge(mst.status || "Planned"), el("span", { class: "step-title", text: mst.name }), mst.targetDate ? el("span", { class: "muted small", text: mst.targetDate }) : null)));
+            body.append(lm);
+        }
+        if (pr.achievements && pr.achievements.length) {
+            body.append(el("div", { class: "detail-row", style: "margin-top:10px" }, el("span", { class: "k", text: "🏆 Achievements" })));
+            const strip = el("div", { class: "ach-strip" });
+            pr.achievements.forEach((a) => strip.append(el("div", { class: "ach-chip" }, el("span", { text: "🏆" }), el("div", {}, el("strong", { text: a.title }), el("span", { class: "muted small", text: " " + (a.date || "") })))));
+            body.append(strip);
+        }
+        if (pr.body) body.append(el("div", { class: "detail-row", style: "margin-top:12px" }, el("span", { class: "k", text: "Notes" })), mdRender(pr.body));
+
+        const complete = el("button", { class: "btn btn-primary", text: pr.progress >= 100 || (pr.status || "").toLowerCase() === "done" ? "Completed" : "Mark complete", disabled: (pr.status || "").toLowerCase() === "done", onclick: async () => {
+            try { await api(`/api/projects/${encodeURIComponent(slug)}/complete`, { method: "POST", body: {} }); toast("🏆 Project completed", pr.title, "ok"); closeModal(); await refreshSummary(); go("projects"); }
+            catch (e) { toast("Error", e.message, "err"); }
+        } });
+        const del = el("button", { class: "btn btn-ghost btn-danger", text: "Delete", onclick: async () => {
+            if (!confirm(`Delete project "${pr.title}"? Items are removed too.`)) return;
+            try { await api(`/api/projects/${encodeURIComponent(slug)}`, { method: "DELETE" }); toast("Deleted", pr.title, "ok"); closeModal(); await refreshSummary(); go("projects"); }
+            catch (e) { toast("Error", e.message, "err"); }
+        } });
+        const modal = openModal({ title: pr.title, width: 780, body, foot: [del, el("span", { class: "spacer", style: "flex:1" }), complete] });
+        function reload(next) { pr = next; projectDetail(slug); } // re-fetch for a clean rerender
+    }
+
+    function itemModal(slug, type, existing, reload) {
+        childItemModal({
+            title: existing ? "Edit item" : "New " + type,
+            existing, presetType: type, zero: "Open",
+            statuses: ["Open", "In Progress", "Blocked", "Done"],
+            showType: true,
+            onCancel: () => projectDetail(slug),
+            onSave: async (payload) => {
+                let r;
+                if (existing) r = await api(`/api/projects/${encodeURIComponent(slug)}/items/${encodeURIComponent(existing.id)}`, { method: "PUT", body: payload });
+                else r = await api(`/api/projects/${encodeURIComponent(slug)}/items`, { method: "POST", body: payload });
+                toast("Saved", payload.title, "ok"); await refreshSummary();
+                if (reload) reload(r.project); else projectDetail(slug);
+            },
+        });
+    }
+
+    function askProject(pr) {
+        const parts = [`Project: ${pr.title}`, pr.status ? `Status: ${pr.status}` : "", pr.summary ? `Summary: ${pr.summary}` : "", (pr.start || pr.due) ? `Timeline: ${pr.start || "?"} → ${pr.due || "…"}` : ""];
+        const req = (pr.requirements || []).map((r) => `- ${r.title}`).join("\n");
+        const tasks = (pr.tasks || []).map((t) => `- [${String(t.status).toLowerCase() === "done" ? "x" : " "}] ${t.title}`).join("\n");
+        const mile = (pr.milestones || []).map((m) => `- ${m.title} (${m.status})`).join("\n");
+        const ctx = [parts.filter(Boolean).join("\n"), req ? `\nRequirements:\n${req}` : "", tasks ? `\nTasks:\n${tasks}` : "", mile ? `\nMilestones:\n${mile}` : ""].join("\n");
+        const prompt = `I'm working on this project. Review its context and suggest concrete next tasks, follow-ups, gaps I'm missing, and recommendations. Be specific and actionable.\n\n${ctx}`;
+        closeModal();
+        askAgent(prompt, "Asked Copilot about the project");
+    }
+
+    function projectModal(existing) {
+        const f = {};
+        const editor = mdEditor({ value: existing?.body || "", placeholder: "Goals, context, plan…", minRows: 6 });
+        f.body = editor.textarea;
+        const body = el("div", { class: "form" },
+            field("Title", f, "title", { required: true, value: existing?.title, placeholder: "e.g. Rabobank Portability" }),
+            field("Summary", f, "summary", { value: existing?.summary, placeholder: "One-line objective" }),
+            el("div", { class: "form-row" },
+                selectField("Status", f, "status", ["Active", "Blocked", "Done"], existing?.status || "Active"),
+                field("Owner", f, "owner", { value: existing?.owner }),
+                field("Start", f, "start", { type: "date", value: existing?.start }),
+                field("Due", f, "due", { type: "date", value: existing?.due })),
+            field("Tags", f, "tags", { value: (existing?.tags || []).join(", "), placeholder: "comma,separated" }),
+            el("div", { class: "md-label" }, el("span", { text: "Goals & notes" }), editor.node));
+        const save = el("button", { class: "btn btn-primary", text: existing ? "Save" : "Create", onclick: async () => {
+            const title = f.title.value.trim();
+            if (!title) { toast("Title required", "", "err"); return; }
+            const payload = { title, summary: f.summary.value.trim(), status: f.status.value, owner: f.owner.value.trim(), start: f.start.value, due: f.due.value, tags: f.tags.value, body: f.body.value };
+            try {
+                if (existing) await api(`/api/projects/${encodeURIComponent(existing.slug)}`, { method: "PUT", body: payload });
+                else await api("/api/projects", { method: "POST", body: payload });
+                toast("Saved", title, "ok"); closeModal(); await refreshSummary(); go("projects");
+            } catch (e) { toast("Error", e.message, "err"); }
+        } });
+        openModal({ title: existing ? "Edit project" : "New project", width: 680, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
+        setTimeout(() => f.title.focus(), 50);
+    }
+
+    // ---------- Domain notes: growth (flat notes) ----------
+    const DOMAIN_META = {
+        growth: { icon: "↗", fields: [["area", "Area"], ["impact", "Impact"]] },
+    };
+    for (const domain of ["growth"]) {
         VIEWS[domain] = async (root) => {
             const { notes } = await api(`/api/${domain}`);
             root.innerHTML = "";
@@ -1867,7 +2490,7 @@
         root.innerHTML = "";
         const cards = [
             { icon: "🐱", title: "What is this canvas?", body: "A visual command center for **CatPilot**. Everything you see reads and writes the *same files* CatPilot's CLI, agent and MCP server use — so edits here show up everywhere. Nothing is duplicated." },
-            { icon: "🧭", title: "Navigation", body: "The sidebar covers every CatPilot domain: **Tasks, Journal, Milestones, Memos, Learning, Growth, Projects**. Each has add buttons, inline edit and detail popups. **Tasks** offers a table and a kanban board with **Overdue · To do · Blocked · Done** columns, a status selector on create/edit, and **All / Today / 7 days** due-date filters." },
+            { icon: "🧭", title: "Navigation", body: "The sidebar covers every CatPilot domain: **Tasks, Journal, Milestones, Knowledge, Learning, Growth, Projects**. **Knowledge** is a foldered, tagged base with Grid/List/Folder/Month views and a full markdown editor. **Learning** tracks certification paths with step checklists, progress bars and a dashboard. **Projects** roll up requirements, tasks, milestones and linked tasks, with an *Ask Copilot about this project* button. **Tasks** offers a table and a kanban board with **Overdue · To do · In progress · Blocked · Done** columns." },
             { icon: "🕑", title: "Timeline", body: "A day-grouped story of your recent activity across every domain, with a **7/14/30 day** switch. Use the Copilot action chips to summarize the period, plan next steps or draft a standup." },
             { icon: "📊", title: "Reports", body: "Generate an **executive report** for a period from your tasks and milestones — or ask Copilot to write a richer one via the *report-generator* skill. Reports are saved as markdown/HTML in your storage `reports/` folder and open in a reader." },
             { icon: "✨", title: "Ask Copilot", body: "The **✨ button** (top bar) and the action chips send prompts to the Copilot agent in the chat panel. The agent works on the same data, so it can add tasks, write memos, generate reports and more on your behalf." },

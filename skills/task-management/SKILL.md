@@ -31,14 +31,15 @@ Use this skill when the user says things like:
 - Priority (P0/P1/P2/P3) or (High/Med/Low)
 - Tags (comma-separated)
 - Context (1 line)
-- Status (`Open`, `Blocked`, or `Done`; defaults to `Open`)
+- Status (`Open`, `In Progress`, `Blocked`, or `Done`; defaults to `Open`)
 
 ## Task statuses
-Canonical stored statuses are **`Open`** (shown as "To do" in the canvas), **`Blocked`**,
-and **`Done`**. "Overdue" is *derived* from an Open task whose due date has passed — it is
-never a stored status and is not selectable. A `Blocked` task lives under `## Open Tasks`
-on disk (only `Done` tasks move to `## Done Tasks`), so its real status is preserved in the
-`Status` cell and it is never lost on save.
+Canonical stored statuses are **`Open`** (shown as "To do" in the canvas),
+**`In Progress`**, **`Blocked`**, and **`Done`**. "Overdue" is *derived* from an Open task
+whose due date has passed — it is never a stored status and is not selectable. `In Progress`
+and `Blocked` tasks live under `## Open Tasks` on disk (only `Done` tasks move to
+`## Done Tasks`), so their real status is preserved in the `Status` cell and is never lost on
+save.
 
 ## Output format (configuration-aware)
 Resolve task target from `data/config.json` before any read/write.
@@ -151,7 +152,7 @@ Reply with the existing reference and suggest updating metadata instead.
 
 ## Response style
 - Use emojis in confirmations and list outputs.
-- For task lists, prefix each row summary with `🟢` for Open, `⛔` for Blocked, and `✅` for Done.
+- For task lists, prefix each row summary with `🟢` for Open, `🚧` for In Progress, `⛔` for Blocked, and `✅` for Done.
 - Use `⚠️` for duplicates or missing required inputs.
 - Use `❌` for write/update failures.
 

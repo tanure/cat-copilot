@@ -19,11 +19,23 @@ const DEFAULT_FILES = {
     journal: "journal.md",
     milestones: "milestones.md",
     memos: "memos",
+    knowledge: "knowledge",
     learning: "learning",
     growth: "growth",
     projects: "projects",
+    achievements: "achievements",
     reports: "reports",
     pomodoro: "pomodoro.md",
+};
+
+// Stable (non-partitioned) domain directory names — knowledge/project/learning/
+// achievement trees live directly under storage.root so folders + tags map to an
+// Obsidian graph and cross-item aggregation is a single tree walk.
+const STABLE_DIR_DEFAULTS = {
+    knowledge: "knowledge",
+    projects: "projects",
+    learning: "learning",
+    achievements: "achievements",
 };
 
 const DOMAIN_TAG = { learning: "learning", growth: "growth", projects: "project" };
@@ -120,6 +132,15 @@ function resolveFilePath(type, config) {
     return path.join(storageRoot, partition, fileName);
 }
 
+// Stable (non-partitioned) directory for a domain, e.g. <root>/knowledge.
+// Used by the Knowledge Base, Projects, Learning and Achievements trees.
+function resolveStableDir(type, config) {
+    const base = config.__baseDir || process.cwd();
+    const storageRoot = path.resolve(base, config.storage.root);
+    const dirName = (config.storage.files && config.storage.files[type]) || STABLE_DIR_DEFAULTS[type] || type;
+    return path.join(storageRoot, dirName);
+}
+
 function ensureDir(dir) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
@@ -201,6 +222,7 @@ function parseTasksTable(content) {
                     priority: cells[4] || "",
                     tags: cells[5] || "",
                     context: cells[6] || "",
+                    project: cells[7] || "",
                 });
             }
         }
@@ -214,16 +236,16 @@ function formatTasksTable(tasks) {
     // persist across the round-trip; section 2 = completed tasks.
     const open = tasks.filter((t) => !isDone(t));
     const done = tasks.filter(isDone);
-    const header = "| ID | Status | Title | Due Date | Priority | Tags | Context |\n| --- | --- | --- | --- | --- | --- | --- |\n";
+    const header = "| ID | Status | Title | Due Date | Priority | Tags | Context | Project |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n";
     let out = "";
     if (open.length) {
         out += "## Open Tasks\n\n" + header;
-        open.forEach((t) => { out += `| ${t.id} | ${encodeCell(t.status)} | ${encodeCell(t.title)} | ${encodeCell(t.dueDate)} | ${encodeCell(t.priority)} | ${encodeCell(t.tags)} | ${encodeCell(t.context)} |\n`; });
+        open.forEach((t) => { out += `| ${t.id} | ${encodeCell(t.status)} | ${encodeCell(t.title)} | ${encodeCell(t.dueDate)} | ${encodeCell(t.priority)} | ${encodeCell(t.tags)} | ${encodeCell(t.context)} | ${encodeCell(t.project)} |\n`; });
         out += "\n";
     }
     if (done.length) {
         out += "## Completed Tasks\n\n" + header;
-        done.forEach((t) => { out += `| ${t.id} | ${encodeCell(t.status)} | ${encodeCell(t.title)} | ${encodeCell(t.dueDate)} | ${encodeCell(t.priority)} | ${encodeCell(t.tags)} | ${encodeCell(t.context)} |\n`; });
+        done.forEach((t) => { out += `| ${t.id} | ${encodeCell(t.status)} | ${encodeCell(t.title)} | ${encodeCell(t.dueDate)} | ${encodeCell(t.priority)} | ${encodeCell(t.tags)} | ${encodeCell(t.context)} | ${encodeCell(t.project)} |\n`; });
     }
     return out.trimEnd();
 }
@@ -234,7 +256,7 @@ function nextId(rows) {
 }
 
 // Canonical task statuses. "Overdue" is derived from the due date, never stored.
-export const TASK_STATUSES = ["Open", "Blocked", "Done"];
+export const TASK_STATUSES = ["Open", "In Progress", "Blocked", "Done"];
 
 function normalizeTaskStatus(value, fallback = "Open") {
     if (value === undefined || value === null || value === "") return fallback;
@@ -264,6 +286,7 @@ export function addTask(params = {}) {
         priority: params.priority || "",
         tags: params.tags || "",
         context: params.context || "",
+        project: params.project || "",
     };
     tasks.push(task);
     fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
@@ -276,7 +299,7 @@ export function updateTask(id, patch = {}) {
     const tasks = parseTasksTable(readFileOrCreate(p));
     const t = tasks.find((x) => x.id === parseInt(id, 10));
     if (!t) throw new Error(`Task #${id} not found`);
-    for (const k of ["status", "title", "dueDate", "priority", "tags", "context"]) {
+    for (const k of ["status", "title", "dueDate", "priority", "tags", "context", "project"]) {
         if (patch[k] !== undefined) t[k] = k === "status" ? normalizeTaskStatus(patch[k]) : patch[k];
     }
     fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
@@ -705,14 +728,15 @@ function parseMilestones(content) {
             targetDate: cells[2] || "",
             status: cells[3] || "Planned",
             notes: cells[4] || "",
+            link: cells[5] || "",
         });
     }
     return rows;
 }
 
 function formatMilestones(rows) {
-    let out = "# Milestones\n\n| ID | Name | Target Date | Status | Notes |\n| --- | --- | --- | --- | --- |\n";
-    rows.forEach((m) => { out += `| ${m.id} | ${encodeCell(m.name)} | ${encodeCell(m.targetDate)} | ${encodeCell(m.status)} | ${encodeCell(m.notes)} |\n`; });
+    let out = "# Milestones\n\n| ID | Name | Target Date | Status | Notes | Link |\n| --- | --- | --- | --- | --- | --- |\n";
+    rows.forEach((m) => { out += `| ${m.id} | ${encodeCell(m.name)} | ${encodeCell(m.targetDate)} | ${encodeCell(m.status)} | ${encodeCell(m.notes)} | ${encodeCell(m.link || "")} |\n`; });
     return out.trimEnd();
 }
 
@@ -733,6 +757,7 @@ export function addMilestone(params = {}) {
         targetDate: params.targetDate || "",
         status: params.status || "Planned",
         notes: params.notes || "",
+        link: params.link || "",
     };
     rows.push(m);
     fs.writeFileSync(p, formatMilestones(rows), "utf8");
@@ -745,7 +770,7 @@ export function updateMilestone(id, patch = {}) {
     const rows = parseMilestones(readFileOrCreate(p));
     const m = rows.find((x) => x.id === parseInt(id, 10));
     if (!m) throw new Error(`Milestone #${id} not found`);
-    for (const k of ["name", "targetDate", "status", "notes"]) if (patch[k] !== undefined) m[k] = patch[k];
+    for (const k of ["name", "targetDate", "status", "notes", "link"]) if (patch[k] !== undefined) m[k] = patch[k];
     fs.writeFileSync(p, formatMilestones(rows), "utf8");
     return m;
 }
@@ -993,9 +1018,12 @@ export function summary() {
     const milestones = parseMilestones(readFileOrCreate(resolveFilePath("milestones", config)));
     const journal = parseJournalEntries(readFileOrCreate(resolveFilePath("journal", config)));
     const memos = listMemos();
-    const learning = safeList("learning");
     const growth = safeList("growth");
-    const projects = safeList("projects");
+    let knowledgeDocs = [], learningPaths = [], projectList2 = [], achievements = [];
+    try { knowledgeDocs = kbList(); } catch { /* ignore */ }
+    try { learningPaths = learningList(); } catch { /* ignore */ }
+    try { projectList2 = projectList(); } catch { /* ignore */ }
+    try { achievements = achievementList(); } catch { /* ignore */ }
 
     const today = todayISO();
     const open = tasks.filter((t) => t.status.toLowerCase() === "open");
@@ -1051,10 +1079,12 @@ export function summary() {
             tasksDueToday: dueToday.length,
             milestones: milestones.length,
             memos: memos.length,
+            knowledge: knowledgeDocs.length,
             journal: journal.length,
-            learning: learning.length,
+            learning: learningPaths.length,
             growth: growth.length,
-            projects: projects.length,
+            projects: projectList2.length,
+            achievements: achievements.length,
         },
         priorityBuckets,
         milestoneStatus,
@@ -1523,4 +1553,562 @@ export function applyConfigChange({ root, partitioning, migration = "move", conf
     const configPath = persistConfig(config);
 
     return { ok: true, migrated: moved, moved, skipped, config: getConfig(), applied: plan.next, note: configPath };
+}
+
+
+// ===========================================================================
+// Knowledge Base (evolved memos: stable non-partitioned tree + folders + tags)
+// Mirrors lib/knowledge.js exactly.
+// ===========================================================================
+const KB_DEFAULT_FOLDER = "General";
+const KB_LEGACY_FOLDER = "Legacy";
+
+function kbStorageRoot(config) {
+    const base = config.__baseDir || process.cwd();
+    return path.resolve(base, config.storage.root);
+}
+function kbRoot(config) { return resolveStableDir("knowledge", config); }
+function toPosix(p) { return p.split(path.sep).join("/"); }
+function kbIdToPath(id, config) {
+    const root = kbStorageRoot(config);
+    const clean = String(id).replace(/\\/g, "/").replace(/\.md$/i, "");
+    const abs = path.resolve(root, clean + ".md");
+    if (!abs.startsWith(path.resolve(root))) throw new Error("Invalid knowledge id");
+    return abs;
+}
+function kbPathToId(abs, config) {
+    return toPosix(path.relative(kbStorageRoot(config), abs)).replace(/\.md$/i, "");
+}
+function kbIsLegacy(id) { return !String(id).replace(/\\/g, "/").startsWith("knowledge/"); }
+function kbNormTags(tags) {
+    if (Array.isArray(tags)) return tags.map((t) => String(t).trim()).filter(Boolean);
+    if (typeof tags === "string") return tags.split(",").map((t) => t.trim()).filter(Boolean);
+    return [];
+}
+function kbReadDoc(abs, config) {
+    const content = fs.readFileSync(abs, "utf8");
+    const fm = parseFrontmatter(content);
+    const id = kbPathToId(abs, config);
+    const legacy = kbIsLegacy(id);
+    const rel = legacy ? "" : toPosix(path.relative(kbRoot(config), abs));
+    const folder = fm.folder || (legacy ? KB_LEGACY_FOLDER : (rel.includes("/") ? rel.split("/").slice(0, -1).join("/") : KB_DEFAULT_FOLDER));
+    const tags = Array.isArray(fm.tags) ? fm.tags : (fm.tags ? [fm.tags] : []);
+    const title = fm.title || path.basename(abs, ".md").replace(/^\d{4}-\d{2}-\d{2}_/, "");
+    let stat = null; try { stat = fs.statSync(abs); } catch { /* ignore */ }
+    return {
+        id, title, folder, tags, legacy,
+        created: fm.created || fm.date || (stat ? stat.birthtime.toISOString().split("T")[0] : ""),
+        updated: fm.updated || (stat ? stat.mtime.toISOString().split("T")[0] : ""),
+        path: abs, frontmatter: fm,
+    };
+}
+function kbDocBody(abs) {
+    const content = fs.readFileSync(abs, "utf8");
+    if (/^---\n[\s\S]*?\n---/.test(content)) {
+        return content.replace(/^---\n[\s\S]*?\n---\n?/, "").replace(/^\s*#\s+.*\n?/, "").trim();
+    }
+    const lines = content.split("\n");
+    if (lines[0] && lines[0].startsWith("# ")) return lines.slice(1).join("\n").trim();
+    return content.trim();
+}
+function kbListLegacy(config) {
+    const root = kbStorageRoot(config);
+    const memoDirName = (config.storage.files && config.storage.files.memos) || "memos";
+    const dirs = walkFind(root, memoDirName, true, 0, []);
+    const out = [];
+    for (const dir of dirs) {
+        if (toPosix(dir).includes("/knowledge/")) continue;
+        let files = []; try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".md")); } catch { continue; }
+        for (const f of files) { try { out.push(kbReadDoc(path.join(dir, f), config)); } catch { /* ignore */ } }
+    }
+    return out;
+}
+export function kbList(filter = {}) {
+    const config = loadConfig();
+    const kroot = kbRoot(config);
+    const docs = [];
+    const walk = (dir) => {
+        let entries = []; try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        for (const e of entries) {
+            const full = path.join(dir, e.name);
+            if (e.isDirectory()) walk(full);
+            else if (e.name.endsWith(".md")) { try { docs.push(kbReadDoc(full, config)); } catch { /* ignore */ } }
+        }
+    };
+    walk(kroot);
+    docs.push(...kbListLegacy(config));
+    let result = docs;
+    if (filter.folder) result = result.filter((d) => (d.folder || "").toLowerCase() === String(filter.folder).toLowerCase());
+    if (filter.tag) result = result.filter((d) => d.tags.map((t) => t.toLowerCase()).includes(String(filter.tag).toLowerCase()));
+    if (filter.q) { const q = String(filter.q).toLowerCase(); result = result.filter((d) => d.title.toLowerCase().includes(q) || d.tags.join(" ").toLowerCase().includes(q)); }
+    result.sort((a, b) => String(b.updated || b.created).localeCompare(String(a.updated || a.created)));
+    return result;
+}
+export function kbFolders() {
+    const docs = kbList({});
+    const fc = {}, tc = {};
+    for (const d of docs) { fc[d.folder] = (fc[d.folder] || 0) + 1; for (const t of d.tags) tc[t] = (tc[t] || 0) + 1; }
+    return {
+        folders: Object.entries(fc).map(([folder, count]) => ({ folder, count })).sort((a, b) => b.count - a.count || a.folder.localeCompare(b.folder)),
+        tags: Object.entries(tc).map(([tag, count]) => ({ tag, count })).sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag)),
+    };
+}
+function kbWriteDoc(abs, fm, body) {
+    ensureDir(path.dirname(abs));
+    fs.writeFileSync(abs, `${toFrontmatter(fm)}\n\n# ${fm.title}\n\n${(body || "").trim()}\n`, "utf8");
+}
+export function kbAdd(params = {}) {
+    if (!params.title) throw new Error("title is required");
+    const config = loadConfig();
+    const folder = (params.folder && String(params.folder).trim()) || KB_DEFAULT_FOLDER;
+    const kroot = kbRoot(config);
+    const folderDir = path.join(kroot, folder.split("/").map(slugify).join(path.sep));
+    ensureDir(folderDir);
+    let filePath = path.join(folderDir, `${slugify(params.title)}.md`);
+    if (fs.existsSync(filePath)) filePath = path.join(folderDir, `${slugify(params.title)}-${Date.now().toString(36)}.md`);
+    const fm = { catpilot: "memo", title: params.title, folder, tags: kbNormTags(params.tags), created: todayISO(), updated: todayISO() };
+    kbWriteDoc(filePath, fm, params.body || "");
+    return kbReadDoc(filePath, config);
+}
+export function kbRead(id) {
+    const config = loadConfig();
+    const abs = kbIdToPath(id, config);
+    if (!fs.existsSync(abs)) throw new Error(`Knowledge doc not found: ${id}`);
+    const doc = kbReadDoc(abs, config); doc.body = kbDocBody(abs); return doc;
+}
+export function kbUpdate(id, patch = {}) {
+    const config = loadConfig();
+    const abs = kbIdToPath(id, config);
+    if (!fs.existsSync(abs)) throw new Error(`Knowledge doc not found: ${id}`);
+    const current = kbReadDoc(abs, config);
+    const body = patch.body !== undefined ? patch.body : kbDocBody(abs);
+    const title = patch.title !== undefined ? patch.title : current.title;
+    const folder = patch.folder !== undefined ? (String(patch.folder).trim() || KB_DEFAULT_FOLDER) : (current.legacy ? KB_DEFAULT_FOLDER : current.folder);
+    const tags = patch.tags !== undefined ? kbNormTags(patch.tags) : current.tags;
+    const fm = { catpilot: "memo", title, folder, tags, created: current.created || todayISO(), updated: todayISO() };
+    const kroot = kbRoot(config);
+    const folderDir = path.join(kroot, folder.split("/").map(slugify).join(path.sep));
+    const migrating = current.legacy || (patch.folder !== undefined && folder !== current.folder) || (patch.title !== undefined && slugify(title) !== path.basename(abs, ".md"));
+    if (migrating) {
+        ensureDir(folderDir);
+        let dest = path.join(folderDir, `${slugify(title)}.md`);
+        if (fs.existsSync(dest) && path.resolve(dest) !== path.resolve(abs)) dest = path.join(folderDir, `${slugify(title)}-${Date.now().toString(36)}.md`);
+        kbWriteDoc(dest, fm, body);
+        if (path.resolve(dest) !== path.resolve(abs)) { try { fs.unlinkSync(abs); } catch { /* ignore */ } }
+        return kbRead(kbPathToId(dest, config));
+    }
+    kbWriteDoc(abs, fm, body);
+    return kbRead(id);
+}
+export function kbMove(id, folder) { return kbUpdate(id, { folder }); }
+export function kbRemove(id) {
+    const config = loadConfig();
+    const abs = kbIdToPath(id, config);
+    if (!fs.existsSync(abs)) throw new Error(`Knowledge doc not found: ${id}`);
+    const doc = kbReadDoc(abs, config); fs.unlinkSync(abs); return doc;
+}
+
+
+// ===========================================================================
+// Achievements (stable-root log) — mirrors lib/achievements.js
+// ===========================================================================
+function achRoot(config) { return resolveStableDir("achievements", config); }
+function achNormTags(t) {
+    if (Array.isArray(t)) return t.map((x) => String(x).trim()).filter(Boolean);
+    if (typeof t === "string") return t.split(",").map((x) => x.trim()).filter(Boolean);
+    return [];
+}
+function achRead(abs) {
+    const content = fs.readFileSync(abs, "utf8");
+    const fm = parseFrontmatter(content);
+    const body = content.replace(/^---\n[\s\S]*?\n---\n?/, "").replace(/^\s*#\s+.*\n?/, "").trim();
+    return {
+        filename: path.basename(abs), path: abs,
+        title: fm.title || path.basename(abs, ".md").replace(/^\d{4}-\d{2}-\d{2}_/, ""),
+        date: fm.date || "", sourceType: fm.source_type || "", source: fm.source || "",
+        tags: Array.isArray(fm.tags) ? fm.tags : (fm.tags ? [fm.tags] : []), body,
+    };
+}
+export function achievementAdd(params = {}) {
+    if (!params.title) throw new Error("title is required");
+    const config = loadConfig();
+    const dir = achRoot(config); ensureDir(dir);
+    const date = params.date || todayISO();
+    let p = path.join(dir, `${date}_${slugify(params.title)}.md`);
+    if (fs.existsSync(p)) p = path.join(dir, `${date}_${slugify(params.title)}-${Date.now().toString(36)}.md`);
+    const fm = { catpilot: "achievement", title: params.title, date, source_type: params.sourceType || params.source_type || "", source: params.source || "", tags: achNormTags(params.tags) };
+    fs.writeFileSync(p, `${toFrontmatter(fm)}\n\n# ${params.title}\n\n${(params.body || "").trim()}\n`, "utf8");
+    return achRead(p);
+}
+export function achievementList(filter = {}) {
+    const config = loadConfig();
+    const dir = achRoot(config);
+    if (!fs.existsSync(dir)) return [];
+    let items = fs.readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => { try { return achRead(path.join(dir, f)); } catch { return null; } }).filter(Boolean);
+    if (filter.sourceType) items = items.filter((a) => a.sourceType === filter.sourceType);
+    if (filter.source) items = items.filter((a) => a.source === filter.source);
+    items.sort((a, b) => String(b.date).localeCompare(String(a.date)) || b.filename.localeCompare(a.filename));
+    return items;
+}
+
+// ===========================================================================
+// Shared step/item progress helpers (learning steps + project items)
+// A child item carries a granular progress (0-100). Status and progress are
+// kept in sync: Done=100, Todo/Open=0, anything in between = In Progress.
+// ===========================================================================
+function clampPct(v) { const n = parseInt(v, 10); return isNaN(n) ? 0 : Math.max(0, Math.min(100, n)); }
+function statusFromPct(p, zero) { return p >= 100 ? "Done" : p > 0 ? "In Progress" : zero; }
+function childProgress(fm) {
+    if (fm.progress !== undefined && fm.progress !== "") return clampPct(fm.progress);
+    return String(fm.status || "").toLowerCase() === "done" ? 100 : 0;
+}
+function noteBodyOf(content) {
+    return content.replace(/^---\n[\s\S]*?\n---\n?/, "").replace(/^\s*#\s+.*\n?/, "").trim();
+}
+function resolveProgressStatus({ curProgress = 0, curStatus, patchProgress, patchStatus, zero = "Todo" }) {
+    let progress = curProgress;
+    let status = curStatus || zero;
+    const hasP = patchProgress !== undefined && patchProgress !== null && patchProgress !== "";
+    const hasS = patchStatus !== undefined && patchStatus !== null && patchStatus !== "";
+    if (hasP) {
+        progress = clampPct(patchProgress);
+        status = hasS ? patchStatus : statusFromPct(progress, zero);
+    } else if (hasS) {
+        status = patchStatus;
+        const k = String(patchStatus).toLowerCase().replace(/\s/g, "");
+        if (k === "done") progress = 100;
+        else if (k === "inprogress" || k === "blocked") progress = curProgress > 0 && curProgress < 100 ? curProgress : (curProgress >= 100 ? 99 : 50);
+        else progress = 0;
+    }
+    return { progress, status };
+}
+
+// ===========================================================================
+// Learning paths (index + steps + derived progress) — mirrors lib/learning.js
+// ===========================================================================
+function lpRoot(config) { return resolveStableDir("learning", config); }
+function lpNormTags(t) { return achNormTags(t); }
+function lpDir(slug, config) {
+    const dir = path.join(lpRoot(config), slug);
+    if (!dir.startsWith(lpRoot(config))) throw new Error("Invalid learning slug");
+    return dir;
+}
+function lpReadIndex(slug, config) {
+    const idx = path.join(lpDir(slug, config), "index.md");
+    if (!fs.existsSync(idx)) return null;
+    const content = fs.readFileSync(idx, "utf8");
+    const fm = parseFrontmatter(content);
+    const body = content.replace(/^---\n[\s\S]*?\n---\n?/, "").replace(/^\s*#\s+.*\n?/, "").trim();
+    return { slug, path: idx, fm, body };
+}
+function lpListSteps(slug, config) {
+    const dir = path.join(lpDir(slug, config), "steps");
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => {
+        const content = fs.readFileSync(path.join(dir, f), "utf8");
+        const fm = parseFrontmatter(content);
+        const progress = childProgress(fm);
+        return { id: f.replace(/\.md$/, ""), title: fm.title || f.replace(/\.md$/, ""), status: fm.status || statusFromPct(progress, "Todo"), progress, due: fm.due || "", notes: noteBodyOf(content), order: parseInt(fm.order, 10) || 0 };
+    }).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+}
+function lpProgress(steps, fm) {
+    if (steps.length) return Math.round(steps.reduce((a, s) => a + childProgress(s), 0) / steps.length);
+    return String(fm.status || "").toLowerCase() === "done" ? 100 : (parseInt(fm.progress, 10) || 0);
+}
+function lpSummary(idx, steps) {
+    return {
+        slug: idx.slug, legacy: false, title: idx.fm.title || idx.slug, goal: idx.fm.goal || "",
+        status: idx.fm.status || "In Progress", progress: lpProgress(steps, idx.fm),
+        targetDate: idx.fm.target_date || "", nextReview: idx.fm.next_review || "",
+        tags: Array.isArray(idx.fm.tags) ? idx.fm.tags : (idx.fm.tags ? [idx.fm.tags] : []),
+        stepCount: steps.length, doneCount: steps.filter((s) => childProgress(s) >= 100).length, path: idx.path,
+    };
+}
+function lpListLegacy(config) {
+    const base = config.__baseDir || process.cwd();
+    const storageRoot = path.resolve(base, config.storage.root);
+    const dirName = (config.storage.files && config.storage.files.learning) || "learning";
+    const dirs = walkFind(storageRoot, dirName, true, 0, []).filter((d) => path.resolve(d) !== path.resolve(lpRoot(config)));
+    const out = [];
+    for (const dir of dirs) {
+        let files = []; try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".md")); } catch { continue; }
+        for (const f of files) {
+            try {
+                const fm = parseFrontmatter(fs.readFileSync(path.join(dir, f), "utf8"));
+                out.push({ slug: "legacy:" + f.replace(/\.md$/, ""), legacy: true, title: fm.title || f.replace(/\.md$/, ""), goal: fm.goal || "", status: fm.status || "", progress: String(fm.status || "").toLowerCase() === "done" ? 100 : 0, targetDate: fm.target_date || "", nextReview: fm.next_review || "", tags: Array.isArray(fm.tags) ? fm.tags : (fm.tags ? [fm.tags] : []), stepCount: 0, doneCount: 0, path: path.join(dir, f) });
+            } catch { /* ignore */ }
+        }
+    }
+    return out;
+}
+export function learningList(filter = {}) {
+    const config = loadConfig();
+    const r = lpRoot(config);
+    const out = [];
+    if (fs.existsSync(r)) for (const e of fs.readdirSync(r, { withFileTypes: true })) { if (!e.isDirectory()) continue; const idx = lpReadIndex(e.name, config); if (idx) out.push(lpSummary(idx, lpListSteps(e.name, config))); }
+    out.push(...lpListLegacy(config));
+    let result = out;
+    if (filter.status) result = result.filter((p) => (p.status || "").toLowerCase() === String(filter.status).toLowerCase());
+    if (filter.reviewDue) { const today = todayISO(); result = result.filter((p) => p.nextReview && p.nextReview <= today && p.progress < 100); }
+    result.sort((a, b) => a.progress - b.progress || a.title.localeCompare(b.title));
+    return result;
+}
+export function learningRead(slug) {
+    const config = loadConfig();
+    const idx = lpReadIndex(slug, config);
+    if (!idx) throw new Error(`Learning path not found: ${slug}`);
+    const steps = lpListSteps(slug, config);
+    let linkedMilestones = []; try { linkedMilestones = listMilestones().filter((m) => m.link === `learning:${slug}`); } catch { /* ignore */ }
+    return { ...lpSummary(idx, steps), body: idx.body, steps, linkedMilestones };
+}
+export function learningAddPath(params = {}) {
+    if (!params.title) throw new Error("title is required");
+    const config = loadConfig();
+    let slug = slugify(params.title);
+    const r = lpRoot(config); ensureDir(r);
+    if (fs.existsSync(path.join(r, slug))) slug = `${slug}-${Date.now().toString(36)}`;
+    const dir = path.join(r, slug); ensureDir(dir);
+    const fm = { catpilot: "learning", title: params.title, goal: params.goal || "", status: params.status || "In Progress", target_date: params.target_date || params.targetDate || "", next_review: params.next_review || params.nextReview || "", tags: lpNormTags(params.tags), created: todayISO(), updated: todayISO() };
+    fs.writeFileSync(path.join(dir, "index.md"), `${toFrontmatter(fm)}\n\n# ${params.title}\n\n${(params.body || "").trim()}\n`, "utf8");
+    if (Array.isArray(params.steps)) params.steps.forEach((s, i) => learningAddStep(slug, typeof s === "string" ? { title: s, order: i + 1 } : { ...s, order: s.order || i + 1 }));
+    return learningRead(slug);
+}
+export function learningUpdatePath(slug, patch = {}) {
+    const config = loadConfig();
+    const idx = lpReadIndex(slug, config);
+    if (!idx) throw new Error(`Learning path not found: ${slug}`);
+    const fm = { ...idx.fm, catpilot: "learning", updated: todayISO() };
+    const map = { title: "title", goal: "goal", status: "status", targetDate: "target_date", target_date: "target_date", nextReview: "next_review", next_review: "next_review" };
+    for (const [k, key] of Object.entries(map)) if (patch[k] !== undefined) fm[key] = patch[k];
+    if (patch.tags !== undefined) fm.tags = lpNormTags(patch.tags);
+    const body = patch.body !== undefined ? patch.body : idx.body;
+    fs.writeFileSync(idx.path, `${toFrontmatter(fm)}\n\n# ${fm.title || slug}\n\n${(body || "").trim()}\n`, "utf8");
+    return learningRead(slug);
+}
+export function learningAddStep(slug, params = {}) {
+    if (!params.title) throw new Error("step title is required");
+    const config = loadConfig();
+    if (!lpReadIndex(slug, config)) throw new Error(`Learning path not found: ${slug}`);
+    const dir = path.join(lpDir(slug, config), "steps"); ensureDir(dir);
+    const existing = lpListSteps(slug, config);
+    const order = params.order !== undefined ? parseInt(params.order, 10) : existing.length + 1;
+    let id = slugify(params.title);
+    if (fs.existsSync(path.join(dir, id + ".md"))) id = `${id}-${Date.now().toString(36)}`;
+    const { progress, status } = resolveProgressStatus({ patchProgress: params.progress, patchStatus: params.status, zero: "Todo" });
+    const fm = { catpilot: "learning-step", learning: slug, title: params.title, status, progress, due: params.due || "", order };
+    const notes = (params.notes !== undefined ? params.notes : params.body) || "";
+    fs.writeFileSync(path.join(dir, id + ".md"), `${toFrontmatter(fm)}\n\n# ${params.title}\n\n${String(notes).trim()}\n`, "utf8");
+    return maybeCompleteLearning(slug);
+}
+export function learningUpdateStep(slug, stepId, patch = {}) {
+    const config = loadConfig();
+    const file = path.join(lpDir(slug, config), "steps", path.basename(stepId) + ".md");
+    if (!fs.existsSync(file)) throw new Error(`Step not found: ${stepId}`);
+    const content = fs.readFileSync(file, "utf8");
+    const fm = parseFrontmatter(content);
+    fm.catpilot = "learning-step"; fm.learning = slug;
+    if (patch.title !== undefined) fm.title = patch.title;
+    if (patch.order !== undefined) fm.order = parseInt(patch.order, 10);
+    if (patch.due !== undefined) fm.due = patch.due;
+    const cur = resolveProgressStatus({ curProgress: childProgress(fm), curStatus: fm.status, patchProgress: patch.progress, patchStatus: patch.status, zero: "Todo" });
+    fm.progress = cur.progress; fm.status = cur.status;
+    const body = (patch.notes !== undefined ? patch.notes : (patch.body !== undefined ? patch.body : noteBodyOf(content))) || "";
+    fs.writeFileSync(file, `${toFrontmatter(fm)}\n\n# ${fm.title}\n\n${String(body).trim()}\n`, "utf8");
+    return maybeCompleteLearning(slug);
+}
+function maybeCompleteLearning(slug) {
+    const result = learningRead(slug);
+    if (result.stepCount > 0 && result.doneCount === result.stepCount && String(result.status).toLowerCase() !== "done") return learningComplete(slug);
+    return result;
+}
+export function learningRemoveStep(slug, stepId) {
+    const config = loadConfig();
+    const file = path.join(lpDir(slug, config), "steps", path.basename(stepId) + ".md");
+    if (!fs.existsSync(file)) throw new Error(`Step not found: ${stepId}`);
+    fs.unlinkSync(file); return learningRead(slug);
+}
+export function learningComplete(slug) {
+    const config = loadConfig();
+    const idx = lpReadIndex(slug, config);
+    if (!idx) throw new Error(`Learning path not found: ${slug}`);
+    learningUpdatePath(slug, { status: "Done" });
+    try { achievementAdd({ title: `Completed learning path: ${idx.fm.title || slug}`, sourceType: "learning", source: slug, tags: Array.isArray(idx.fm.tags) ? idx.fm.tags : [] }); } catch { /* ignore */ }
+    return learningRead(slug);
+}
+export function learningRemovePath(slug) {
+    const config = loadConfig();
+    const dir = lpDir(slug, config);
+    if (!fs.existsSync(dir)) throw new Error(`Learning path not found: ${slug}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+    return { slug, removed: true };
+}
+
+
+// ===========================================================================
+// Projects (index + items + linked tasks + rollup) — mirrors lib/projects.js
+// ===========================================================================
+const PROJECT_ITEM_TYPES = ["requirement", "task", "milestone"];
+function prRoot(config) { return resolveStableDir("projects", config); }
+function prNormTags(t) { return achNormTags(t); }
+function prDir(slug, config) {
+    const dir = path.join(prRoot(config), slug);
+    if (!dir.startsWith(prRoot(config))) throw new Error("Invalid project slug");
+    return dir;
+}
+function prReadIndex(slug, config) {
+    const idx = path.join(prDir(slug, config), "index.md");
+    if (!fs.existsSync(idx)) return null;
+    const content = fs.readFileSync(idx, "utf8");
+    const fm = parseFrontmatter(content);
+    const body = content.replace(/^---\n[\s\S]*?\n---\n?/, "").replace(/^\s*#\s+.*\n?/, "").trim();
+    return { slug, path: idx, fm, body };
+}
+function prListItems(slug, config) {
+    const dir = path.join(prDir(slug, config), "items");
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).filter((f) => f.endsWith(".md")).map((f) => {
+        const content = fs.readFileSync(path.join(dir, f), "utf8");
+        const fm = parseFrontmatter(content);
+        const progress = childProgress(fm);
+        return { id: f.replace(/\.md$/, ""), type: PROJECT_ITEM_TYPES.includes((fm.type || "").toLowerCase()) ? fm.type.toLowerCase() : "task", title: fm.title || f.replace(/\.md$/, ""), status: fm.status || statusFromPct(progress, "Open"), progress, due: fm.due || "", notes: noteBodyOf(content), order: parseInt(fm.order, 10) || 0 };
+    }).sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+}
+function prLinkedTasks(slug, config) {
+    try {
+        const p = resolveFilePath("tasks", config);
+        const tasks = parseTasksTable(readFileOrCreate(p));
+        return tasks.filter((t) => (t.project || "").toLowerCase() === slug.toLowerCase());
+    } catch { return []; }
+}
+function prProgress(items, tasks) {
+    // Requirements describe scope (not progress). Progress = avg of task/milestone
+    // item progress plus linked main tasks (done=100 else 0).
+    const parts = [
+        ...items.filter((i) => i.type === "task" || i.type === "milestone").map((i) => childProgress(i)),
+        ...tasks.map((t) => (String(t.status).toLowerCase() === "done" ? 100 : 0)),
+    ];
+    if (!parts.length) return 0;
+    return Math.round(parts.reduce((a, p) => a + p, 0) / parts.length);
+}
+function prSummary(idx, items, tasks) {
+    return {
+        slug: idx.slug, legacy: false, title: idx.fm.title || idx.slug, status: idx.fm.status || "Active",
+        start: idx.fm.start || "", due: idx.fm.due || "", owner: idx.fm.owner || "", summary: idx.fm.summary || "",
+        tags: Array.isArray(idx.fm.tags) ? idx.fm.tags : (idx.fm.tags ? [idx.fm.tags] : []),
+        itemCount: items.length, taskCount: tasks.length, progress: prProgress(items, tasks), path: idx.path,
+    };
+}
+function prListLegacy(config) {
+    const base = config.__baseDir || process.cwd();
+    const storageRoot = path.resolve(base, config.storage.root);
+    const dirName = (config.storage.files && config.storage.files.projects) || "projects";
+    const dirs = walkFind(storageRoot, dirName, true, 0, []).filter((d) => path.resolve(d) !== path.resolve(prRoot(config)));
+    const out = [];
+    for (const dir of dirs) {
+        let files = []; try { files = fs.readdirSync(dir).filter((f) => f.endsWith(".md")); } catch { continue; }
+        for (const f of files) {
+            try {
+                const fm = parseFrontmatter(fs.readFileSync(path.join(dir, f), "utf8"));
+                out.push({ slug: "legacy:" + f.replace(/\.md$/, ""), legacy: true, title: fm.title || f.replace(/\.md$/, ""), status: fm.status || "", start: fm.start || "", due: fm.due || "", owner: fm.owner || "", summary: fm.summary || "", tags: Array.isArray(fm.tags) ? fm.tags : (fm.tags ? [fm.tags] : []), itemCount: 0, taskCount: 0, progress: String(fm.status || "").toLowerCase() === "done" ? 100 : 0, path: path.join(dir, f) });
+            } catch { /* ignore */ }
+        }
+    }
+    return out;
+}
+export function projectList(filter = {}) {
+    const config = loadConfig();
+    const r = prRoot(config);
+    const out = [];
+    if (fs.existsSync(r)) for (const e of fs.readdirSync(r, { withFileTypes: true })) { if (!e.isDirectory()) continue; const idx = prReadIndex(e.name, config); if (idx) out.push(prSummary(idx, prListItems(e.name, config), prLinkedTasks(e.name, config))); }
+    out.push(...prListLegacy(config));
+    let result = out;
+    if (filter.status) result = result.filter((p) => (p.status || "").toLowerCase() === String(filter.status).toLowerCase());
+    result.sort((a, b) => a.title.localeCompare(b.title));
+    return result;
+}
+export function projectRead(slug) {
+    const config = loadConfig();
+    const idx = prReadIndex(slug, config);
+    if (!idx) throw new Error(`Project not found: ${slug}`);
+    const items = prListItems(slug, config);
+    const tasks = prLinkedTasks(slug, config);
+    let achievements = []; try { achievements = achievementList({ sourceType: "project", source: slug }); } catch { /* ignore */ }
+    let linkedMilestones = []; try { linkedMilestones = listMilestones().filter((m) => m.link === `project:${slug}`); } catch { /* ignore */ }
+    return { ...prSummary(idx, items, tasks), body: idx.body, requirements: items.filter((i) => i.type === "requirement"), milestones: items.filter((i) => i.type === "milestone"), tasks: items.filter((i) => i.type === "task"), linkedTasks: tasks, linkedMilestones, achievements };
+}
+export function projectAdd(params = {}) {
+    if (!params.title) throw new Error("title is required");
+    const config = loadConfig();
+    let slug = slugify(params.title);
+    const r = prRoot(config); ensureDir(r);
+    if (fs.existsSync(path.join(r, slug))) slug = `${slug}-${Date.now().toString(36)}`;
+    const dir = path.join(r, slug); ensureDir(dir);
+    const fm = { catpilot: "project", title: params.title, status: params.status || "Active", start: params.start || todayISO(), due: params.due || "", owner: params.owner || "", summary: params.summary || "", tags: prNormTags(params.tags), created: todayISO(), updated: todayISO() };
+    fs.writeFileSync(path.join(dir, "index.md"), `${toFrontmatter(fm)}\n\n# ${params.title}\n\n${(params.body || params.summary || "").trim()}\n`, "utf8");
+    return projectRead(slug);
+}
+export function projectUpdate(slug, patch = {}) {
+    const config = loadConfig();
+    const idx = prReadIndex(slug, config);
+    if (!idx) throw new Error(`Project not found: ${slug}`);
+    const fm = { ...idx.fm, catpilot: "project", updated: todayISO() };
+    for (const k of ["title", "status", "start", "due", "owner", "summary"]) if (patch[k] !== undefined) fm[k] = patch[k];
+    if (patch.tags !== undefined) fm.tags = prNormTags(patch.tags);
+    const body = patch.body !== undefined ? patch.body : idx.body;
+    fs.writeFileSync(idx.path, `${toFrontmatter(fm)}\n\n# ${fm.title || slug}\n\n${(body || "").trim()}\n`, "utf8");
+    return projectRead(slug);
+}
+export function projectAddItem(slug, params = {}) {
+    if (!params.title) throw new Error("item title is required");
+    const config = loadConfig();
+    if (!prReadIndex(slug, config)) throw new Error(`Project not found: ${slug}`);
+    const type = PROJECT_ITEM_TYPES.includes((params.type || "").toLowerCase()) ? params.type.toLowerCase() : "task";
+    const dir = path.join(prDir(slug, config), "items"); ensureDir(dir);
+    const existing = prListItems(slug, config);
+    const order = params.order !== undefined ? parseInt(params.order, 10) : existing.length + 1;
+    let id = slugify(params.title);
+    if (fs.existsSync(path.join(dir, id + ".md"))) id = `${id}-${Date.now().toString(36)}`;
+    const { progress, status } = resolveProgressStatus({ patchProgress: params.progress, patchStatus: params.status, zero: "Open" });
+    const fm = { catpilot: "project-item", project: slug, type, title: params.title, status, progress, due: params.due || "", order };
+    const notes = (params.notes !== undefined ? params.notes : params.body) || "";
+    fs.writeFileSync(path.join(dir, id + ".md"), `${toFrontmatter(fm)}\n\n# ${params.title}\n\n${String(notes).trim()}\n`, "utf8");
+    return projectRead(slug);
+}
+export function projectUpdateItem(slug, itemId, patch = {}) {
+    const config = loadConfig();
+    const file = path.join(prDir(slug, config), "items", path.basename(itemId) + ".md");
+    if (!fs.existsSync(file)) throw new Error(`Item not found: ${itemId}`);
+    const content = fs.readFileSync(file, "utf8");
+    const fm = parseFrontmatter(content);
+    fm.catpilot = "project-item"; fm.project = slug;
+    if (patch.type !== undefined) fm.type = patch.type;
+    if (patch.title !== undefined) fm.title = patch.title;
+    if (patch.due !== undefined) fm.due = patch.due;
+    if (patch.order !== undefined) fm.order = parseInt(patch.order, 10);
+    const cur = resolveProgressStatus({ curProgress: childProgress(fm), curStatus: fm.status, patchProgress: patch.progress, patchStatus: patch.status, zero: "Open" });
+    fm.progress = cur.progress; fm.status = cur.status;
+    const body = (patch.notes !== undefined ? patch.notes : (patch.body !== undefined ? patch.body : noteBodyOf(content))) || "";
+    fs.writeFileSync(file, `${toFrontmatter(fm)}\n\n# ${fm.title}\n\n${String(body).trim()}\n`, "utf8");
+    return projectRead(slug);
+}
+export function projectRemoveItem(slug, itemId) {
+    const config = loadConfig();
+    const file = path.join(prDir(slug, config), "items", path.basename(itemId) + ".md");
+    if (!fs.existsSync(file)) throw new Error(`Item not found: ${itemId}`);
+    fs.unlinkSync(file); return projectRead(slug);
+}
+export function projectComplete(slug) {
+    const config = loadConfig();
+    const idx = prReadIndex(slug, config);
+    if (!idx) throw new Error(`Project not found: ${slug}`);
+    projectUpdate(slug, { status: "Done" });
+    try { achievementAdd({ title: `Completed project: ${idx.fm.title || slug}`, sourceType: "project", source: slug, tags: Array.isArray(idx.fm.tags) ? idx.fm.tags : [] }); } catch { /* ignore */ }
+    return projectRead(slug);
+}
+export function projectRemove(slug) {
+    const config = loadConfig();
+    const dir = prDir(slug, config);
+    if (!fs.existsSync(dir)) throw new Error(`Project not found: ${slug}`);
+    fs.rmSync(dir, { recursive: true, force: true });
+    return { slug, removed: true };
 }

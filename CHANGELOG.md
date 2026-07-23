@@ -4,6 +4,56 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Task "In Progress" status.** Tasks now support `Open` · `In Progress` · `Blocked` ·
+  `Done`. The canvas Kanban board gained an **In Progress** column (full set:
+  Backlog · Overdue · To do · In Progress · Blocked · Done) and the create/edit form and
+  status badges include it. `In Progress` tasks stay under `## Open Tasks` on disk with
+  their status preserved in the `Status` cell (only `Done` moves to `## Done Tasks`).
+- **Knowledge Base (evolved Memos).** Memos grew into a foldered, tagged knowledge base
+  stored under `knowledge/<folder>/<slug>.md` (frontmatter `title`, `folder`, `tags`,
+  `created`, `updated`). New MCP tools `kb_add`, `kb_list`, `kb_read`, `kb_update`,
+  `kb_remove`, `kb_folders`, `kb_move` (legacy `memo_*` kept as aliases). The canvas
+  **Knowledge** view adds a stats header, folder + tag rails, **Grid / List / Folders /
+  By-month** views, search, and a detail popup that renders markdown with a full editor.
+  Legacy flat `memos/` notes remain readable.
+- **Learning paths.** Learning is now a goal + ordered **steps** model
+  (`learning/<slug>/index.md` + `steps/`). Each step is richer — **progress %**, **status**
+  (Todo · In Progress · Blocked · Done), **due date** and markdown **notes** — and path
+  progress is the **average** of its steps (partial progress counts, not just done/total),
+  with an achievement recorded on completion. New tools `learning_path_add/list/read/complete`
+  and `learning_step_add/update` (now accept `progress`, `due`, `notes`). The canvas
+  **Learning** view moves filters to the **top**, adds a **Details ›** progress breakdown
+  popup, a rich step editor (status + live progress slider + due + notes), and **✨ Generate
+  with Copilot** path drafting.
+- **Projects.** Projects gained child **items** (requirements / tasks / milestones) that now
+  carry **progress %**, **status**, **due** and **notes**; project progress **averages** its
+  trackable items and linked tasks (requirements are scope and excluded). Optional **linked
+  main tasks** (new optional `project` field on tasks), **linked milestones**, achievements
+  and derived progress. New tools `project_create`, `project_read`, `project_item_add/update`
+  (now accept `progress`, `due`, `notes`), `project_complete`, `project_board`. The canvas
+  **Projects** view moves filters to the **top**, adds a **Details ›** portfolio breakdown
+  popup, a rich item editor, and an **Ask Copilot about this project** button.
+- **Achievements.** A dedicated log under `achievements/` (tools `achievement_add`,
+  `achievement_list`), auto-recorded on learning-path/project completion and surfaced on
+  their dashboards.
+- **Milestone links.** The milestones table gained an optional **Link** column
+  (`project:<slug>` or `learning:<slug>`); linked milestones appear on that project's or
+  learning path's dashboard and the canvas Milestones view can filter by link. Backward
+  compatible with the old 5-column table.
+
+### Changed
+- **Tags on every domain.** Knowledge, Learning, Projects and Achievements all carry a
+  `tags` frontmatter list so an Obsidian vault graph connects them.
+- **Canvas navigation.** "Memos" renamed to **Knowledge**; dashboard cards and help guide
+  updated for the new domains.
+
+### Notes
+- **Backward compatible.** New structures write to stable top-level folders
+  (`knowledge/`, `projects/<slug>/`, `learning/<slug>/`, `achievements/`) while legacy
+  partitioned notes and pre-`project` task rows still read/round-trip. The CLI/MCP engine
+  and the canvas store stay byte-compatible.
+
 ## [0.8.2] - 2026-07-23
 
 ### Fixed

@@ -93,16 +93,65 @@ async function handleApi(req, url) {
     mm = p.match(/^\/api\/memos\/(.+)$/);
     if (mm && m === "GET") return { memo: store.readMemo(decodeURIComponent(mm[1])) };
 
-    // Domains: learning | growth | projects
-    mm = p.match(/^\/api\/(learning|growth|projects)$/);
-    if (mm && m === "GET") return { notes: store.listNotes(mm[1]) };
-    if (mm && m === "POST") {
+    // Growth (still a flat note domain)
+    if (p === "/api/growth" && m === "GET") return { notes: store.listNotes("growth") };
+    if (p === "/api/growth" && m === "POST") {
         const body = await readBody(req);
         const { title, body: noteBody, ...frontmatter } = body;
-        return { note: store.addNote(mm[1], { title, body: noteBody, frontmatter }) };
+        return { note: store.addNote("growth", { title, body: noteBody, frontmatter }) };
     }
-    mm = p.match(/^\/api\/(learning|growth|projects)\/(.+)$/);
-    if (mm && m === "GET") return { note: store.readNote(mm[1], decodeURIComponent(mm[2])) };
+    mm = p.match(/^\/api\/growth\/(.+)$/);
+    if (mm && m === "GET") return { note: store.readNote("growth", decodeURIComponent(mm[1])) };
+
+    // Knowledge Base (evolved memos: folders + tags + rich views).
+    // Id-based ops use ?id= because ids are POSIX paths containing slashes.
+    if (p === "/api/knowledge" && m === "GET") {
+        return { docs: store.kbList({ folder: url.searchParams.get("folder") || undefined, tag: url.searchParams.get("tag") || undefined, q: url.searchParams.get("q") || undefined }) };
+    }
+    if (p === "/api/knowledge" && m === "POST") return { doc: store.kbAdd(await readBody(req)) };
+    if (p === "/api/knowledge/folders" && m === "GET") return store.kbFolders();
+    if (p === "/api/knowledge/doc" && m === "GET") return { doc: store.kbRead(url.searchParams.get("id")) };
+    if (p === "/api/knowledge/doc" && m === "PUT") return { doc: store.kbUpdate(url.searchParams.get("id"), await readBody(req)) };
+    if (p === "/api/knowledge/doc" && m === "DELETE") return { removed: store.kbRemove(url.searchParams.get("id")) };
+    if (p === "/api/knowledge/move" && m === "POST") return { doc: store.kbMove(url.searchParams.get("id"), (await readBody(req)).folder) };
+
+    // Learning paths (index + steps + derived progress)
+    if (p === "/api/learning-paths" && m === "GET") {
+        return { paths: store.learningList({ status: url.searchParams.get("status") || undefined, reviewDue: url.searchParams.get("reviewDue") === "1" }) };
+    }
+    if (p === "/api/learning-paths" && m === "POST") return { path: store.learningAddPath(await readBody(req)) };
+    mm = p.match(/^\/api\/learning-paths\/([^/]+)$/);
+    if (mm && m === "GET") return { path: store.learningRead(decodeURIComponent(mm[1])) };
+    if (mm && m === "PUT") return { path: store.learningUpdatePath(decodeURIComponent(mm[1]), await readBody(req)) };
+    if (mm && m === "DELETE") return { removed: store.learningRemovePath(decodeURIComponent(mm[1])) };
+    mm = p.match(/^\/api\/learning-paths\/([^/]+)\/complete$/);
+    if (mm && m === "POST") return { path: store.learningComplete(decodeURIComponent(mm[1])) };
+    mm = p.match(/^\/api\/learning-paths\/([^/]+)\/steps$/);
+    if (mm && m === "POST") return { path: store.learningAddStep(decodeURIComponent(mm[1]), await readBody(req)) };
+    mm = p.match(/^\/api\/learning-paths\/([^/]+)\/steps\/([^/]+)$/);
+    if (mm && m === "PUT") return { path: store.learningUpdateStep(decodeURIComponent(mm[1]), decodeURIComponent(mm[2]), await readBody(req)) };
+    if (mm && m === "DELETE") return { path: store.learningRemoveStep(decodeURIComponent(mm[1]), decodeURIComponent(mm[2])) };
+
+    // Projects (index + items + linked tasks + rollup)
+    if (p === "/api/projects" && m === "GET") return { projects: store.projectList({ status: url.searchParams.get("status") || undefined }) };
+    if (p === "/api/projects" && m === "POST") return { project: store.projectAdd(await readBody(req)) };
+    mm = p.match(/^\/api\/projects\/([^/]+)$/);
+    if (mm && m === "GET") return { project: store.projectRead(decodeURIComponent(mm[1])) };
+    if (mm && m === "PUT") return { project: store.projectUpdate(decodeURIComponent(mm[1]), await readBody(req)) };
+    if (mm && m === "DELETE") return { removed: store.projectRemove(decodeURIComponent(mm[1])) };
+    mm = p.match(/^\/api\/projects\/([^/]+)\/complete$/);
+    if (mm && m === "POST") return { project: store.projectComplete(decodeURIComponent(mm[1])) };
+    mm = p.match(/^\/api\/projects\/([^/]+)\/items$/);
+    if (mm && m === "POST") return { project: store.projectAddItem(decodeURIComponent(mm[1]), await readBody(req)) };
+    mm = p.match(/^\/api\/projects\/([^/]+)\/items\/([^/]+)$/);
+    if (mm && m === "PUT") return { project: store.projectUpdateItem(decodeURIComponent(mm[1]), decodeURIComponent(mm[2]), await readBody(req)) };
+    if (mm && m === "DELETE") return { project: store.projectRemoveItem(decodeURIComponent(mm[1]), decodeURIComponent(mm[2])) };
+
+    // Achievements
+    if (p === "/api/achievements" && m === "GET") {
+        return { achievements: store.achievementList({ sourceType: url.searchParams.get("sourceType") || undefined, source: url.searchParams.get("source") || undefined }) };
+    }
+    if (p === "/api/achievements" && m === "POST") return { achievement: store.achievementAdd(await readBody(req)) };
 
     // Reports (Copilot-generated executive reports)
     if (p === "/api/reports" && m === "GET") return { reports: store.listReports() };

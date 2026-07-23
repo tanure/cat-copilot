@@ -11,7 +11,7 @@ import * as pomodoro from '../../lib/pomodoro.js';
 import fs from 'fs';
 import path from 'path';
 
-const TASK_STATUSES = ['Open', 'Blocked', 'Done'];
+const TASK_STATUSES = ['Open', 'In Progress', 'Blocked', 'Done'];
 function normalizeTaskStatus(value, fallback = 'Open') {
   if (value === undefined || value === null || value === '') return fallback;
   const match = TASK_STATUSES.find(s => s.toLowerCase() === String(value).trim().toLowerCase());
@@ -65,7 +65,8 @@ async function add_task(params) {
       dueDate: params.due || '',
       priority: params.priority || '',
       tags: params.tags || '',
-      context: params.context || ''
+      context: params.context || '',
+      project: params.project || ''
     };
 
     tasks.push(newTask);

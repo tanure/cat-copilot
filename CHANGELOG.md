@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented in this file.
 
+## [Unreleased]
+
+### Added
+- **Backlog column on the Kanban board (canvas).** Open tasks with **no due date** now
+  collect in a new **📥 Backlog** column (first in the board) instead of mixing into
+  **To do**, which is now reserved for scheduled tasks (due today or later). Its quick-add
+  creates an unscheduled task; dragging a card **into** Backlog clears its due date, and
+  dragging **out** to To do schedules it for today so cards no longer bounce back.
+
 ## [0.8.0] - 2026-07-23
 
 ### Changed

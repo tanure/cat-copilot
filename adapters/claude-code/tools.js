@@ -179,6 +179,91 @@ async function remove_task(params) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Task progress log (dated comments)
+// ---------------------------------------------------------------------------
+
+function loadTasksForComment(id) {
+  const config = cliUtils.loadConfig();
+  const tasksPath = cliUtils.resolveFilePath('tasks', config);
+  const content = cliUtils.readFileOrCreate(tasksPath);
+  const tasks = cliUtils.parseTasksTable(content);
+  const task = tasks.find(t => t.id === parseInt(id, 10));
+  return { tasksPath, tasks, task };
+}
+
+async function add_task_comment(params = {}) {
+  try {
+    if (params.id === undefined) return { success: false, error: 'id is required' };
+    const text = (params.text || '').trim();
+    if (!text) return { success: false, error: 'text is required' };
+
+    const { tasksPath, tasks, task } = loadTasksForComment(params.id);
+    if (!task) return { success: false, error: `Task #${params.id} not found` };
+
+    const comment = { date: params.date || cliUtils.taskCommentStamp(), text };
+    if (!Array.isArray(task.log)) task.log = [];
+    task.log.push(comment);
+    fs.writeFileSync(tasksPath, cliUtils.formatTasksTable(tasks), 'utf8');
+
+    return { success: true, data: comment, message: `Comment added to task #${params.id}` };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function list_task_comments(params = {}) {
+  try {
+    if (params.id === undefined) return { success: false, error: 'id is required' };
+    const { task } = loadTasksForComment(params.id);
+    if (!task) return { success: false, error: `Task #${params.id} not found` };
+    return { success: true, count: (task.log || []).length, comments: task.log || [] };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function edit_task_comment(params = {}) {
+  try {
+    if (params.id === undefined) return { success: false, error: 'id is required' };
+    if (params.index === undefined) return { success: false, error: 'index is required' };
+    const text = (params.text || '').trim();
+    if (!text) return { success: false, error: 'text is required' };
+
+    const { tasksPath, tasks, task } = loadTasksForComment(params.id);
+    if (!task) return { success: false, error: `Task #${params.id} not found` };
+    const i = parseInt(params.index, 10);
+    if (!Array.isArray(task.log) || !task.log[i]) return { success: false, error: `Comment #${i} not found on task #${params.id}` };
+
+    task.log[i].text = text;
+    if (params.date) task.log[i].date = params.date;
+    fs.writeFileSync(tasksPath, cliUtils.formatTasksTable(tasks), 'utf8');
+
+    return { success: true, data: task.log[i], message: `Comment #${i} updated on task #${params.id}` };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function remove_task_comment(params = {}) {
+  try {
+    if (params.id === undefined) return { success: false, error: 'id is required' };
+    if (params.index === undefined) return { success: false, error: 'index is required' };
+
+    const { tasksPath, tasks, task } = loadTasksForComment(params.id);
+    if (!task) return { success: false, error: `Task #${params.id} not found` };
+    const i = parseInt(params.index, 10);
+    if (!Array.isArray(task.log) || !task.log[i]) return { success: false, error: `Comment #${i} not found on task #${params.id}` };
+
+    const [removed] = task.log.splice(i, 1);
+    fs.writeFileSync(tasksPath, cliUtils.formatTasksTable(tasks), 'utf8');
+
+    return { success: true, data: removed, message: `Comment #${i} removed from task #${params.id}` };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
 async function add_journal_entry(params) {
   try {
     if (!params.text) {
@@ -397,6 +482,10 @@ async function handleToolCall(toolName, params) {
     complete_task,
     set_task_status,
     remove_task,
+    add_task_comment,
+    list_task_comments,
+    edit_task_comment,
+    remove_task_comment,
     add_journal_entry,
     list_journal,
     create_memo,
@@ -424,6 +513,10 @@ export {
   complete_task,
   set_task_status,
   remove_task,
+  add_task_comment,
+  list_task_comments,
+  edit_task_comment,
+  remove_task_comment,
   add_journal_entry,
   list_journal,
   create_memo,

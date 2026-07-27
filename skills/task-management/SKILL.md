@@ -20,6 +20,7 @@ Use this skill when the user says things like:
 - "What are my done tasks?"
 - "Update task …"
 - "List my completed tasks"
+- "Log progress on a task …" / "Add a comment/note to task …"
 
 ## Inputs to capture (ask only if missing)
 **Required**
@@ -131,6 +132,32 @@ CLI equivalents: `cat-pilot task block <id>` and `cat-pilot task unblock <id>`;
 5. Confirm to the user:
    - What was updated
    - Where it was updated (resolved tasks path)
+
+### Logging progress (task comments)
+Tasks carry a **progress log** of dated comments so you can record what you're acting on
+without editing the task's fields.
+
+1. Resolve the tasks file and find the task by ID.
+2. Append the comment to the task's log — stored in a `## Task Log` section at the bottom of
+   the tasks file, grouped under a `### Task <id>` sub-heading, one Obsidian-friendly bullet
+   per comment:
+
+   ```
+   ## Task Log
+
+   ### Task 3
+   - **2026-03-06 14:20** — Reviewed the API docs and scoped the change.
+   - **2026-03-07 09:05** — Blocked on staging creds; pinged infra.
+   ```
+
+   Each comment is single-line (`—` is U+2014); the timestamp is `YYYY-MM-DD HH:MM` local time.
+3. The log round-trips through every task edit — adding/removing tasks never drops it.
+
+CLI equivalents: `cat-pilot task comment add <id> "<text>"`,
+`cat-pilot task comment list <id>`, `cat-pilot task comment remove <id> <index>`.
+MCP tools: `task_comment_add`, `task_comment_list`, `task_comment_edit`, `task_comment_remove`.
+In the canvas, open a task's detail to see the **Progress log** timeline and add/edit/remove
+updates with the markdown editor.
 
 
 ## Examples

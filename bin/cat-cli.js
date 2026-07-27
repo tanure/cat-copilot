@@ -111,7 +111,7 @@ const taskCmd = program
   .command('task')
   .description('Manage tasks');
 
-const TASK_STATUSES = ['Open', 'Blocked', 'Done'];
+const TASK_STATUSES = ['Open', 'In Progress', 'Blocked', 'Done'];
 function normalizeTaskStatus(value, fallback = 'Open') {
   if (value === undefined || value === null || value === '') return fallback;
   const match = TASK_STATUSES.find(s => s.toLowerCase() === String(value).trim().toLowerCase());
@@ -126,7 +126,7 @@ taskCmd
   .option('--priority <priority>', 'Priority (P0|P1|P2|P3)')
   .option('--tags <tags>', 'Tags (comma-separated)')
   .option('--context <context>', 'Context or notes')
-  .option('--status <status>', 'Status (Open|Blocked|Done)', 'Open')
+  .option('--status <status>', 'Status (Open|In Progress|Blocked|Done)', 'Open')
   .action(async (title, options) => {
     try {
       const config = cliUtils.loadConfig();
@@ -256,6 +256,14 @@ taskCmd
   });
 
 taskCmd
+  .command('start <id>')
+  .description('Mark a task as In Progress')
+  .action((id) => {
+    try { setTaskStatusCli(id, 'In Progress'); }
+    catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
+  });
+
+taskCmd
   .command('remove <id>')
   .description('Remove task')
   .action((id) => {
@@ -280,6 +288,66 @@ taskCmd
       console.error(`❌ Error: ${err.message}`);
       process.exit(1);
     }
+  });
+
+// --- Task progress log (dated comments) ---
+function loadTasksForCommentCli(id) {
+  const config = cliUtils.loadConfig();
+  const tasksPath = cliUtils.resolveFilePath('tasks', config);
+  const content = cliUtils.readFileOrCreate(tasksPath);
+  const tasks = cliUtils.parseTasksTable(content);
+  const task = tasks.find(t => t.id === parseInt(id, 10));
+  return { tasksPath, tasks, task };
+}
+
+const taskCommentCmd = taskCmd
+  .command('comment')
+  .description('Log dated progress comments on a task');
+
+taskCommentCmd
+  .command('add <id> <text>')
+  .description('Append a dated progress comment to a task')
+  .action((id, text) => {
+    try {
+      const { tasksPath, tasks, task } = loadTasksForCommentCli(id);
+      if (!task) { console.error(`❌ Task #${id} not found`); process.exit(1); }
+      const comment = { date: cliUtils.taskCommentStamp(), text: String(text).trim() };
+      if (!Array.isArray(task.log)) task.log = [];
+      task.log.push(comment);
+      fs.writeFileSync(tasksPath, cliUtils.formatTasksTable(tasks), 'utf8');
+      console.log(`\n💬 Update logged on task #${id}`);
+      console.log(`   🕒 ${comment.date} — ${comment.text}`);
+    } catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
+  });
+
+taskCommentCmd
+  .command('list <id>')
+  .description('List progress comments on a task')
+  .action((id) => {
+    try {
+      const { task } = loadTasksForCommentCli(id);
+      if (!task) { console.error(`❌ Task #${id} not found`); process.exit(1); }
+      const log = task.log || [];
+      if (!log.length) { console.log(`\n📂 No updates logged on task #${id}`); return; }
+      console.log(`\n💬 Progress log for task #${id}: ${task.title}\n`);
+      log.forEach((c, i) => console.log(`  [${i}] 🕒 ${c.date || '—'} — ${c.text}`));
+      console.log();
+    } catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
+  });
+
+taskCommentCmd
+  .command('remove <id> <index>')
+  .description('Remove a progress comment by its index')
+  .action((id, index) => {
+    try {
+      const { tasksPath, tasks, task } = loadTasksForCommentCli(id);
+      if (!task) { console.error(`❌ Task #${id} not found`); process.exit(1); }
+      const i = parseInt(index, 10);
+      if (!Array.isArray(task.log) || !task.log[i]) { console.error(`❌ Comment #${i} not found on task #${id}`); process.exit(1); }
+      task.log.splice(i, 1);
+      fs.writeFileSync(tasksPath, cliUtils.formatTasksTable(tasks), 'utf8');
+      console.log(`\n✅ Comment #${i} removed from task #${id}`);
+    } catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
   });
 
 // ============================================================================

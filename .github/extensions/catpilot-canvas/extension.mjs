@@ -76,6 +76,13 @@ async function handleApi(req, url) {
     if (mm && m === "DELETE") return { removed: store.removeTask(mm[1]) };
     mm = p.match(/^\/api\/tasks\/(\d+)\/complete$/);
     if (mm && m === "POST") return { task: store.completeTask(mm[1]) };
+    // Task progress log (dated comments)
+    mm = p.match(/^\/api\/tasks\/(\d+)\/comments$/);
+    if (mm && m === "GET") return { comments: store.taskCommentList(mm[1]) };
+    if (mm && m === "POST") return { comment: store.taskCommentAdd(mm[1], await readBody(req)) };
+    mm = p.match(/^\/api\/tasks\/(\d+)\/comments\/(\d+)$/);
+    if (mm && m === "PUT") return { comment: store.taskCommentUpdate(mm[1], mm[2], await readBody(req)) };
+    if (mm && m === "DELETE") return { removed: store.taskCommentRemove(mm[1], mm[2]) };
 
     // Journal
     if (p === "/api/journal" && m === "GET") return { entries: store.listJournal(Number(url.searchParams.get("days")) || 3650) };

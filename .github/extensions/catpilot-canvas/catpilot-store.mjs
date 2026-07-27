@@ -223,11 +223,60 @@ function parseTasksTable(content) {
                     tags: cells[5] || "",
                     context: cells[6] || "",
                     project: cells[7] || "",
+                    log: [],
                 });
             }
         }
     }
+    const logs = parseTaskLog(content);
+    for (const t of tasks) t.log = logs[t.id] || [];
     return tasks;
+}
+
+// Per-task progress log ("## Task Log" section): taskId -> [{date,text}].
+// Kept on the task object so every add/update/complete/remove round-trips it.
+function parseTaskLog(content) {
+    const lines = content.split("\n");
+    const logs = {};
+    let inLog = false;
+    let curId = null;
+    for (const line of lines) {
+        const h2 = line.match(/^##\s+(.+?)\s*$/);
+        if (h2) { inLog = /^task log$/i.test(h2[1].trim()); curId = null; continue; }
+        if (!inLog) continue;
+        const h3 = line.match(/^###\s+Task\s+(\d+)\s*$/i);
+        if (h3) { curId = parseInt(h3[1], 10); if (!logs[curId]) logs[curId] = []; continue; }
+        if (curId == null) continue;
+        const dated = line.match(/^-\s+\*\*(.+?)\*\*\s+—\s+(.*)$/);
+        if (dated) { logs[curId].push({ date: dated[1].trim(), text: dated[2].trim() }); continue; }
+        const plain = line.match(/^-\s+(.*\S.*)$/);
+        if (plain) logs[curId].push({ date: "", text: plain[1].trim() });
+    }
+    return logs;
+}
+
+function collapseComment(text) {
+    return String(text == null ? "" : text).replace(/\r?\n/g, " ").trim();
+}
+
+function formatTaskLog(tasks) {
+    const withLogs = tasks.filter((t) => Array.isArray(t.log) && t.log.length);
+    if (!withLogs.length) return "";
+    let out = "## Task Log\n";
+    for (const t of withLogs) {
+        out += `\n### Task ${t.id}\n`;
+        for (const c of t.log) {
+            const text = collapseComment(c.text);
+            if (!text) continue;
+            out += c.date ? `- **${c.date}** — ${text}\n` : `- ${text}\n`;
+        }
+    }
+    return out.trimEnd();
+}
+
+function taskCommentStamp(d = new Date()) {
+    const p = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 function formatTasksTable(tasks) {
@@ -247,7 +296,10 @@ function formatTasksTable(tasks) {
         out += "## Completed Tasks\n\n" + header;
         done.forEach((t) => { out += `| ${t.id} | ${encodeCell(t.status)} | ${encodeCell(t.title)} | ${encodeCell(t.dueDate)} | ${encodeCell(t.priority)} | ${encodeCell(t.tags)} | ${encodeCell(t.context)} | ${encodeCell(t.project)} |\n`; });
     }
-    return out.trimEnd();
+    const logSection = formatTaskLog(tasks);
+    let result = out.trimEnd();
+    if (logSection) result += "\n\n" + logSection;
+    return result;
 }
 
 function nextId(rows) {
@@ -317,6 +369,56 @@ export function removeTask(id) {
     const idx = tasks.findIndex((x) => x.id === parseInt(id, 10));
     if (idx === -1) throw new Error(`Task #${id} not found`);
     const [removed] = tasks.splice(idx, 1);
+    fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
+    return removed;
+}
+
+// --- Task progress log (dated comments) ---
+function loadTaskForComment(id) {
+    const config = loadConfig();
+    const p = resolveFilePath("tasks", config);
+    const tasks = parseTasksTable(readFileOrCreate(p));
+    const task = tasks.find((x) => x.id === parseInt(id, 10));
+    return { p, tasks, task };
+}
+
+export function taskCommentList(id) {
+    const { task } = loadTaskForComment(id);
+    if (!task) throw new Error(`Task #${id} not found`);
+    return task.log || [];
+}
+
+export function taskCommentAdd(id, params = {}) {
+    const text = String(params.text || "").trim();
+    if (!text) throw new Error("text is required");
+    const { p, tasks, task } = loadTaskForComment(id);
+    if (!task) throw new Error(`Task #${id} not found`);
+    const comment = { date: params.date || taskCommentStamp(), text };
+    if (!Array.isArray(task.log)) task.log = [];
+    task.log.push(comment);
+    fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
+    return comment;
+}
+
+export function taskCommentUpdate(id, index, params = {}) {
+    const text = String(params.text || "").trim();
+    if (!text) throw new Error("text is required");
+    const { p, tasks, task } = loadTaskForComment(id);
+    if (!task) throw new Error(`Task #${id} not found`);
+    const i = parseInt(index, 10);
+    if (!Array.isArray(task.log) || !task.log[i]) throw new Error(`Comment #${i} not found on task #${id}`);
+    task.log[i].text = text;
+    if (params.date) task.log[i].date = params.date;
+    fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
+    return task.log[i];
+}
+
+export function taskCommentRemove(id, index) {
+    const { p, tasks, task } = loadTaskForComment(id);
+    if (!task) throw new Error(`Task #${id} not found`);
+    const i = parseInt(index, 10);
+    if (!Array.isArray(task.log) || !task.log[i]) throw new Error(`Comment #${i} not found on task #${id}`);
+    const [removed] = task.log.splice(i, 1);
     fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
     return removed;
 }

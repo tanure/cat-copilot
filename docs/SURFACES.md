@@ -31,10 +31,15 @@ Notes:
 - **MCP** is the portable core: any MCP-capable host gets the data tools.
 - Task statuses are `Open`, `In Progress`, `Blocked`, and `Done`; the canvas shows
   `Open` as **To do** and derives **Overdue** from due dates.
+- Each task carries a **progress log** of dated comments (`## Task Log` in the tasks file),
+  editable from the CLI (`cat task comment …`), MCP (`task_comment_*`) and the canvas task
+  detail timeline.
 
 ## Canvas views
 The browser canvas SPA provides richer review and editing views:
 - **Tasks:** Kanban columns for Backlog, Overdue, To do, In Progress, Blocked, and Done.
+  The task detail shows a **Progress log** timeline with a markdown write/preview/Copilot
+  editor for add/edit/remove of dated updates.
 - **Knowledge:** stats header, folder and tag filter rails, Grid/List/Folders/By-month
   view modes, search, Markdown detail popup, and a full write/preview editor with
   Save/Delete plus folder/tag editing.

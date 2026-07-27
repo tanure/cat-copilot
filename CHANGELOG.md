@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Task progress log (dated comments).** Every task now carries a timeline of dated
+  progress updates so you can log what you're acting on. Comments persist in the tasks file
+  under a `## Task Log` section (`### Task <id>` sub-headings, Obsidian-friendly
+  `- **YYYY-MM-DD HH:MM** — <text>` bullets) and round-trip through every task mutation.
+  New MCP tools `task_comment_add`, `task_comment_list`, `task_comment_edit`,
+  `task_comment_remove`; CLI `cat task comment add|list|remove`; REST routes under
+  `/api/tasks/:id/comments`. The canvas task detail gained a **💬 Progress log** timeline
+  with markdown-rendered entries and the same write/preview/Copilot editor used for Context;
+  task rows and board cards show an update count. `cat task start <id>` (In Progress) added.
 - **Task "In Progress" status.** Tasks now support `Open` · `In Progress` · `Blocked` ·
   `Done`. The canvas Kanban board gained an **In Progress** column (full set:
   Backlog · Overdue · To do · In Progress · Blocked · Done) and the create/edit form and

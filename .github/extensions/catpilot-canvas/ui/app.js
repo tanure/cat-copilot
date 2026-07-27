@@ -612,7 +612,8 @@
         tr.append(
             el("td", { style: "width:34px" }, check),
             el("td", {}, el("div", { class: "cell-title", text: t.title, onclick: () => taskDetail(t) }),
-                t.context ? el("div", { class: "muted small", text: t.context }) : null),
+                t.context ? el("div", { class: "muted small", text: t.context }) : null,
+                (t.log && t.log.length) ? el("div", { class: "muted small", text: `💬 ${t.log.length} update${t.log.length > 1 ? "s" : ""}` }) : null),
             el("td", {}, statusBadge(t.status)),
             el("td", {}, t.dueDate ? el("span", { class: dueClass(t.dueDate, done), text: t.dueDate }) : el("span", { class: "muted small", text: "—" })),
             el("td", {}, priorityBadge(t.priority)),
@@ -721,6 +722,7 @@
             foot.append(el("span", { class: "bc-due none", title: "No due date", text: "🗓️ No due date" }));
         }
         if (String(t.tags || "").trim()) foot.append(tagChips(t.tags));
+        if (t.log && t.log.length) foot.append(el("span", { class: "bc-due", title: `${t.log.length} progress update${t.log.length > 1 ? "s" : ""}`, text: `💬 ${t.log.length}` }));
         if (foot.childNodes.length) card.append(foot);
         return card;
     }
@@ -879,13 +881,75 @@
 
     function taskDetail(t) {
         const done = t.status.toLowerCase() === "done";
+        const logHost = el("div", { class: "task-log" });
         const body = el("div", {},
             detailRow("Status", statusBadge(t.status)),
             detailRow("Title", el("span", { text: t.title })),
             detailRow("Due date", el("span", { text: t.dueDate || "—" })),
             detailRow("Priority", priorityBadge(t.priority)),
             detailRow("Tags", tagChips(t.tags)),
-            detailRow("Context", t.context ? mdRender(t.context) : el("span", { class: "muted small", text: "—" })));
+            detailRow("Context", t.context ? mdRender(t.context) : el("span", { class: "muted small", text: "—" })),
+            logHost);
+
+        async function renderLog() {
+            logHost.innerHTML = "";
+            let comments = t.log || [];
+            try { const r = await api(`/api/tasks/${t.id}/comments`); comments = r.comments || []; t.log = comments; }
+            catch (e) { /* fall back to cached */ }
+            const head = el("div", { class: "task-log-head" },
+                el("h4", { html: `💬 Progress log <span class="muted small">${comments.length}</span>` }),
+                el("button", { class: "btn btn-sm btn-primary", html: "＋ Add update", onclick: showComposer }));
+            logHost.append(head);
+
+            if (!comments.length) logHost.append(el("div", { class: "muted small task-log-empty", text: "No updates yet. Log what you're working on." }));
+            const list = el("div", { class: "task-log-list" });
+            comments.forEach((c, i) => list.append(commentRow(c, i)));
+            logHost.append(list);
+
+            const composer = el("div", { class: "task-log-composer hidden" });
+            const ed = mdEditor({ value: "", placeholder: "What did you do / decide? (markdown supported)", minRows: 3 });
+            composer.append(ed.node, el("div", { class: "task-log-actions" },
+                el("button", { class: "btn btn-sm", text: "Cancel", onclick: () => composer.classList.add("hidden") }),
+                el("button", { class: "btn btn-sm btn-primary", text: "Save update", onclick: async () => {
+                    const text = ed.getValue().trim();
+                    if (!text) { toast("Nothing to save", "", "err"); return; }
+                    try { await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text } }); toast("Update logged", "", "ok"); await renderLog(); refreshSummary(); }
+                    catch (e) { toast("Error", e.message, "err"); }
+                } })));
+            logHost.append(composer);
+            function showComposer() { composer.classList.remove("hidden"); ed.textarea.focus(); }
+        }
+
+        function commentRow(c, i) {
+            const row = el("div", { class: "task-log-item" });
+            const bodyEl = el("div", { class: "task-log-body" }, mdRender(c.text));
+            row.append(
+                el("div", { class: "task-log-meta" },
+                    el("span", { class: "task-log-date", html: `🕒 ${c.date || "—"}` }),
+                    el("div", { class: "task-log-item-actions" },
+                        el("button", { class: "btn btn-xs btn-ghost", text: "Edit", onclick: () => editComment(row, c, i) }),
+                        el("button", { class: "btn btn-xs btn-ghost btn-danger", text: "Delete", onclick: async () => {
+                            try { await api(`/api/tasks/${t.id}/comments/${i}`, { method: "DELETE" }); toast("Update removed", "", "ok"); await renderLog(); refreshSummary(); }
+                            catch (e) { toast("Error", e.message, "err"); }
+                        } }))),
+                bodyEl);
+            return row;
+        }
+
+        function editComment(row, c, i) {
+            const ed = mdEditor({ value: c.text, placeholder: "Update text", minRows: 3 });
+            const editor = el("div", { class: "task-log-composer" }, ed.node, el("div", { class: "task-log-actions" },
+                el("button", { class: "btn btn-sm", text: "Cancel", onclick: () => renderLog() }),
+                el("button", { class: "btn btn-sm btn-primary", text: "Save", onclick: async () => {
+                    const text = ed.getValue().trim();
+                    if (!text) { toast("Nothing to save", "", "err"); return; }
+                    try { await api(`/api/tasks/${t.id}/comments/${i}`, { method: "PUT", body: { text } }); toast("Update saved", "", "ok"); await renderLog(); }
+                    catch (e) { toast("Error", e.message, "err"); }
+                } })));
+            row.replaceWith(editor);
+            ed.textarea.focus();
+        }
+
         const foot = [
             el("button", { class: "btn btn-danger", text: "Delete", onclick: () => { closeModal(); removeTask(t); } }),
             el("span", { class: "spacer", style: "flex:1" }),
@@ -893,6 +957,7 @@
             !done ? el("button", { class: "btn btn-primary", text: "Complete", onclick: async () => { try { await api(`/api/tasks/${t.id}/complete`, { method: "POST" }); toast("Completed", t.title, "ok"); closeModal(); await refreshSummary(); go("tasks"); } catch (e) { toast("Error", e.message, "err"); } } }) : null,
         ];
         openModal({ title: `Task #${t.id}`, body, foot });
+        renderLog();
     }
 
     // ---------- Journal ----------

@@ -583,6 +583,22 @@ textarea { resize: vertical; min-height: 90px; }
 .md-preview { padding: 12px 14px; min-height: 120px; }
 .hidden { display: none !important; }
 
+/* ---------- Task progress log ---------- */
+.task-log { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
+.task-log-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.task-log-head h4 { margin: 0; font-size: 14px; display: flex; align-items: center; gap: 6px; }
+.task-log-empty { padding: 10px 0; }
+.task-log-list { display: flex; flex-direction: column; gap: 10px; }
+.task-log-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; background: var(--panel-2); }
+.task-log-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.task-log-date { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.task-log-item-actions { display: flex; gap: 4px; }
+.task-log-body { font-size: 13.5px; line-height: 1.55; }
+.task-log-body .md :first-child { margin-top: 0; } .task-log-body .md :last-child { margin-bottom: 0; }
+.task-log-composer { margin-top: 12px; }
+.task-log-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.btn-xs { padding: 2px 8px; font-size: 11.5px; height: auto; }
+
 /* ---------- Reports ---------- */
 .report-card { display: flex; flex-direction: column; gap: 8px; }
 .report-ic { font-size: 26px; }

@@ -26,7 +26,7 @@ while newer graph-friendly domains use stable top-level folders:
 ├── achievements/YYYY-MM-DD_slug.md     # frontmatter: catpilot: achievement, tags: []
 └── 2026/
     └── 2026-06/
-        ├── tasks.md                    # markdown table (Open/In Progress/Blocked/Done)
+        ├── tasks.md                    # markdown table + "## Task Log" progress comments
         ├── journal.md                  # append-only daily log
         ├── milestones.md               # markdown table; optional Link column
         ├── memos/                      # legacy flat notes, still readable

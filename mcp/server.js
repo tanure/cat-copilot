@@ -120,6 +120,42 @@ server.registerTool('task_remove', {
   inputSchema: { id: z.number().int().describe('Task ID') }
 }, async (args) => fromCore(await core.remove_task(args)));
 
+server.registerTool('task_comment_add', {
+  title: 'Add task comment',
+  description: 'Append a dated progress comment to a task\'s log (stored under "## Task Log" in the tasks file). Use this to record what you are acting on.',
+  inputSchema: {
+    id: z.number().int().describe('Task ID'),
+    text: z.string().describe('Progress note (markdown supported, single line)'),
+    date: z.string().optional().describe('Optional timestamp override (default: now, YYYY-MM-DD HH:MM)')
+  }
+}, async (args) => fromCore(await core.add_task_comment(args)));
+
+server.registerTool('task_comment_list', {
+  title: 'List task comments',
+  description: 'List the dated progress comments logged on a task.',
+  inputSchema: { id: z.number().int().describe('Task ID') }
+}, async (args) => fromCore(await core.list_task_comments(args)));
+
+server.registerTool('task_comment_edit', {
+  title: 'Edit task comment',
+  description: 'Edit the text (and optionally the date) of a task comment by its zero-based index.',
+  inputSchema: {
+    id: z.number().int().describe('Task ID'),
+    index: z.number().int().describe('Zero-based comment index'),
+    text: z.string().describe('New comment text'),
+    date: z.string().optional().describe('Optional new timestamp')
+  }
+}, async (args) => fromCore(await core.edit_task_comment(args)));
+
+server.registerTool('task_comment_remove', {
+  title: 'Remove task comment',
+  description: 'Remove a task comment by its zero-based index.',
+  inputSchema: {
+    id: z.number().int().describe('Task ID'),
+    index: z.number().int().describe('Zero-based comment index')
+  }
+}, async (args) => fromCore(await core.remove_task_comment(args)));
+
 // ----------------------------------------------------------------------------
 // Journal
 // ----------------------------------------------------------------------------

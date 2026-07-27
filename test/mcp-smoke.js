@@ -60,6 +60,7 @@ function assert(cond, msg) {
   console.log('Tools:', names.join(', '), '\n');
 
   const expected = ['task_add', 'task_list', 'task_set_status', 'journal_add', 'memo_create',
+    'task_comment_add', 'task_comment_list', 'task_comment_edit', 'task_comment_remove',
     'learning_add', 'growth_add', 'project_add', 'config_info',
     'kb_add', 'kb_list', 'kb_folders', 'kb_update', 'kb_remove',
     'learning_path_add', 'learning_path_list', 'learning_path_read',
@@ -85,6 +86,24 @@ function assert(cond, msg) {
   assert(blockedList.content[0].text.includes('Blocked smoke task'), 'task_list surfaces the Blocked task (not dropped)');
   const setStatus = await client.callTool({ name: 'task_set_status', arguments: { id: 1, status: 'Blocked' } });
   assert(!setStatus.isError && setStatus.content[0].text.includes('Blocked'), 'task_set_status updates status');
+
+  // Task progress log (dated comments): add -> list -> edit -> remove, and round-trip survival.
+  const cAdd = await client.callTool({ name: 'task_comment_add', arguments: { id: 1, text: 'Started digging in' } });
+  assert(!cAdd.isError, 'task_comment_add succeeds');
+  const cList = await client.callTool({ name: 'task_comment_list', arguments: { id: 1 } });
+  assert(cList.content[0].text.includes('Started digging in'), 'task_comment_list returns the comment');
+  const cListJson = json(cList);
+  assert(Array.isArray(cListJson.comments) && cListJson.comments[0].date, 'comment carries a date stamp');
+  // Comment survives an unrelated task mutation (whole-file round-trip).
+  await client.callTool({ name: 'task_set_status', arguments: { id: 1, status: 'In Progress' } });
+  const cAfter = await client.callTool({ name: 'task_comment_list', arguments: { id: 1 } });
+  assert(cAfter.content[0].text.includes('Started digging in'), 'comment survives a task status change');
+  const cEdit = await client.callTool({ name: 'task_comment_edit', arguments: { id: 1, index: 0, text: 'Reviewed the API docs' } });
+  assert(!cEdit.isError && cEdit.content[0].text.includes('Reviewed the API docs'), 'task_comment_edit updates text');
+  const cRemove = await client.callTool({ name: 'task_comment_remove', arguments: { id: 1, index: 0 } });
+  assert(!cRemove.isError, 'task_comment_remove succeeds');
+  const cEmpty = await client.callTool({ name: 'task_comment_list', arguments: { id: 1 } });
+  assert(json(cEmpty).comments.length === 0, 'log is empty after removal');
 
   const learn = await client.callTool({ name: 'learning_add', arguments: { title: 'AZ-104', goal: 'Pass cert', target_date: '2026-09-01' } });
   assert(!learn.isError && learn.content[0].text.includes('learning'), 'learning_add creates a frontmatter note');

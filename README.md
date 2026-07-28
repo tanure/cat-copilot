@@ -24,6 +24,8 @@ It can be used in three ways:
 Most terminal tools are either too raw or too rigid. CatPilot is meant to feel closer to a practical daily assistant:
 
 - Capture a task the second it appears
+- Turn a rough idea into a **SMART task** (goal, measure, steps, why) without filling in a form
+- See everything through an **Eisenhower Matrix** and get a ranked answer to "what now?"
 - Keep lightweight work notes without opening another app
 - Create handoff memos and meeting summaries as markdown files
 - Keep Copilot-aware workflows connected to the same storage
@@ -86,6 +88,54 @@ studies, and growth/review prep:
 - **`sanitize`** — a pre-write guardrail that flags employer-internal details before they
   ever hit disk, so growth/review content stays shareable.
 
+### 🎯 SMART tasks + the Eisenhower Matrix
+
+A title tells you *that* something needs doing; it rarely tells you *how to start*. Every
+CatPilot task therefore carries optional **SMART** details:
+
+| Field | SMART | The question it answers |
+| --- | --- | --- |
+| `goal` | **S**pecific | What exactly does "done" look like? |
+| `measure` | **M**easurable | How will you know it worked? |
+| `steps` | **A**chievable | What are the first concrete steps? |
+| `why` | **R**elevant | Why does this matter right now? |
+| `dueDate` | **T**ime-bound | When does it need to be done? |
+
+Nothing is mandatory — the title is still the only required field. CatPilot coaches rather
+than interrogates: it saves the task first, then asks at most two or three short questions
+with examples, and shows a live **0–5 quality score**.
+
+Those fields (plus the due date and priority) feed an **Eisenhower Matrix**:
+
+| | Urgent | Not Urgent |
+| --- | --- | --- |
+| **Important** | 🔥 **Q1 · Do now** | 🗓️ **Q2 · Schedule** |
+| **Not Important** | 🤝 **Q3 · Delegate or batch** | 🧊 **Q4 · Drop or do later** |
+
+Classification is **deterministic first, Copilot on demand**: urgency comes from the due date
+(overdue / today / within 3 days) or a `P0`, importance from priority, a linked project, or the
+presence of a `why` / `measure`. Anything you set explicitly always wins, and every automatic
+placement carries a one-line rationale so it's never a black box.
+
+```bash
+# capture with SMART details, or let the coach walk you through it
+cat-pilot task add "Ship the v2 export endpoint" --due 2026-04-10 --priority P1 \
+  --goal "v2 export live behind a feature flag" \
+  --measure "p95 < 300ms on staging, export tests green" \
+  --why "Unblocks the Q3 reporting milestone"
+cat-pilot task add "Rework the onboarding email" --guided   # interactive SMART coach
+
+cat-pilot task smart 12                 # view / edit a task's SMART details
+cat-pilot task matrix                   # the four quadrants, grouped by deadline
+cat-pilot task matrix --quadrant q2     # just "Schedule"
+cat-pilot task focus --limit 5          # ranked "what to do next" + a reason each
+cat-pilot task list --quadrant q1
+```
+
+In chat, just ask: *"what should I work on?"*, *"triage my tasks"*, *"plan my day"* — the
+**`prioritization-coach`** skill reads the matrix, proposes changes with reasons, and only
+applies them once you confirm. MCP/adapter tools: `task_smart_set`, `task_matrix`, `task_focus`.
+
 📚 **Start here:**
 [`docs/INSTALL.md`](docs/INSTALL.md) ·
 [`docs/SURFACES.md`](docs/SURFACES.md) ·
@@ -110,8 +160,14 @@ so anyone can install it in one command (see [Install the canvas](#install-the-c
 What you get in the canvas:
 
 - **Dashboard** — hero, summary cards, last-3-days activity, charts, and productivity nudges.
-- **Tasks** — switch between **list (table)** and **board (kanban)** views with a
-  **Backlog · Overdue · To do · In Progress · Blocked · Done** board, pick a status
+- **Tasks** — switch between **list (table)**, **board (kanban)**, **calendar** and
+  **🎯 Eisenhower Matrix** views. The board has **Backlog · Overdue · To do · In Progress ·
+  Blocked · Done**; the matrix has four colored quadrant panels (Do now · Schedule ·
+  Delegate or batch · Drop or later) with Overdue / Today / Next 7 days / Later groups and
+  **drag-and-drop between quadrants** to pin a task's importance/urgency. The task modal has
+  a collapsible **🎯 Make it SMART** section with a live 0–5 quality meter and an
+  **✨ Build with Copilot** popup that drafts every field from a plain-language description.
+  Toolbar adds **🎯 Focus plan** and **🧭 Triage with Copilot**. Pick a status
   (To do / In Progress / Blocked / Done) on create/edit, filter by due date
   (**All · Today · 7 days**), complete inline, drag between columns, edit/save locally,
   and open a detail popup — plus an add button.
@@ -227,6 +283,9 @@ Today, `cat-tui` is a separate executable, not something embedded inside Copilot
 | List tasks | Yes | Yes | Yes |
 | Complete task | Yes | Yes | Preview only |
 | Remove task | Yes | Yes | Preview only |
+| SMART task details | Yes | Yes | No |
+| Eisenhower Matrix | Yes | Yes | No |
+| Focus plan / triage | Yes | Yes | No |
 | Add journal entry | Yes | Yes | No |
 | List journal entries | Yes | Yes | Yes |
 | Create memo | Yes | Yes | No |
@@ -428,6 +487,31 @@ cat-pilot task block 12
 cat-pilot task unblock 12
 cat-pilot task complete 12
 cat-pilot task remove 12
+```
+
+#### SMART tasks & the Eisenhower Matrix
+
+```bash
+# SMART flags on capture (all optional)
+cat-pilot task add "Ship the v2 export endpoint" --due 2026-04-10 --priority P1 \
+  --goal "v2 export live behind a feature flag" \
+  --measure "p95 < 300ms on staging, export tests green" \
+  --why "Unblocks the Q3 reporting milestone" \
+  --steps "Draft schema -> implement -> test -> roll out" \
+  --importance high --urgency low
+
+cat-pilot task add "Rework the onboarding email" --guided  # interactive SMART coach
+
+cat-pilot task smart 12                       # show a task's SMART details + score
+cat-pilot task smart 12 --measure "NPS +5"    # edit one field
+cat-pilot task smart 12 --guided              # coach an existing task
+cat-pilot task smart 12 --urgency auto        # unpin an axis, go back to auto-derive
+
+cat-pilot task matrix                         # four quadrants, grouped by deadline
+cat-pilot task matrix --quadrant q1 --status all
+cat-pilot task matrix --json
+cat-pilot task focus --limit 5                # ranked next actions with a reason each
+cat-pilot task list --quadrant q2
 ```
 
 #### Journal

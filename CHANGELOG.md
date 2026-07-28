@@ -5,6 +5,50 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **SMART tasks.** Every task can now carry optional coaching fields — **Goal** (Specific),
+  **Measure** (Measurable), **Steps** (Achievable), **Why** (Relevant) — with the existing
+  **Due Date** covering Time-bound. They persist in a new `## Task Details` section of the
+  tasks file (`### Task <id>` sub-headings, `- **Goal:** …` bullets), written before
+  `## Task Log` and round-tripped through every task mutation. Files without SMART data are
+  byte-identical to before, so there is **no migration**. A live **0–5 quality score** with
+  targeted nudges is available everywhere. New CLI flags `--goal --measure --why --steps
+  --importance --urgency` on `cat-pilot task add`, an interactive `--guided` SMART coach
+  (examples per question, skippable, prints the resulting score), and `cat-pilot task smart <id>`
+  to view/edit. New MCP tool `task_smart_set`; adapter tool `set_task_smart`.
+- **Eisenhower Matrix.** Tasks are classified into four quadrants — 🔥 **Q1 Do now**,
+  🗓️ **Q2 Schedule**, 🤝 **Q3 Delegate or batch**, 🧊 **Q4 Drop or do later** — by a new shared
+  core (`lib/eisenhower.js`, mirrored as `eisenhower.mjs` for the canvas). Classification is
+  **deterministic first**: urgency from overdue / due within 3 days / `P0`, importance from
+  priority, a linked project, or the presence of a `why`/`measure`; explicit `Importance` /
+  `Urgency` always wins and every derived placement carries a one-line rationale. New CLI
+  commands `cat-pilot task matrix` (`--quadrant`, `--status`, `--json`) and
+  `cat-pilot task focus [--limit N]` (ranked next actions with a reason each), plus
+  `cat-pilot task list --quadrant <q>` and compact `Q` / `SMART` columns. New MCP tools
+  `task_matrix`, `task_focus`; matching adapter tools.
+- **Canvas 🎯 Matrix view.** The Tasks page gained a fourth mode next to List / Board /
+  Calendar: four colored quadrant panels with counts, tasks grouped inside each quadrant by
+  **Overdue / Today / Next 7 days / Later / Completed**, per-quadrant quick-add that pre-sets
+  importance/urgency, and **drag-and-drop between quadrants** that writes the axes back to the
+  task. The list table gained a **Quadrant** column and the task detail shows the quadrant
+  badge, *why it landed there*, a **Pin it** action, and the full SMART section with its meter.
+- **✨ Build with Copilot (SMART popup).** The task modal has a collapsible **🎯 Make it SMART**
+  block with a live quality meter and a Copilot button that turns a plain-language description
+  into a drafted SMART task (title, goal, measure, why, steps, due, priority, importance,
+  urgency) for you to review and edit before saving. If no chat session is attached it degrades
+  to a clear step-by-step card with a copy-able prompt, so it still works from the Copilot App.
+  The toolbar also gained **🎯 Focus plan** and **🧭 Triage with Copilot**.
+- **`prioritization-coach` skill.** A new skill that explains the matrix, runs a triage pass over
+  unclassified tasks, produces a focus plan or a day plan, and coaches on rebalancing when Q1 is
+  overloaded — proposing changes with reasons and only applying them once you confirm.
+- **New REST routes:** `GET /api/tasks/matrix`, `GET /api/tasks/focus`,
+  `GET /api/tasks/smart-meta`, `PUT /api/tasks/:id/smart`.
+
+### Fixed
+- **Phantom task from the tasks-file parser.** The table header index was not reset when the
+  parser crossed the `## Completed Tasks` heading, so the completed table's header row was
+  parsed as a task and surfaced as a bogus `{ id: 0 }` entry.
+
+### Added (earlier in this cycle)
 - **Task progress log (dated comments).** Every task now carries a timeline of dated
   progress updates so you can log what you're acting on. Comments persist in the tasks file
   under a `## Task Log` section (`### Task <id>` sub-headings, Obsidian-friendly

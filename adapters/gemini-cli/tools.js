@@ -12,8 +12,28 @@
  */
 
 import * as cliUtils from '../../lib/cli-utils.js';
+import * as eisen from '../../lib/eisenhower.js';
+import * as core from '../claude-code/tools.js';
 import fs from 'fs';
 import path from 'path';
+
+/** Wrap a core (Claude) tool result into the Gemini `{success, result}` shape. */
+function fromCore(result, key = 'data') {
+  if (!result || result.success === false) return { success: false, error: result?.error || 'unknown error' };
+  const { success, data, ...rest } = result;
+  return { success: true, result: { [key]: data, ...rest } };
+}
+
+/** Extract SMART fields from a tool payload (only keys that were provided). */
+function smartFromParams(params = {}) {
+  const out = {};
+  ['goal', 'measure', 'why', 'steps'].forEach(k => {
+    if (params[k] !== undefined) out[k] = params[k];
+  });
+  if (params.importance !== undefined) out.importance = eisen.normalizeAxis(params.importance);
+  if (params.urgency !== undefined) out.urgency = eisen.normalizeAxis(params.urgency);
+  return out;
+}
 
 /**
  * Gemini tool handlers
@@ -28,9 +48,21 @@ async function catpilot_list_tasks(params = {}) {
     const tasks = cliUtils.parseTasksTable(content);
 
     const status = params.status || 'all';
-    const filtered = status === 'all'
+    let filtered = status === 'all'
       ? tasks
       : tasks.filter(t => t.status.toLowerCase() === status.toLowerCase());
+
+    filtered = filtered.map(t => ({
+      ...t,
+      smart: eisen.normalizeSmart(t.smart),
+      eisenhower: eisen.classifyTask(t),
+      smartScore: eisen.smartScore(t)
+    }));
+    if (params.quadrant) {
+      const q = eisen.quadrantByKey(params.quadrant);
+      if (!q) return { success: false, error: `Unknown quadrant "${params.quadrant}". Use q1, q2, q3 or q4.` };
+      filtered = filtered.filter(t => t.eisenhower.quadrant === q.key);
+    }
 
     return {
       success: true,
@@ -63,7 +95,9 @@ async function catpilot_add_task(params) {
       dueDate: params.due || '',
       priority: params.priority || '',
       tags: params.tags || '',
-      context: params.context || ''
+      context: params.context || '',
+      project: params.project || '',
+      smart: eisen.normalizeSmart(smartFromParams(params))
     };
 
     tasks.push(newTask);
@@ -74,7 +108,8 @@ async function catpilot_add_task(params) {
     return {
       success: true,
       result: {
-        task: newTask,
+        task: { ...newTask, eisenhower: eisen.classifyTask(newTask), smartScore: eisen.smartScore(newTask) },
+        coaching: eisen.smartNudge(newTask) || null,
         path: tasksPath,
         message: `Task #${newTask.id} added`
       }
@@ -82,6 +117,25 @@ async function catpilot_add_task(params) {
   } catch (err) {
     return { success: false, error: err.message };
   }
+}
+
+/** Set or clear SMART fields / Eisenhower axes on an existing task. */
+async function catpilot_set_task_smart(params = {}) {
+  return fromCore(await core.set_task_smart(params), 'task');
+}
+
+/** Tasks grouped into the four Eisenhower quadrants. */
+async function catpilot_task_matrix(params = {}) {
+  const r = await core.task_matrix(params);
+  if (!r || r.success === false) return { success: false, error: r?.error || 'unknown error' };
+  return { success: true, result: { ...r.data } };
+}
+
+/** Ranked "what to do next" list. */
+async function catpilot_task_focus(params = {}) {
+  const r = await core.task_focus(params);
+  if (!r || r.success === false) return { success: false, error: r?.error || 'unknown error' };
+  return { success: true, result: { ...r.data } };
 }
 
 async function catpilot_complete_task(params) {
@@ -221,6 +275,9 @@ async function handleToolCall(toolName, params) {
   const tools = {
     catpilot_list_tasks,
     catpilot_add_task,
+    catpilot_set_task_smart,
+    catpilot_task_matrix,
+    catpilot_task_focus,
     catpilot_complete_task,
     catpilot_add_journal,
     catpilot_list_journal,
@@ -241,6 +298,9 @@ async function handleToolCall(toolName, params) {
 export {
   catpilot_list_tasks,
   catpilot_add_task,
+  catpilot_set_task_smart,
+  catpilot_task_matrix,
+  catpilot_task_focus,
   catpilot_complete_task,
   catpilot_add_journal,
   catpilot_list_journal,

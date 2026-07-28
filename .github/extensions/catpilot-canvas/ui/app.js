@@ -534,7 +534,8 @@
         const seg = el("div", { class: "segmented" },
             el("button", { class: taskViewMode === "list" ? "active" : "", text: "☰ List", onclick: () => { taskViewMode = "list"; localStorage.setItem("cp-task-view", "list"); go("tasks"); } }),
             el("button", { class: taskViewMode === "board" ? "active" : "", text: "▦ Board", onclick: () => { taskViewMode = "board"; localStorage.setItem("cp-task-view", "board"); go("tasks"); } }),
-            el("button", { class: taskViewMode === "calendar" ? "active" : "", text: "📅 Calendar", onclick: () => { taskViewMode = "calendar"; localStorage.setItem("cp-task-view", "calendar"); go("tasks"); } }));
+            el("button", { class: taskViewMode === "calendar" ? "active" : "", text: "📅 Calendar", onclick: () => { taskViewMode = "calendar"; localStorage.setItem("cp-task-view", "calendar"); go("tasks"); } }),
+            el("button", { class: taskViewMode === "matrix" ? "active" : "", text: "🎯 Matrix", onclick: () => { taskViewMode = "matrix"; localStorage.setItem("cp-task-view", "matrix"); go("tasks"); } }));
         actionsHost.append(seg);
 
         // Calendar mode uses the full task set (the due-window filter would hide most
@@ -548,6 +549,22 @@
             return;
         }
 
+        // Matrix mode is an urgency/importance lens, so it also ignores the due-window
+        // filter (it does its own Overdue / Today / Next 7 days grouping).
+        if (taskViewMode === "matrix") {
+            const holderMx = el("div", { id: "task-holder" });
+            root.append(el("div", { class: "toolbar" },
+                el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }),
+                el("input", { class: "search", placeholder: "Search tasks…", oninput: (e) => filterTasks(e.target.value) }),
+                el("span", { class: "spacer" }),
+                el("button", { class: "btn btn-sm", html: "🎯 Focus plan", title: "Ranked next actions from the matrix", onclick: () => focusPlanModal() }),
+                el("button", { class: "btn btn-sm", html: "🧭 Triage with Copilot", title: "Ask Copilot to classify and rebalance your tasks", onclick: () => triageModal() })), holderMx);
+            if (!allTasks.length) { holderMx.append(emptyState("🗒️", "No tasks yet", "Add a task with a goal and a due date and it will land in the right quadrant.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
+            await renderTaskMatrix(holderMx, allTasks);
+            root._tasks = allTasks;
+            return;
+        }
+
         const filterSeg = el("div", { class: "segmented" },
             ...[["all", "All"], ["today", "Today"], ["7days", "7 days"]].map(([key, label]) =>
                 el("button", { class: taskDueFilter === key ? "active" : "", text: label, onclick: () => { taskDueFilter = key; localStorage.setItem("cp-task-filter", key); go("tasks"); } })));
@@ -557,6 +574,7 @@
             el("input", { class: "search", placeholder: "Search tasks…", oninput: (e) => filterTasks(e.target.value) }),
             filterSeg,
             el("span", { class: "spacer" }),
+            el("button", { class: "btn btn-sm", html: "🎯 Focus plan", title: "Ranked next actions from the Eisenhower Matrix", onclick: () => focusPlanModal() }),
             el("span", { class: "muted small", text: `${tasks.filter((t) => t.status.toLowerCase() === "open").length} open · ${tasks.filter((t) => t.status.toLowerCase() === "in progress").length} in progress · ${tasks.filter((t) => t.status.toLowerCase() === "blocked").length} blocked · ${tasks.filter((t) => t.status.toLowerCase() === "done").length} done` }));
         root.append(toolbar);
 
@@ -593,6 +611,7 @@
                     el("th", { text: "Status" }),
                     el("th", { text: "Due" }),
                     el("th", { text: "Priority" }),
+                    el("th", { text: "Quadrant" }),
                     el("th", { text: "Tags" }),
                     el("th", { text: "" }))),
                 tbody)));
@@ -617,6 +636,7 @@
             el("td", {}, statusBadge(t.status)),
             el("td", {}, t.dueDate ? el("span", { class: dueClass(t.dueDate, done), text: t.dueDate }) : el("span", { class: "muted small", text: "—" })),
             el("td", {}, priorityBadge(t.priority)),
+            el("td", {}, quadrantBadge(t.eisenhower)),
             el("td", {}, tagChips(t.tags)),
             el("td", {}, el("div", { class: "row-actions" },
                 el("button", { class: "btn btn-sm btn-ghost", text: "Edit", onclick: () => taskModal(t) }),
@@ -727,7 +747,181 @@
         return card;
     }
 
-    // ---------- Tasks · Calendar view ----------
+    // ---------- Tasks · Eisenhower Matrix view ----------
+    // The quadrant metadata mirrors lib/eisenhower.js / eisenhower.mjs. The server
+    // already classifies every task (`task.eisenhower`), so this is presentation only.
+    const QUADRANT_META = {
+        q1: { short: "Q1", label: "Urgent & Important", action: "Do now", icon: "🔥", accent: "#ff6b7d", hint: "Crises and real deadlines. Protect this list — if it keeps growing you are firefighting." },
+        q2: { short: "Q2", label: "Not Urgent & Important", action: "Schedule", icon: "🗓️", accent: "#ffb020", hint: "Where progress actually happens. Give these a realistic date and defend the time." },
+        q3: { short: "Q3", label: "Urgent & Not Important", action: "Delegate or batch", icon: "🤝", accent: "#5aa9ff", hint: "Interruptions wearing a deadline. Batch them, automate them or hand them off." },
+        q4: { short: "Q4", label: "Not Urgent & Not Important", action: "Drop or do later", icon: "🧊", accent: "#35c88f", hint: "Nice-to-haves. Dropping something here is a win, not a failure." },
+    };
+    const MATRIX_ORDER = ["q1", "q2", "q3", "q4"];
+    // SMART dimensions, mirrored from lib/eisenhower.js so the modal can coach offline.
+    const SMART_DIMS = [
+        { key: "specific", letter: "S", label: "Specific", field: "goal", question: 'What exactly does "done" look like?', example: "Ship the v2 export endpoint behind a feature flag" },
+        { key: "measurable", letter: "M", label: "Measurable", field: "measure", question: "How will you know it worked?", example: "p95 under 300ms and all export tests green" },
+        { key: "achievable", letter: "A", label: "Achievable", field: "steps", question: "What are the first concrete steps?", example: "Draft schema → implement → test → roll out" },
+        { key: "relevant", letter: "R", label: "Relevant", field: "why", question: "Why does this matter right now?", example: "Unblocks the Q3 reporting milestone" },
+        { key: "timeBound", letter: "T", label: "Time-bound", field: "due", question: "When does it need to be done?", example: "a realistic date, not a wish" },
+    ];
+
+    /** Score a draft (values keyed by SMART field) 0–5 the same way the server does. */
+    function scoreDraft(v = {}) {
+        const has = {
+            specific: !!(String(v.goal || "").trim() || String(v.context || "").trim().length >= 12),
+            measurable: !!String(v.measure || "").trim(),
+            achievable: !!(String(v.steps || "").trim() || String(v.project || "").trim()),
+            relevant: !!String(v.why || "").trim(),
+            timeBound: !!String(v.due || "").trim(),
+        };
+        const met = SMART_DIMS.filter((d) => has[d.key]);
+        const missing = SMART_DIMS.filter((d) => !has[d.key]);
+        const score = met.length;
+        const label = score >= 5 ? "Sharp" : score >= 4 ? "Strong" : score >= 3 ? "Decent" : score >= 1 ? "Rough" : "Just a title";
+        return { score, max: SMART_DIMS.length, met, missing, label, has };
+    }
+
+    /** The little S·M·A·R·T meter used in the modal and the detail sheet. */
+    function smartMeter(values) {
+        const s = scoreDraft(values);
+        const node = el("div", { class: `smart-meter s-${s.score}` },
+            el("div", { class: "sm-cells" }, SMART_DIMS.map((d) =>
+                el("span", { class: `sm-cell${s.has[d.key] ? " on" : ""}`, title: `${d.label} — ${d.question}`, text: d.letter }))),
+            el("span", { class: "sm-score", text: `${s.score}/${s.max}` }),
+            el("span", { class: "sm-label", text: s.label }),
+            s.missing.length ? el("span", { class: "sm-next muted small", text: `Next: ${s.missing[0].label} — ${s.missing[0].question}` }) : el("span", { class: "sm-next muted small", text: "Nothing missing — this one is ready to execute." }));
+        return node;
+    }
+
+    /** A small pill showing which quadrant a task landed in (and whether it was auto). */
+    function quadrantBadge(e, opts = {}) {
+        if (!e) return el("span", { class: "muted small", text: "—" });
+        const meta = QUADRANT_META[e.quadrant] || {};
+        const auto = e.source === "derived";
+        return el("span", {
+            class: `q-badge q-${e.quadrant}${auto ? " is-auto" : ""}`,
+            title: `${e.rationale || ""}${auto ? " (automatically classified — set importance/urgency to pin it)" : ""}`,
+            html: `${meta.icon || ""} ${meta.short || e.quadrant}${opts.long ? " · " + (meta.action || "") : ""}${auto ? " <em>auto</em>" : ""}`,
+        });
+    }
+
+    async function renderTaskMatrix(holder, allTasks) {
+        holder.innerHTML = "";
+        let data;
+        try { data = await api("/api/tasks/matrix?status=all"); }
+        catch (e) { holder.append(emptyState("⚠️", "Couldn't build the matrix", e.message)); return; }
+
+        const insights = data.insights || { counts: {}, hints: [] };
+        holder.append(matrixLegend(insights));
+
+        const grid = el("div", { class: "matrix-grid" });
+        for (const key of MATRIX_ORDER) {
+            const q = (data.quadrants || []).find((x) => x.key === key) || { key, groups: [], openCount: 0, doneCount: 0 };
+            grid.append(quadrantPanel(q, allTasks));
+        }
+        holder.append(grid);
+
+        if (insights.hints && insights.hints.length) {
+            holder.append(el("div", { class: "matrix-coach" },
+                el("div", { class: "mc-head" },
+                    el("span", { html: "🧭 Coaching" }),
+                    el("button", { class: "btn btn-sm btn-ghost", html: "✨ Ask Copilot to rebalance", onclick: () => askAgent(
+                        "Use the CatPilot prioritization-coach skill. Read my tasks with the task_matrix tool, tell me where my Eisenhower balance is off, and propose concrete changes (which tasks to reschedule into Q2, batch, delegate or drop). Explain your reasoning briefly, then ask before applying anything.",
+                        "Rebalance requested") })),
+                el("ul", { class: "mc-list" }, insights.hints.map((h) => el("li", { text: h })))));
+        }
+    }
+
+    function matrixLegend(insights) {
+        const c = insights.counts || {};
+        return el("div", { class: "matrix-legend" },
+            el("span", { class: "ml-title", html: "🎯 Eisenhower Matrix" }),
+            el("span", { class: "muted small", text: `${c.total || 0} open · Q1 ${c.q1 || 0} · Q2 ${c.q2 || 0} · Q3 ${c.q3 || 0} · Q4 ${c.q4 || 0}` }),
+            el("span", { class: "spacer" }),
+            el("span", { class: "muted small", html: "Drag a card between quadrants to pin it · <span class=\"q-auto-key\">auto</span> = classified by CatPilot" }));
+    }
+
+    function quadrantPanel(q, allTasks) {
+        const meta = QUADRANT_META[q.key] || {};
+        const panel = el("div", { class: `q-panel q-${q.key}`, dataset: { quadrant: q.key }, style: `--q-accent:${meta.accent || "var(--border)"}` });
+
+        const head = el("div", { class: "q-head" },
+            el("span", { class: "q-icon", text: meta.icon || "" }),
+            el("span", { class: "q-title" },
+                el("strong", { text: meta.label || q.key }),
+                el("span", { class: "q-action", text: meta.action || "" })),
+            el("span", { class: "q-count", title: `${q.openCount || 0} open, ${q.doneCount || 0} done`, text: String(q.openCount || 0) }),
+            el("button", {
+                class: "q-add", title: `Add a task to ${meta.label || q.key}`, "aria-label": `Add task to ${meta.label || q.key}`, html: "＋",
+                onclick: () => taskModal(null, {
+                    importance: q.key === "q1" || q.key === "q2" ? "High" : "Low",
+                    urgency: q.key === "q1" || q.key === "q3" ? "High" : "Low",
+                }),
+            }));
+        panel.append(head, el("div", { class: "q-hint muted small", text: meta.hint || "" }));
+
+        const bodyEl = el("div", { class: "q-body" });
+        const groups = q.groups || [];
+        if (!groups.length) {
+            bodyEl.append(el("div", { class: "q-empty" }, el("div", { class: "qe-emoji", text: "🌿" }), el("div", { class: "qe-text", text: "Nothing here — nice." })));
+        } else {
+            for (const g of groups) {
+                const openByDefault = g.key !== "completed" && g.key !== "later";
+                const gEl = el("details", { class: `q-group qg-${g.key}`, ...(openByDefault ? { open: "open" } : {}) },
+                    el("summary", {},
+                        el("span", { class: "qg-icon", text: g.icon }),
+                        el("span", { class: "qg-label", text: g.label }),
+                        el("span", { class: "qg-count", text: String(g.tasks.length) })));
+                g.tasks.forEach((t) => gEl.append(matrixCard(t)));
+                bodyEl.append(gEl);
+            }
+        }
+        panel.append(bodyEl);
+
+        // Drag & drop between quadrants pins importance/urgency explicitly.
+        panel.addEventListener("dragover", (e) => { e.preventDefault(); panel.classList.add("drop"); });
+        panel.addEventListener("dragleave", (e) => { if (!panel.contains(e.relatedTarget)) panel.classList.remove("drop"); });
+        panel.addEventListener("drop", async (e) => {
+            e.preventDefault(); panel.classList.remove("drop");
+            const id = e.dataTransfer.getData("text/plain");
+            if (!id) return;
+            const important = q.key === "q1" || q.key === "q2" ? "High" : "Low";
+            const urgent = q.key === "q1" || q.key === "q3" ? "High" : "Low";
+            try {
+                await api(`/api/tasks/${id}/smart`, { method: "PUT", body: { importance: important, urgency: urgent } });
+                toast("Task re-triaged", `${meta.short || q.key} · ${meta.action || ""}`, "ok");
+                await refreshSummary(); go("tasks");
+            } catch (err) { toast("Error", err.message, "err"); }
+        });
+        return panel;
+    }
+
+    function matrixCard(t) {
+        const done = String(t.status || "").toLowerCase() === "done";
+        const rank = priorityRank(t.priority);
+        const score = t.smartScore || scoreDraft({ goal: t.smart?.goal, measure: t.smart?.measure, steps: t.smart?.steps, why: t.smart?.why, due: t.dueDate, context: t.context, project: t.project });
+        const card = el("div", { class: `q-card pr-${rank}${done ? " is-done" : ""}`, draggable: "true", dataset: { taskTitle: t.title }, style: `--pr-accent:${PR_COLORS[rank]}` });
+        card.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", String(t.id)); e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging"); });
+        card.addEventListener("dragend", () => card.classList.remove("dragging"));
+
+        const head = el("div", { class: "qc-head" });
+        if (t.priority) head.append(priorityBadge(t.priority));
+        if (t.eisenhower && t.eisenhower.source === "derived") head.append(el("span", { class: "qc-auto", title: t.eisenhower.rationale, text: "auto" }));
+        head.append(el("span", { class: "qc-id", text: `#${t.id}` }));
+
+        card.append(head, el("div", { class: "qc-title", text: t.title, title: t.smart?.goal || t.title, onclick: () => taskDetail(t) }));
+        if (t.smart && t.smart.goal) card.append(el("div", { class: "qc-goal muted small", text: t.smart.goal }));
+
+        const foot = el("div", { class: "qc-foot" });
+        foot.append(t.dueDate
+            ? el("span", { class: `qc-due${done ? "" : t.dueDate < todayISO() ? " overdue" : t.dueDate === todayISO() ? " today" : ""}`, text: `📅 ${t.dueDate}` })
+            : el("span", { class: "qc-due none", text: "🗓️ No date" }));
+        foot.append(el("span", { class: `qc-smart s-${score.score}`, title: score.missing && score.missing.length ? `Missing: ${score.missing.map((m) => m.label).join(", ")}` : "Fully SMART", text: `🎯 ${score.score}/5` }));
+        card.append(foot);
+        return card;
+    }
+
     const CAL_FIELD_OPTS = [["priority", "Priority"], ["status", "Status"], ["tags", "Tags"]];
     const pad2 = (n) => String(n).padStart(2, "0");
     function fmtLocalISO(d) { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`; }
@@ -858,6 +1052,38 @@
     function taskModal(t, prefill = {}) {
         const editing = !!t;
         const f = {};
+        const smart = t?.smart || {};
+        const meterHost = el("div", { class: "smart-meter-host" });
+
+        const readDraft = () => ({
+            title: f.title?.value || "",
+            due: f.due?.value || "",
+            context: f.context?.value || "",
+            goal: f.goal?.value || "",
+            measure: f.measure?.value || "",
+            steps: f.steps?.value || "",
+            why: f.why?.value || "",
+        });
+        const paintMeter = () => { meterHost.innerHTML = ""; meterHost.append(smartMeter(readDraft())); };
+
+        // The SMART block is collapsible and entirely optional — the title is still
+        // the only required field. It is open by default when the task already has
+        // SMART content, so nothing is ever hidden from you.
+        const hasSmart = !!(smart.goal || smart.measure || smart.steps || smart.why || smart.importance || smart.urgency);
+        const smartBox = el("details", { class: "smart-box", ...(hasSmart ? { open: "open" } : {}) },
+            el("summary", {},
+                el("span", { class: "sb-title", html: "🎯 Make it SMART" }),
+                el("span", { class: "muted small", text: "optional — sharpens the task and places it in the matrix" })),
+            el("p", { class: "muted small sb-intro", text: "Answer whatever you can. Each answer makes the task easier to start and helps CatPilot decide where it belongs in the Eisenhower Matrix." }),
+            mdField("Goal — what does “done” look like?", f, "goal", { value: smart.goal, minRows: 2, placeholder: "e.g. Ship the v2 export endpoint behind a feature flag" }),
+            mdField("Measure — how will you know it worked?", f, "measure", { value: smart.measure, minRows: 2, placeholder: "e.g. p95 under 300ms and all export tests green" }),
+            mdField("Steps — what are the first concrete moves?", f, "steps", { value: smart.steps, minRows: 2, placeholder: "e.g. Draft schema → implement → test → roll out" }),
+            mdField("Why — why does this matter now?", f, "why", { value: smart.why, minRows: 2, placeholder: "e.g. Unblocks the Q3 reporting milestone" }),
+            el("div", { class: "form-row" },
+                selectField("Importance", f, "importance", ["", "High", "Low"], smart.importance || prefill.importance || "", { "": "Auto (let CatPilot decide)", High: "High — moves a real goal", Low: "Low — nice to have" }),
+                selectField("Urgency", f, "urgency", ["", "High", "Low"], smart.urgency || prefill.urgency || "", { "": "Auto (from the due date)", High: "High — needs attention now", Low: "Low — can wait" })),
+            meterHost);
+
         const body = el("div", { class: "form" },
             field("Title", f, "title", { value: t?.title, placeholder: "What needs doing?", required: true }),
             el("div", { class: "form-row" },
@@ -865,30 +1091,259 @@
                 selectField("Priority", f, "priority", ["", "P0", "P1", "P2", "P3", "High", "Med", "Low"], t?.priority || prefill.priority)),
             selectField("Status", f, "status", ["Open", "In Progress", "Blocked", "Done"], t?.status || prefill.status || "Open", { Open: "To do", "In Progress": "In Progress", Blocked: "Blocked", Done: "Done" }),
             field("Tags", f, "tags", { value: t?.tags, placeholder: "comma,separated" }),
-            mdField("Context", f, "context", { value: t?.context, placeholder: "One-line context (markdown supported)" }));
+            mdField("Context", f, "context", { value: t?.context, placeholder: "One-line context (markdown supported)" }),
+            el("div", { class: "smart-cta" },
+                el("button", {
+                    class: "btn btn-sm btn-ghost", html: "✨ Build with Copilot",
+                    title: "Describe the task in plain words and let Copilot draft the SMART fields for you",
+                    onclick: () => smartCopilotModal({
+                        seed: readDraft(),
+                        onDraft: (d) => {
+                            if (d.title) f.title.value = d.title;
+                            if (d.due) f.due.value = d.due;
+                            if (d.priority) f.priority.value = d.priority;
+                            if (d.tags) f.tags.value = d.tags;
+                            if (d.context) f.context.value = d.context;
+                            ["goal", "measure", "steps", "why"].forEach((k) => { if (d[k]) f[k].value = d[k]; });
+                            if (d.importance) f.importance.value = d.importance;
+                            if (d.urgency) f.urgency.value = d.urgency;
+                            smartBox.open = true;
+                            paintMeter();
+                            toast("Draft applied", "Review and edit before saving", "ok");
+                        },
+                    }),
+                })),
+            smartBox);
+
+        // Live meter: any keystroke in a SMART-relevant field re-scores the draft.
+        ["title", "due", "context", "goal", "measure", "steps", "why"].forEach((k) => {
+            if (f[k]) { f[k].addEventListener("input", paintMeter); f[k].addEventListener("change", paintMeter); }
+        });
+        paintMeter();
+
         const save = el("button", { class: "btn btn-primary", text: editing ? "Save changes" : "Add task", onclick: async () => {
-            const payload = { title: f.title.value.trim(), due: f.due.value, priority: f.priority.value, tags: f.tags.value.trim(), context: f.context.value.trim(), status: f.status.value };
+            const payload = {
+                title: f.title.value.trim(), due: f.due.value, priority: f.priority.value,
+                tags: f.tags.value.trim(), context: f.context.value.trim(), status: f.status.value,
+                goal: f.goal.value.trim(), measure: f.measure.value.trim(),
+                steps: f.steps.value.trim(), why: f.why.value.trim(),
+                importance: f.importance.value || "auto", urgency: f.urgency.value || "auto",
+            };
             if (!payload.title) { toast("Title required", "", "err"); return; }
             try {
-                if (editing) { await api(`/api/tasks/${t.id}`, { method: "PUT", body: { title: payload.title, dueDate: payload.due, priority: payload.priority, tags: payload.tags, context: payload.context, status: payload.status } }); toast("Task updated", payload.title, "ok"); }
-                else { await api("/api/tasks", { method: "POST", body: payload }); toast("Task added", payload.title, "ok"); }
+                if (editing) {
+                    await api(`/api/tasks/${t.id}`, { method: "PUT", body: { ...payload, dueDate: payload.due } });
+                    toast("Task updated", payload.title, "ok");
+                } else {
+                    await api("/api/tasks", { method: "POST", body: payload });
+                    toast("Task added", payload.title, "ok");
+                }
                 closeModal(); await refreshSummary(); go("tasks");
             } catch (e) { toast("Error", e.message, "err"); }
         } });
-        openModal({ title: editing ? "Edit task" : "New task", body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
+        openModal({ title: editing ? "Edit task" : "New task", width: 640, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
         setTimeout(() => f.title.focus(), 50);
+    }
+
+    // The prompt Copilot receives when drafting a SMART task. Kept in one place so
+    // the in-app popup and the copy-able fallback instructions never drift apart.
+    function smartDraftPrompt(description, seed = {}) {
+        const ctx = [seed.title ? `Working title: ${seed.title}` : "", seed.due ? `Existing due date: ${seed.due}` : ""].filter(Boolean).join("\n");
+        return `You are helping me turn a rough idea into a SMART task for CatPilot.
+
+Rough idea: "${description}"
+${ctx}
+
+Apply the SMART method:
+- Specific: an unambiguous statement of what "done" looks like.
+- Measurable: how success will be verified.
+- Achievable: the first 3-5 concrete steps, arrow-separated.
+- Relevant: why this matters right now.
+- Time-bound: a realistic due date (YYYY-MM-DD). Today is ${todayISO()}.
+
+Also judge the Eisenhower axes: importance ("High" if it moves a real goal forward, else "Low") and urgency ("High" if it needs attention within about three days, else "Low").
+
+Respond with ONLY minified JSON, no code fences, shaped exactly:
+{"title":"...","goal":"...","measure":"...","steps":"...","why":"...","due":"YYYY-MM-DD","priority":"P0|P1|P2|P3","tags":"comma,separated","context":"...","importance":"High|Low","urgency":"High|Low"}`;
+    }
+
+    /**
+     * "Build with Copilot" popup. Describe the task in plain words; Copilot drafts
+     * every SMART field and both Eisenhower axes, and you edit before saving.
+     * When no chat session is attached the popup degrades into a clear, copy-able
+     * step-by-step so it still works from the GitHub Copilot App.
+     */
+    function smartCopilotModal({ seed = {}, onDraft } = {}) {
+        const ta = el("textarea", { class: "md-input", rows: 3, placeholder: "Describe it the way you'd say it out loud — e.g. “I need to sort out the export endpoint before the reporting demo”" });
+        if (seed.title) ta.value = seed.title;
+        const status = el("div", { class: "copilot-status muted small" });
+        const preview = el("div", { class: "copilot-preview hidden" });
+
+        const steps = el("ol", { class: "copilot-steps" },
+            el("li", { html: "<strong>Describe it roughly.</strong> One or two sentences is plenty — no need to sound formal." }),
+            el("li", { html: "<strong>Copilot drafts the SMART fields</strong> — goal, measure, steps, why, a realistic due date, and where it belongs in the Eisenhower Matrix." }),
+            el("li", { html: "<strong>You review and edit.</strong> Nothing is saved until you press Save in the task form." }));
+
+        function showFallback(reason) {
+            preview.classList.remove("hidden");
+            preview.innerHTML = "";
+            const prompt = smartDraftPrompt(ta.value.trim() || "<describe your task here>", seed);
+            preview.append(
+                el("div", { class: "copilot-fallback" },
+                    el("h4", { html: "💬 No chat session attached" }),
+                    el("p", { class: "muted small", text: reason || "This canvas isn't connected to a Copilot chat right now — but you can still get the same result in three steps." }),
+                    el("ol", { class: "copilot-steps" },
+                        el("li", { html: "Copy the prompt below." }),
+                        el("li", { html: "Paste it into GitHub Copilot (the app, the CLI, or the chat panel next to this canvas)." }),
+                        el("li", { html: "Paste Copilot's answer back into the task form, or just ask Copilot to run <code>cat-pilot task add</code> with those values." })),
+                    el("pre", { class: "copilot-prompt", text: prompt }),
+                    el("button", {
+                        class: "btn btn-sm", html: "📋 Copy prompt",
+                        onclick: () => { navigator.clipboard.writeText(prompt).then(() => toast("Prompt copied", "Paste it into Copilot", "ok"), () => toast("Copy failed", "Select the text manually", "err")); },
+                    }),
+                    el("p", { class: "muted small", html: "Prefer the terminal? <code>cat-pilot task add \"Your title\" --guided</code> walks you through the same questions." })));
+        }
+
+        const gen = el("button", { class: "btn btn-primary", html: "✨ Draft it", onclick: async () => {
+            const description = ta.value.trim();
+            if (!description) { toast("Describe the task first", "Even one line is enough", "err"); return; }
+            gen.disabled = true; gen.innerHTML = "⏳ Thinking…";
+            status.textContent = "Asking Copilot to shape this into a SMART task…";
+            try {
+                const r = await api("/api/agent/generate", { method: "POST", body: { prompt: smartDraftPrompt(description, seed), timeout: 120000 } });
+                if (!r || r.ok === false) { showFallback(r && r.error ? r.error : ""); status.textContent = ""; return; }
+                let data = null;
+                try { const mt = (r.content || "").match(/\{[\s\S]*\}/); data = mt ? JSON.parse(mt[0]) : null; } catch { data = null; }
+                if (!data || !data.title) { status.textContent = ""; showFallback("Copilot answered, but not in the expected format."); return; }
+                status.textContent = "";
+                renderPreview(data);
+            } catch (e) { status.textContent = ""; showFallback(e.message); }
+            finally { gen.disabled = false; gen.innerHTML = "✨ Draft it"; }
+        } });
+
+        function renderPreview(d) {
+            preview.classList.remove("hidden");
+            preview.innerHTML = "";
+            const rows = [
+                ["Title", d.title], ["Goal", d.goal], ["Measure", d.measure], ["Steps", d.steps],
+                ["Why", d.why], ["Due", d.due], ["Priority", d.priority], ["Tags", d.tags],
+                ["Importance", d.importance], ["Urgency", d.urgency],
+            ].filter(([, v]) => String(v || "").trim());
+            preview.append(
+                el("h4", { html: "✅ Copilot's draft" }),
+                el("div", { class: "copilot-draft" }, rows.map(([k, v]) => el("div", { class: "cd-row" },
+                    el("span", { class: "cd-key", text: k }), el("span", { class: "cd-val", text: String(v) })))),
+                smartMeter({ title: d.title, goal: d.goal, measure: d.measure, steps: d.steps, why: d.why, due: d.due, context: d.context }),
+                el("div", { class: "copilot-draft-actions" },
+                    el("button", { class: "btn btn-sm", html: "🔄 Try again", onclick: () => { preview.classList.add("hidden"); ta.focus(); } }),
+                    el("button", { class: "btn btn-sm btn-primary", html: "⬇️ Use this draft", onclick: () => { if (onDraft) onDraft(d); closeModal(); } })));
+        }
+
+        const body = el("div", { class: "form copilot-modal" },
+            el("p", { class: "muted small", text: "Writing a good task is a skill — this is a shortcut. Say what you want in your own words and Copilot turns it into a SMART task you can actually start." }),
+            steps, ta, status, preview);
+        openModal({ title: "✨ Build a SMART task with Copilot", width: 640, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), gen] });
+        setTimeout(() => ta.focus(), 50);
+    }
+
+    /** Ranked next-actions, straight from the matrix — the everyday "what now?" answer. */
+    async function focusPlanModal() {
+        const host = el("div", { class: "form" }, el("p", { class: "muted small", text: "Loading your focus plan…" }));
+        openModal({ title: "🎯 What to do next", width: 620, body: host, foot: [el("button", { class: "btn", text: "Close", onclick: closeModal })] });
+        let data;
+        try { data = await api("/api/tasks/focus?limit=6"); }
+        catch (e) { host.innerHTML = ""; host.append(el("p", { class: "muted small", text: `Couldn't build the plan: ${e.message}` })); return; }
+
+        host.innerHTML = "";
+        const focus = data.focus || [];
+        if (!focus.length) {
+            host.append(el("p", { class: "muted", text: "🎉 Nothing open. Genuinely — go do something else." }));
+            return;
+        }
+        host.append(el("p", { class: "muted small", text: "Ordered by the Eisenhower Matrix: real deadlines first, then the important work that keeps getting postponed." }));
+        const list = el("ol", { class: "focus-list" });
+        focus.forEach((t) => {
+            list.append(el("li", { class: "focus-item" },
+                el("div", { class: "fi-head" },
+                    el("span", { class: "fi-title", text: t.title, onclick: () => { closeModal(); taskDetail(t); } }),
+                    quadrantBadge(t.eisenhower)),
+                el("div", { class: "fi-reason muted small", text: t.focusReason || "" }),
+                t.nudge ? el("div", { class: "fi-nudge muted small", text: `👉 ${t.nudge}` }) : null));
+        });
+        host.append(list);
+        if (data.insights && data.insights.hints && data.insights.hints.length) {
+            host.append(el("div", { class: "matrix-coach" },
+                el("div", { class: "mc-head" }, el("span", { html: "🧭 Coaching" })),
+                el("ul", { class: "mc-list" }, data.insights.hints.map((h) => el("li", { text: h })))));
+        }
+        host.append(el("div", { class: "chip-row" },
+            el("button", { class: "chip", html: "✨ Turn this into a day plan", onclick: () => { askAgent("Use the CatPilot prioritization-coach skill: call task_focus, then draft a realistic plan for my day with rough time blocks. Flag anything I should drop or reschedule.", "Day plan requested"); closeModal(); } })));
+    }
+
+    /** Ask Copilot to triage everything CatPilot had to guess at. */
+    function triageModal() {
+        const prompt = `Use the CatPilot prioritization-coach skill to triage my tasks.
+
+1. Call the task_matrix tool to see every task with its current quadrant. Tasks marked source "derived" were auto-classified — those are the ones that need your judgement.
+2. For each one, decide whether it is genuinely important (moves a real goal forward) and genuinely urgent (needs attention within about three days).
+3. Show me a short table of your proposed changes with a one-line reason each. Do not change anything yet.
+4. After I confirm, apply them with set_task_smart (importance / urgency), and suggest a goal or measure for any task that is still too vague to start.`;
+        const body = el("div", { class: "form copilot-modal" },
+            el("p", { class: "muted small", text: "CatPilot classifies tasks automatically from their due date, priority and SMART fields. Copilot can review those guesses with real judgement — and pin the ones it gets right." }),
+            el("ol", { class: "copilot-steps" },
+                el("li", { html: "<strong>Copilot reads your matrix</strong> and finds every auto-classified task." }),
+                el("li", { html: "<strong>It proposes changes</strong> with a reason for each — nothing is applied yet." }),
+                el("li", { html: "<strong>You confirm</strong>, then it pins the importance/urgency so the placement sticks." })),
+            el("pre", { class: "copilot-prompt", text: prompt }),
+            el("p", { class: "muted small", html: "No chat session? Copy this prompt into the GitHub Copilot App, or run <code>cat-pilot task matrix</code> and <code>cat-pilot task smart &lt;id&gt; --guided</code> in the terminal." }));
+        openModal({
+            title: "🧭 Triage with Copilot", width: 620, body,
+            foot: [
+                el("button", { class: "btn", text: "Cancel", onclick: closeModal }),
+                el("button", { class: "btn", html: "📋 Copy prompt", onclick: () => navigator.clipboard.writeText(prompt).then(() => toast("Prompt copied", "Paste it into Copilot", "ok"), () => toast("Copy failed", "Select the text manually", "err")) }),
+                el("button", { class: "btn btn-primary", html: "✨ Send to Copilot", onclick: () => { askAgent(prompt, "Triage requested"); closeModal(); } }),
+            ],
+        });
     }
 
     function taskDetail(t) {
         const done = t.status.toLowerCase() === "done";
         const logHost = el("div", { class: "task-log" });
+        const sm = t.smart || {};
+        const ei = t.eisenhower || {};
+        const smartRows = [
+            ["Goal", sm.goal], ["Measure", sm.measure], ["Steps", sm.steps], ["Why", sm.why],
+        ].filter(([, v]) => String(v || "").trim());
+
+        // Quadrant + rationale: always explain *why* a task landed where it did, so an
+        // automatic placement is never a black box.
+        const quadrantBlock = el("div", { class: "detail-quadrant" },
+            quadrantBadge(ei, { long: true }),
+            ei.rationale ? el("span", { class: "muted small", text: ei.rationale }) : null,
+            ei.source === "derived" ? el("button", {
+                class: "btn btn-xs btn-ghost", text: "Pin it",
+                title: "Set importance and urgency explicitly so this placement sticks",
+                onclick: () => { closeModal(); taskModal(t); },
+            }) : null);
+
+        const smartBlock = el("div", { class: "detail-smart" },
+            el("div", { class: "ds-head" },
+                el("h4", { html: "🎯 SMART" }),
+                el("button", { class: "btn btn-xs btn-ghost", text: smartRows.length ? "Edit" : "Add", onclick: () => { closeModal(); taskModal(t); } })),
+            smartRows.length
+                ? el("div", {}, smartRows.map(([k, v]) => detailRow(k, mdRender(String(v)))))
+                : el("p", { class: "muted small", text: "No SMART details yet. Adding a goal and a measure makes this task easier to start — and places it more accurately in the matrix." }),
+            smartMeter({ title: t.title, due: t.dueDate, context: t.context, goal: sm.goal, measure: sm.measure, steps: sm.steps, why: sm.why }));
+
         const body = el("div", {},
             detailRow("Status", statusBadge(t.status)),
             detailRow("Title", el("span", { text: t.title })),
             detailRow("Due date", el("span", { text: t.dueDate || "—" })),
             detailRow("Priority", priorityBadge(t.priority)),
+            detailRow("Quadrant", quadrantBlock),
             detailRow("Tags", tagChips(t.tags)),
             detailRow("Context", t.context ? mdRender(t.context) : el("span", { class: "muted small", text: "—" })),
+            smartBlock,
             logHost);
 
         async function renderLog() {

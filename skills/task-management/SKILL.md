@@ -33,6 +33,93 @@ Use this skill when the user says things like:
 - Tags (comma-separated)
 - Context (1 line)
 - Status (`Open`, `In Progress`, `Blocked`, or `Done`; defaults to `Open`)
+- **SMART details** — `goal`, `measure`, `steps`, `why`, plus the Eisenhower axes
+  `importance` and `urgency` (see below)
+
+## SMART tasks
+A title alone rarely tells you how to start. CatPilot therefore supports optional SMART
+fields on every task:
+
+| Field | SMART dimension | The question it answers |
+| --- | --- | --- |
+| `goal` | **S**pecific | What exactly does "done" look like? |
+| `measure` | **M**easurable | How will you know it worked? |
+| `steps` | **A**chievable | What are the first concrete steps? |
+| `why` | **R**elevant | Why does this matter right now? |
+| `dueDate` | **T**ime-bound | When does it need to be done? (reuses the existing Due Date column) |
+
+Plus two Eisenhower axes: `importance` (`High` / `Low`) and `urgency` (`High` / `Low`).
+Leaving either empty means *auto* — CatPilot derives it from the due date, the priority,
+the linked project and whether the task has a `why` / `measure`.
+
+**None of this is mandatory.** Title is still the only required field.
+
+### Coaching flow (important)
+When a user gives you a vague task, be a helpful colleague, not a form:
+
+1. Add the task immediately with whatever you have — never block on SMART questions.
+2. Then ask **at most two or three** short, natural questions, with an example each. Prefer:
+   - "What would 'done' look like for this?" *(goal)*
+   - "How will you know it worked?" *(measure)*
+   - "When does it realistically need to land?" *(due date)*
+3. If the user shrugs or skips, that's fine — save what you have and move on.
+4. Confirm with the SMART score (`x/5`) and mention the single most useful missing piece.
+5. Never lecture about the acronym. The user cares about clarity, not methodology.
+
+### Storage format
+SMART fields live in a `## Task Details` section near the bottom of the tasks file, grouped
+under a `### Task <id>` sub-heading (the same pattern as `## Task Log`), written **before**
+`## Task Log`:
+
+```
+## Task Details
+
+### Task 3
+- **Goal:** Ship the v2 export endpoint behind a feature flag
+- **Measure:** p95 < 300ms on staging and all export tests green
+- **Why:** Unblocks the Q3 reporting milestone
+- **Steps:** Draft schema → implement → test → roll out
+- **Importance:** High
+- **Urgency:** Low
+```
+
+Empty fields are omitted entirely, so a task with no SMART data writes no entry at all and
+existing files are untouched. The section round-trips through every add/update/complete/remove.
+
+CLI equivalents: `cat-pilot task add "…" --goal … --measure … --why … --steps …
+--importance high --urgency low`, the interactive `cat-pilot task add "…" --guided`
+coach, and `cat-pilot task smart <id>` to view or edit.
+MCP tools: `task_add` (SMART params), `task_smart_set`.
+In the canvas, the task modal has a collapsible **🎯 Make it SMART** section with a live
+0–5 quality meter, and an **✨ Build with Copilot** button that drafts every field from a
+plain-language description.
+
+## Eisenhower Matrix
+Every task is classified into a quadrant from its urgency and importance:
+
+| Quadrant | Meaning | What to do |
+| --- | --- | --- |
+| **Q1** | Urgent & Important | Do now |
+| **Q2** | Not Urgent & Important | Schedule |
+| **Q3** | Urgent & Not Important | Delegate or batch |
+| **Q4** | Not Urgent & Not Important | Drop or do later |
+
+Derivation rules (all thresholds live in `lib/eisenhower.js`):
+- **Urgency** — explicit `urgency` wins; otherwise urgent when the task is overdue, due today,
+  due within 3 days, or priority is `P0`.
+- **Importance** — explicit `importance` wins; otherwise important when priority is
+  `P0`/`P1`/`High`, the task is linked to a project, or it has a `why` or a `measure`.
+
+Classification results carry `source: "explicit" | "derived"` and a one-line `rationale`, so
+an automatic placement is never a black box. Anything the user sets explicitly always wins.
+
+CLI: `cat-pilot task matrix [--quadrant q1|q2|q3|q4] [--status …] [--json]`,
+`cat-pilot task focus [--limit N]`, `cat-pilot task list --quadrant q2`.
+MCP tools: `task_matrix`, `task_focus`.
+In the canvas, the Tasks page has a **🎯 Matrix** view mode with drag-and-drop between
+quadrants (dropping a card pins its importance/urgency explicitly).
+
+For triage, rebalancing and day planning, use the **prioritization-coach** skill.
 
 ## Task statuses
 Canonical stored statuses are **`Open`** (shown as "To do" in the canvas),
@@ -176,6 +263,33 @@ Then write:
 ### Example 3 (avoid duplicates)
 If the resolved tasks file already contains an open task "Draft plugin demo outline", do not add.
 Reply with the existing reference and suggest updating metadata instead.
+
+### Example 4 (SMART coaching — the good version)
+User: "add a task to fix the export thing"
+
+Do this:
+1. Add it right away: `| 4 | Open | Fix the export thing |  |  |  |  |`
+2. Then coach, lightly:
+
+> 📝 Added **Fix the export thing** (#4).
+>
+> Two quick things to make it easier to pick up later:
+> - What would "fixed" look like — e.g. *"exports finish under 30s for the biggest account"*?
+> - When does it need to be done?
+
+3. User replies "exports under 30s, needed before the demo on the 12th". Update the task with
+   `goal` and `dueDate`, then confirm:
+
+> ✅ Sharpened #4 — 🎯 SMART 3/5 · Q1 · Do now (due in 4 days).
+> Add a *why* and it'll be a 4/5, but this is already actionable.
+
+**Do not** fire five questions at once, and **do not** refuse to save until the user answers.
+
+### Example 5 (matrix request)
+User: "what should I work on?"
+Call `task_focus`, then answer with a short ranked list — quadrant, deadline and a one-line
+reason per task — and end with one concrete suggestion (start the top item, or reschedule
+something out of Q1 if it is overloaded).
 
 ## Response style
 - Use emojis in confirmations and list outputs.

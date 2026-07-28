@@ -654,15 +654,16 @@
     // Priority accent colours (index == priorityRank: P0..P3, then "none").
     const PR_COLORS = ["#ff6b7d", "#ffb020", "#7c5cff", "#35c88f", "var(--border)"];
     // Board columns are declared here so adding/re-ordering a column is a one-liner.
-    // `canAdd` gates the quick-add "＋" + footer for real statuses; Overdue is a
-    // derived urgency bucket (open tasks past due) so it has no quick-add.
+    // `canAdd` gates the quick-add "＋" + footer. Overdue is a derived urgency bucket
+    // (open tasks past due) and Done is an outcome, not a place to start work — so
+    // neither offers a quick-add.
     const BOARD_COLS = [
         { key: "backlog", title: "Backlog", icon: "📥", accent: "#8b93a7", status: "Open", canAdd: true, emptyIcon: "📭", emptyHint: "No unscheduled tasks", filter: (t) => t.status.toLowerCase() === "open" && !t.dueDate },
         { key: "overdue", title: "Overdue", icon: "⏰", accent: "#ff6b7d", status: "Open", addDue: true, canAdd: false, emptyIcon: "🎉", emptyHint: "Nothing overdue", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate < todayISO() },
         { key: "open", title: "To do", icon: "🗒️", accent: "#7c5cff", status: "Open", addDue: true, canAdd: true, emptyIcon: "🗓️", emptyHint: "No scheduled tasks", filter: (t) => t.status.toLowerCase() === "open" && t.dueDate && t.dueDate >= todayISO() },
         { key: "inprogress", title: "In Progress", icon: "🚧", accent: "#3db8c8", status: "In Progress", canAdd: true, emptyIcon: "💤", emptyHint: "Nothing in progress", filter: (t) => t.status.toLowerCase() === "in progress" },
         { key: "blocked", title: "Blocked", icon: "⛔", accent: "#ff8c32", status: "Blocked", canAdd: true, emptyIcon: "🧯", emptyHint: "No blockers right now", filter: (t) => t.status.toLowerCase() === "blocked" },
-        { key: "done", title: "Done", icon: "✅", accent: "#35c88f", status: "Done", canAdd: true, emptyIcon: "🌱", emptyHint: "Nothing done yet", filter: (t) => t.status.toLowerCase() === "done" },
+        { key: "done", title: "Done", icon: "✅", accent: "#35c88f", status: "Done", canAdd: false, emptyIcon: "🌱", emptyHint: "Nothing done yet", filter: (t) => t.status.toLowerCase() === "done" },
     ];
 
     function renderTaskBoard(holder, tasks) {

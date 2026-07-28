@@ -1055,6 +1055,26 @@
         const smart = t?.smart || {};
         const meterHost = el("div", { class: "smart-meter-host" });
 
+        // Resolved starting values. `prefill` wins over the stored task so a
+        // Copilot draft (or a quadrant quick-add) can seed any field — the modal
+        // is a single host, so "Build with Copilot" re-opens this modal with the
+        // draft rather than trying to write into inputs that no longer exist.
+        const pick = (a, b) => (a !== undefined && a !== null && a !== "" ? a : (b || ""));
+        const v = {
+            title: pick(prefill.title, t?.title),
+            due: pick(prefill.due, t?.dueDate),
+            priority: pick(prefill.priority, t?.priority),
+            status: pick(prefill.status, t?.status) || "Open",
+            tags: pick(prefill.tags, t?.tags),
+            context: pick(prefill.context, t?.context),
+            goal: pick(prefill.goal, smart.goal),
+            measure: pick(prefill.measure, smart.measure),
+            steps: pick(prefill.steps, smart.steps),
+            why: pick(prefill.why, smart.why),
+            importance: pick(prefill.importance, smart.importance),
+            urgency: pick(prefill.urgency, smart.urgency),
+        };
+
         const readDraft = () => ({
             title: f.title?.value || "",
             due: f.due?.value || "",
@@ -1069,46 +1089,50 @@
         // The SMART block is collapsible and entirely optional — the title is still
         // the only required field. It is open by default when the task already has
         // SMART content, so nothing is ever hidden from you.
-        const hasSmart = !!(smart.goal || smart.measure || smart.steps || smart.why || smart.importance || smart.urgency);
+        const hasSmart = !!(v.goal || v.measure || v.steps || v.why || v.importance || v.urgency);
         const smartBox = el("details", { class: "smart-box", ...(hasSmart ? { open: "open" } : {}) },
             el("summary", {},
                 el("span", { class: "sb-title", html: "🎯 Make it SMART" }),
                 el("span", { class: "muted small", text: "optional — sharpens the task and places it in the matrix" })),
             el("p", { class: "muted small sb-intro", text: "Answer whatever you can. Each answer makes the task easier to start and helps CatPilot decide where it belongs in the Eisenhower Matrix." }),
-            mdField("Goal — what does “done” look like?", f, "goal", { value: smart.goal, minRows: 2, placeholder: "e.g. Ship the v2 export endpoint behind a feature flag" }),
-            mdField("Measure — how will you know it worked?", f, "measure", { value: smart.measure, minRows: 2, placeholder: "e.g. p95 under 300ms and all export tests green" }),
-            mdField("Steps — what are the first concrete moves?", f, "steps", { value: smart.steps, minRows: 2, placeholder: "e.g. Draft schema → implement → test → roll out" }),
-            mdField("Why — why does this matter now?", f, "why", { value: smart.why, minRows: 2, placeholder: "e.g. Unblocks the Q3 reporting milestone" }),
+            mdField("Goal — what does “done” look like?", f, "goal", { value: v.goal, minRows: 2, placeholder: "e.g. Ship the v2 export endpoint behind a feature flag" }),
+            mdField("Measure — how will you know it worked?", f, "measure", { value: v.measure, minRows: 2, placeholder: "e.g. p95 under 300ms and all export tests green" }),
+            mdField("Steps — what are the first concrete moves?", f, "steps", { value: v.steps, minRows: 2, placeholder: "e.g. Draft schema → implement → test → roll out" }),
+            mdField("Why — why does this matter now?", f, "why", { value: v.why, minRows: 2, placeholder: "e.g. Unblocks the Q3 reporting milestone" }),
             el("div", { class: "form-row" },
-                selectField("Importance", f, "importance", ["", "High", "Low"], smart.importance || prefill.importance || "", { "": "Auto (let CatPilot decide)", High: "High — moves a real goal", Low: "Low — nice to have" }),
-                selectField("Urgency", f, "urgency", ["", "High", "Low"], smart.urgency || prefill.urgency || "", { "": "Auto (from the due date)", High: "High — needs attention now", Low: "Low — can wait" })),
+                selectField("Importance", f, "importance", ["", "High", "Low"], v.importance, { "": "Auto (let CatPilot decide)", High: "High — moves a real goal", Low: "Low — nice to have" }),
+                selectField("Urgency", f, "urgency", ["", "High", "Low"], v.urgency, { "": "Auto (from the due date)", High: "High — needs attention now", Low: "Low — can wait" })),
             meterHost);
 
         const body = el("div", { class: "form" },
-            field("Title", f, "title", { value: t?.title, placeholder: "What needs doing?", required: true }),
+            field("Title", f, "title", { value: v.title, placeholder: "What needs doing?", required: true }),
             el("div", { class: "form-row" },
-                field("Due date", f, "due", { value: t?.dueDate || prefill.due, type: "date" }),
-                selectField("Priority", f, "priority", ["", "P0", "P1", "P2", "P3", "High", "Med", "Low"], t?.priority || prefill.priority)),
-            selectField("Status", f, "status", ["Open", "In Progress", "Blocked", "Done"], t?.status || prefill.status || "Open", { Open: "To do", "In Progress": "In Progress", Blocked: "Blocked", Done: "Done" }),
-            field("Tags", f, "tags", { value: t?.tags, placeholder: "comma,separated" }),
-            mdField("Context", f, "context", { value: t?.context, placeholder: "One-line context (markdown supported)" }),
+                field("Due date", f, "due", { value: v.due, type: "date" }),
+                selectField("Priority", f, "priority", ["", "P0", "P1", "P2", "P3", "High", "Med", "Low"], v.priority)),
+            selectField("Status", f, "status", ["Open", "In Progress", "Blocked", "Done"], v.status, { Open: "To do", "In Progress": "In Progress", Blocked: "Blocked", Done: "Done" }),
+            field("Tags", f, "tags", { value: v.tags, placeholder: "comma,separated" }),
+            mdField("Context", f, "context", { value: v.context, placeholder: "One-line context (markdown supported)" }),
             el("div", { class: "smart-cta" },
                 el("button", {
                     class: "btn btn-sm btn-ghost", html: "✨ Build with Copilot",
                     title: "Describe the task in plain words and let Copilot draft the SMART fields for you",
                     onclick: () => smartCopilotModal({
                         seed: readDraft(),
+                        // The Copilot popup replaces this modal (single modal host), so
+                        // re-open the task modal seeded with the draft merged over
+                        // whatever was already typed. Nothing is lost either way.
                         onDraft: (d) => {
-                            if (d.title) f.title.value = d.title;
-                            if (d.due) f.due.value = d.due;
-                            if (d.priority) f.priority.value = d.priority;
-                            if (d.tags) f.tags.value = d.tags;
-                            if (d.context) f.context.value = d.context;
-                            ["goal", "measure", "steps", "why"].forEach((k) => { if (d[k]) f[k].value = d[k]; });
-                            if (d.importance) f.importance.value = d.importance;
-                            if (d.urgency) f.urgency.value = d.urgency;
-                            smartBox.open = true;
-                            paintMeter();
+                            const current = readDraft();
+                            current.status = f.status.value;
+                            current.tags = f.tags.value;
+                            current.priority = f.priority.value;
+                            current.importance = f.importance.value;
+                            current.urgency = f.urgency.value;
+                            const merged = { ...current };
+                            Object.entries(d || {}).forEach(([k, val]) => {
+                                if (val !== undefined && val !== null && String(val).trim() !== "") merged[k] = val;
+                            });
+                            taskModal(t, merged);
                             toast("Draft applied", "Review and edit before saving", "ok");
                         },
                     }),
@@ -1236,7 +1260,7 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
                 smartMeter({ title: d.title, goal: d.goal, measure: d.measure, steps: d.steps, why: d.why, due: d.due, context: d.context }),
                 el("div", { class: "copilot-draft-actions" },
                     el("button", { class: "btn btn-sm", html: "🔄 Try again", onclick: () => { preview.classList.add("hidden"); ta.focus(); } }),
-                    el("button", { class: "btn btn-sm btn-primary", html: "⬇️ Use this draft", onclick: () => { if (onDraft) onDraft(d); closeModal(); } })));
+                    el("button", { class: "btn btn-sm btn-primary", html: "⬇️ Use this draft", onclick: () => { closeModal(); if (onDraft) onDraft(d); } })));
         }
 
         const body = el("div", { class: "form copilot-modal" },

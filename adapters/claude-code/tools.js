@@ -8,6 +8,7 @@
 
 import * as cliUtils from '../../lib/cli-utils.js';
 import * as pomodoro from '../../lib/pomodoro.js';
+import * as eisen from '../../lib/eisenhower.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -17,6 +18,35 @@ function normalizeTaskStatus(value, fallback = 'Open') {
   const match = TASK_STATUSES.find(s => s.toLowerCase() === String(value).trim().toLowerCase());
   if (!match) throw new Error(`Invalid status "${value}". Use one of: ${TASK_STATUSES.join(', ')}`);
   return match;
+}
+
+/** Extract SMART fields from a tool payload (only keys that were provided). */
+function smartFromParams(params = {}) {
+  const out = {};
+  ['goal', 'measure', 'why', 'steps'].forEach(k => {
+    if (params[k] !== undefined) out[k] = params[k];
+  });
+  if (params.importance !== undefined) out.importance = eisen.normalizeAxis(params.importance);
+  if (params.urgency !== undefined) out.urgency = eisen.normalizeAxis(params.urgency);
+  return out;
+}
+
+/** Decorate a task with its Eisenhower classification and SMART score. */
+function decorateTask(task) {
+  return {
+    ...task,
+    smart: eisen.normalizeSmart(task.smart),
+    eisenhower: eisen.classifyTask(task),
+    smartScore: eisen.smartScore(task)
+  };
+}
+
+/** Load + parse the tasks file once, returning the path alongside. */
+function readTasks() {
+  const config = cliUtils.loadConfig();
+  const tasksPath = cliUtils.resolveFilePath('tasks', config);
+  const tasks = cliUtils.parseTasksTable(cliUtils.readFileOrCreate(tasksPath));
+  return { tasksPath, tasks };
 }
 
 /**
@@ -32,9 +62,16 @@ async function list_tasks(params = {}) {
     const tasks = cliUtils.parseTasksTable(content);
 
     const status = params.status || 'all';
-    const filtered = status === 'all'
+    let filtered = status === 'all'
       ? tasks
       : tasks.filter(t => t.status.toLowerCase() === status.toLowerCase());
+
+    filtered = filtered.map(decorateTask);
+    if (params.quadrant) {
+      const q = eisen.quadrantByKey(params.quadrant);
+      if (!q) return { success: false, error: `Unknown quadrant "${params.quadrant}". Use q1, q2, q3 or q4.` };
+      filtered = filtered.filter(t => t.eisenhower.quadrant === q.key);
+    }
 
     return {
       success: true,
@@ -66,7 +103,8 @@ async function add_task(params) {
       priority: params.priority || '',
       tags: params.tags || '',
       context: params.context || '',
-      project: params.project || ''
+      project: params.project || '',
+      smart: eisen.normalizeSmart(smartFromParams(params))
     };
 
     tasks.push(newTask);
@@ -74,9 +112,80 @@ async function add_task(params) {
     cliUtils.ensureDir(path.dirname(tasksPath));
     fs.writeFileSync(tasksPath, newContent, 'utf8');
 
+    const decorated = decorateTask(newTask);
     return {
       success: true,
-      data: newTask,
+      data: decorated,
+      coaching: eisen.smartNudge(newTask) || null,
+      path: tasksPath
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Set or clear the SMART fields / Eisenhower axes on an existing task.
+ * Only the keys present in `params` are touched; pass an empty string to clear.
+ */
+async function set_task_smart(params = {}) {
+  try {
+    if (params.id === undefined) return { success: false, error: 'id is required' };
+    const { tasksPath, tasks } = readTasks();
+    const task = tasks.find(t => t.id === parseInt(params.id, 10));
+    if (!task) return { success: false, error: `Task #${params.id} not found` };
+
+    task.smart = eisen.normalizeSmart({ ...eisen.normalizeSmart(task.smart), ...smartFromParams(params) });
+    if (params.due !== undefined) task.dueDate = params.due;
+
+    fs.writeFileSync(tasksPath, cliUtils.formatTasksTable(tasks), 'utf8');
+    return {
+      success: true,
+      data: decorateTask(task),
+      coaching: eisen.smartNudge(task) || null,
+      path: tasksPath
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/** Build the full Eisenhower matrix, optionally narrowed to one quadrant. */
+async function task_matrix(params = {}) {
+  try {
+    const { tasksPath, tasks } = readTasks();
+    const includeDone = params.includeDone === true || String(params.status || '').toLowerCase() === 'all';
+    const matrix = eisen.buildMatrix(tasks, { includeDone });
+    let quadrants = matrix.quadrants;
+    if (params.quadrant) {
+      const q = eisen.quadrantByKey(params.quadrant);
+      if (!q) return { success: false, error: `Unknown quadrant "${params.quadrant}". Use q1, q2, q3 or q4.` };
+      quadrants = quadrants.filter(x => x.key === q.key);
+    }
+    return {
+      success: true,
+      data: { ...matrix, quadrants, insights: eisen.matrixInsights(tasks) },
+      path: tasksPath
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/** Ranked "what should I do next" list with a reason per task. */
+async function task_focus(params = {}) {
+  try {
+    const { tasksPath, tasks } = readTasks();
+    const limit = params.limit === undefined ? 5 : Math.max(1, parseInt(params.limit, 10) || 5);
+    const focus = eisen.focusOrder(tasks, { limit }).map(t => ({
+      ...t,
+      smartScore: eisen.smartScore(t),
+      nudge: eisen.smartNudge(t) || null
+    }));
+    return {
+      success: true,
+      data: { focus, insights: eisen.matrixInsights(tasks) },
+      count: focus.length,
       path: tasksPath
     };
   } catch (err) {
@@ -479,6 +588,9 @@ async function handleToolCall(toolName, params) {
   const tools = {
     list_tasks,
     add_task,
+    set_task_smart,
+    task_matrix,
+    task_focus,
     complete_task,
     set_task_status,
     remove_task,
@@ -510,6 +622,9 @@ async function handleToolCall(toolName, params) {
 export {
   list_tasks,
   add_task,
+  set_task_smart,
+  task_matrix,
+  task_focus,
   complete_task,
   set_task_status,
   remove_task,

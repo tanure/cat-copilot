@@ -9,6 +9,9 @@ sync no matter which directory you capture from.
 | Capability | CLI (`cat-pilot`) | Copilot CLI plugin | Copilot in VS Code | Copilot App | MCP (any host) |
 | --- | --- | --- | --- | --- | --- |
 | Tasks | ✅ | ✅ | ✅ | ✅ | ✅ `task_*` |
+| SMART task details | ✅ | ✅ | ✅ | ✅ | ✅ `task_add`, `task_smart_set` |
+| Eisenhower Matrix | ✅ `task matrix` | ✅ | ✅ | ✅ | ✅ `task_matrix` |
+| Focus plan / triage | ✅ `task focus` | ✅ | ✅ | ✅ | ✅ `task_focus` |
 | Journal | ✅ | ✅ | ✅ | ✅ | ✅ `journal_*` |
 | Milestones | ➖ | ✅ | ✅ | ✅ | ➖ (skill) |
 | Knowledge Base | ✅ | ✅ | ✅ | ✅ | ✅ `kb_*` (`memo_*` aliases) |
@@ -34,12 +37,24 @@ Notes:
 - Each task carries a **progress log** of dated comments (`## Task Log` in the tasks file),
   editable from the CLI (`cat task comment …`), MCP (`task_comment_*`) and the canvas task
   detail timeline.
+- Each task can also carry optional **SMART details** — Goal, Measure, Steps, Why, plus
+  explicit Importance/Urgency — stored in a `## Task Details` section of the same file and
+  editable from the CLI (`cat-pilot task add --goal … / --guided`, `cat-pilot task smart <id>`),
+  MCP (`task_smart_set`) and the canvas task modal. They feed the **Eisenhower Matrix**
+  (Q1 Do now · Q2 Schedule · Q3 Delegate or batch · Q4 Drop or later), which is derived
+  deterministically from due date, priority, project links and SMART fields unless you pin an
+  axis explicitly. `prioritization-coach` is the chat skill on top.
 
 ## Canvas views
 The browser canvas SPA provides richer review and editing views:
-- **Tasks:** Kanban columns for Backlog, Overdue, To do, In Progress, Blocked, and Done.
-  The task detail shows a **Progress log** timeline with a markdown write/preview/Copilot
-  editor for add/edit/remove of dated updates.
+- **Tasks:** four modes — List, Kanban (Backlog, Overdue, To do, In Progress, Blocked, Done),
+  Calendar, and the **🎯 Eisenhower Matrix** (four quadrant panels, tasks grouped by
+  Overdue / Today / Next 7 days / Later / Completed, drag-and-drop between quadrants,
+  per-quadrant quick-add). The task modal has a collapsible **🎯 Make it SMART** section with
+  a live 0–5 quality meter and an **✨ Build with Copilot** popup; the toolbar has
+  **🎯 Focus plan** and **🧭 Triage with Copilot**. The task detail shows a **Progress log**
+  timeline with a markdown write/preview/Copilot editor, the quadrant badge with its
+  rationale, and the SMART fields.
 - **Knowledge:** stats header, folder and tag filter rails, Grid/List/Folders/By-month
   view modes, search, Markdown detail popup, and a full write/preview editor with
   Save/Delete plus folder/tag editing.

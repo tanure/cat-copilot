@@ -10,6 +10,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import * as eisen from "./eisenhower.mjs";
+
+export { eisen };
 
 const GLOBAL_CONFIG_DIR = path.join(os.homedir(), ".catpilot");
 const GLOBAL_CONFIG_PATH = path.join(GLOBAL_CONFIG_DIR, "config.json");
@@ -229,8 +232,59 @@ function parseTasksTable(content) {
         }
     }
     const logs = parseTaskLog(content);
-    for (const t of tasks) t.log = logs[t.id] || [];
+    const details = parseTaskDetails(content);
+    for (const t of tasks) {
+        t.log = logs[t.id] || [];
+        t.smart = eisen.normalizeSmart(details[t.id]);
+    }
     return tasks;
+}
+
+// Per-task SMART details ("## Task Details" section): taskId -> {goal,...}.
+// Mirrors lib/cli-utils.js exactly so the CLI and the canvas round-trip the
+// same file. Empty fields are omitted on write, so old files stay untouched.
+const SMART_LABELS = {
+    goal: "Goal",
+    measure: "Measure",
+    why: "Why",
+    steps: "Steps",
+    importance: "Importance",
+    urgency: "Urgency",
+};
+
+function parseTaskDetails(content) {
+    const lines = String(content || "").split("\n");
+    const details = {};
+    let inSection = false;
+    let curId = null;
+    for (const line of lines) {
+        const h2 = line.match(/^##\s+(.+?)\s*$/);
+        if (h2) { inSection = /^task details$/i.test(h2[1].trim()); curId = null; continue; }
+        if (!inSection) continue;
+        const h3 = line.match(/^###\s+Task\s+(\d+)\s*$/i);
+        if (h3) { curId = parseInt(h3[1], 10); if (!details[curId]) details[curId] = {}; continue; }
+        if (curId == null) continue;
+        const field = line.match(/^-\s+\*\*(.+?):\*\*\s*(.*)$/);
+        if (!field) continue;
+        const label = field[1].trim().toLowerCase();
+        const key = Object.keys(SMART_LABELS).find((k) => SMART_LABELS[k].toLowerCase() === label);
+        if (key) details[curId][key] = field[2].trim();
+    }
+    return details;
+}
+
+function formatTaskDetails(tasks) {
+    const withDetails = tasks.filter((t) => !eisen.isSmartEmpty(t.smart));
+    if (!withDetails.length) return "";
+    let out = "## Task Details\n";
+    for (const t of withDetails) {
+        const s = eisen.normalizeSmart(t.smart);
+        out += `\n### Task ${t.id}\n`;
+        for (const key of eisen.SMART_FIELDS) {
+            if (s[key]) out += `- **${SMART_LABELS[key]}:** ${collapseComment(s[key])}\n`;
+        }
+    }
+    return out.trimEnd();
 }
 
 // Per-task progress log ("## Task Log" section): taskId -> [{date,text}].
@@ -296,8 +350,10 @@ function formatTasksTable(tasks) {
         out += "## Completed Tasks\n\n" + header;
         done.forEach((t) => { out += `| ${t.id} | ${encodeCell(t.status)} | ${encodeCell(t.title)} | ${encodeCell(t.dueDate)} | ${encodeCell(t.priority)} | ${encodeCell(t.tags)} | ${encodeCell(t.context)} | ${encodeCell(t.project)} |\n`; });
     }
+    const detailsSection = formatTaskDetails(tasks);
     const logSection = formatTaskLog(tasks);
     let result = out.trimEnd();
+    if (detailsSection) result += "\n\n" + detailsSection;
     if (logSection) result += "\n\n" + logSection;
     return result;
 }
@@ -317,10 +373,31 @@ function normalizeTaskStatus(value, fallback = "Open") {
     return match;
 }
 
+/** Attach the computed Eisenhower quadrant + SMART score to a task. */
+function decorateTask(task, now = new Date()) {
+    return {
+        ...task,
+        smart: eisen.normalizeSmart(task.smart),
+        eisenhower: eisen.classifyTask(task, now),
+        smartScore: eisen.smartScore(task),
+    };
+}
+
+/** Pick only the SMART keys present in a payload, normalizing the two axes. */
+function smartFromParams(params = {}) {
+    const out = {};
+    ["goal", "measure", "why", "steps"].forEach((k) => {
+        if (params[k] !== undefined) out[k] = params[k];
+    });
+    if (params.importance !== undefined) out.importance = eisen.normalizeAxis(params.importance);
+    if (params.urgency !== undefined) out.urgency = eisen.normalizeAxis(params.urgency);
+    return out;
+}
+
 export function listTasks(status = "all") {
     const config = loadConfig();
     const p = resolveFilePath("tasks", config);
-    const tasks = parseTasksTable(readFileOrCreate(p));
+    const tasks = parseTasksTable(readFileOrCreate(p)).map((t) => decorateTask(t));
     if (status === "all") return tasks;
     return tasks.filter((t) => t.status.toLowerCase() === status.toLowerCase());
 }
@@ -339,10 +416,11 @@ export function addTask(params = {}) {
         tags: params.tags || "",
         context: params.context || "",
         project: params.project || "",
+        smart: eisen.normalizeSmart(params.smart ? { ...params.smart, ...smartFromParams(params) } : smartFromParams(params)),
     };
     tasks.push(task);
     fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
-    return task;
+    return decorateTask(task);
 }
 
 export function updateTask(id, patch = {}) {
@@ -354,8 +432,51 @@ export function updateTask(id, patch = {}) {
     for (const k of ["status", "title", "dueDate", "priority", "tags", "context", "project"]) {
         if (patch[k] !== undefined) t[k] = k === "status" ? normalizeTaskStatus(patch[k]) : patch[k];
     }
+    if (patch.due !== undefined) t.dueDate = patch.due;
+    const smartPatch = { ...(patch.smart || {}), ...smartFromParams(patch) };
+    if (Object.keys(smartPatch).length) {
+        t.smart = eisen.normalizeSmart({ ...eisen.normalizeSmart(t.smart), ...smartPatch });
+    }
     fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
-    return t;
+    return decorateTask(t);
+}
+
+/**
+ * Replace/merge the SMART fields and Eisenhower axes of a task.
+ * Used by the SMART editor and by drag-and-drop between matrix quadrants.
+ */
+export function updateTaskSmart(id, patch = {}) {
+    return updateTask(id, { smart: patch.smart, ...patch });
+}
+
+/** The full Eisenhower matrix plus balance insights. */
+export function taskMatrix(options = {}) {
+    const config = loadConfig();
+    const p = resolveFilePath("tasks", config);
+    const tasks = parseTasksTable(readFileOrCreate(p));
+    const includeDone = options.includeDone !== false;
+    const matrix = eisen.buildMatrix(tasks, { includeDone });
+    let quadrants = matrix.quadrants;
+    if (options.quadrant) {
+        const q = eisen.quadrantByKey(options.quadrant);
+        if (!q) throw new Error(`Unknown quadrant "${options.quadrant}". Use q1, q2, q3 or q4.`);
+        quadrants = quadrants.filter((x) => x.key === q.key);
+    }
+    return { ...matrix, quadrants, insights: eisen.matrixInsights(tasks) };
+}
+
+/** Ranked "what to do next" list with a reason per task. */
+export function taskFocus(options = {}) {
+    const config = loadConfig();
+    const p = resolveFilePath("tasks", config);
+    const tasks = parseTasksTable(readFileOrCreate(p));
+    const limit = options.limit === undefined ? 5 : Math.max(1, parseInt(options.limit, 10) || 5);
+    const focus = eisen.focusOrder(tasks, { limit }).map((t) => ({
+        ...t,
+        smartScore: eisen.smartScore(t),
+        nudge: eisen.smartNudge(t) || null,
+    }));
+    return { focus, insights: eisen.matrixInsights(tasks) };
 }
 
 export function completeTask(id) {

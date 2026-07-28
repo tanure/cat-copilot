@@ -222,6 +222,39 @@ async function testClaudeAdapter() {
   } catch (err) {
     logTest('claude', 'pomodoro report (by day)', false, err.message);
   }
+
+  // Test 12: SMART fields + Eisenhower classification
+  try {
+    const smart = await claudeTools.add_task({
+      title: 'SMART adapter task', due: '2099-03-01', priority: 'P2',
+      goal: 'Deliver the thing', measure: 'Dashboard shows green',
+      why: 'Keeps the roadmap on track', steps: 'Plan -> build -> ship',
+      importance: 'High', urgency: 'Low'
+    });
+    const ok = smart.success && smart.data?.smart?.goal === 'Deliver the thing'
+      && smart.data?.eisenhower?.quadrant === 'q2' && smart.data?.smartScore?.score === 5;
+    logTest('claude', 'add_task with SMART fields', ok,
+      `SMART ${smart.data?.smartScore?.score}/5, ${smart.data?.eisenhower?.quadrant}`);
+
+    const pinned = await claudeTools.set_task_smart({ id: smart.data?.id, urgency: 'High' });
+    logTest('claude', 'set_task_smart re-classifies', pinned.success && pinned.data?.eisenhower?.quadrant === 'q1',
+      `now ${pinned.data?.eisenhower?.quadrant} (${pinned.data?.eisenhower?.source})`);
+  } catch (err) {
+    logTest('claude', 'add_task with SMART fields', false, err.message);
+  }
+
+  // Test 13: matrix + focus
+  try {
+    const matrix = await claudeTools.task_matrix({ status: 'all' });
+    logTest('claude', 'task_matrix', matrix.success && matrix.data?.quadrants?.length === 4,
+      `${matrix.data?.quadrants?.length} quadrants, ${matrix.data?.insights?.hints?.length} hint(s)`);
+    const focus = await claudeTools.task_focus({ limit: 3 });
+    const ok = focus.success && Array.isArray(focus.data?.focus)
+      && focus.data.focus.length <= 3 && focus.data.focus.every(t => t.focusReason);
+    logTest('claude', 'task_focus', ok, `${focus.data?.focus?.length} ranked task(s)`);
+  } catch (err) {
+    logTest('claude', 'task_matrix / task_focus', false, err.message);
+  }
 }
 
 // ============================================================================
@@ -310,6 +343,36 @@ async function testGeminiAdapter() {
       'Tool dispatcher working');
   } catch (err) {
     logTest('gemini', 'handleToolCall dispatcher', false, err.message);
+  }
+
+  // Test 9: SMART fields + Eisenhower tools
+  try {
+    const smart = await geminiTools.catpilot_add_task({
+      title: 'SMART task from Gemini adapter', due: '2099-03-01', priority: 'P2',
+      goal: 'Deliver the thing', measure: 'Dashboard shows green',
+      why: 'Keeps the roadmap on track', importance: 'High', urgency: 'Low'
+    });
+    const t = smart.result?.task;
+    logTest('gemini', 'catpilot_add_task with SMART', smart.success && t?.smart?.goal === 'Deliver the thing' && t?.eisenhower?.quadrant === 'q2',
+      `SMART ${t?.smartScore?.score}/5, ${t?.eisenhower?.quadrant}`);
+
+    const pinned = await geminiTools.catpilot_set_task_smart({ id: t?.id, urgency: 'High' });
+    logTest('gemini', 'catpilot_set_task_smart', pinned.success && pinned.result?.task?.eisenhower?.quadrant === 'q1',
+      `now ${pinned.result?.task?.eisenhower?.quadrant}`);
+  } catch (err) {
+    logTest('gemini', 'catpilot_add_task with SMART', false, err.message);
+  }
+
+  // Test 10: matrix + focus
+  try {
+    const matrix = await geminiTools.catpilot_task_matrix({ status: 'all' });
+    logTest('gemini', 'catpilot_task_matrix', matrix.success && matrix.result?.quadrants?.length === 4,
+      `${matrix.result?.quadrants?.length} quadrants`);
+    const focus = await geminiTools.catpilot_task_focus({ limit: 3 });
+    logTest('gemini', 'catpilot_task_focus', focus.success && Array.isArray(focus.result?.focus),
+      `${focus.result?.focus?.length} ranked task(s)`);
+  } catch (err) {
+    logTest('gemini', 'catpilot_task_matrix / catpilot_task_focus', false, err.message);
   }
 }
 

@@ -996,7 +996,7 @@ textarea { resize: vertical; min-height: 90px; }
 .cd-row { display: grid; grid-template-columns: 92px 1fr; gap: 8px; font-size: 13px; }
 .cd-key { color: var(--text-muted); font-weight: 600; }
 .cd-val { line-height: 1.45; }
-.copilot-draft-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.copilot-draft-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 .copilot-prompt {
     max-height: 220px;
     overflow: auto;

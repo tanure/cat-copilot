@@ -92,7 +92,8 @@ coach, and `cat-pilot task smart <id>` to view or edit.
 MCP tools: `task_add` (SMART params), `task_smart_set`.
 In the canvas, the task modal has a collapsible **🎯 Make it SMART** section with a live
 0–5 quality meter, and an **✨ Build with Copilot** button that drafts every field from a
-plain-language description.
+plain-language description — the draft can be saved directly (**✅ Create this task**) or
+opened in the form for edits (**✏️ Edit first**).
 
 ## Eisenhower Matrix
 Every task is classified into a quadrant from its urgency and importance:

@@ -1050,6 +1050,35 @@
         catch (e) { toast("Error", e.message, "err"); }
     }
 
+    /**
+     * Single place where a task draft becomes a file on disk. Both the task form
+     * and the Copilot popup's "Create it now" shortcut go through here, so the two
+     * paths can never disagree about the payload shape or the refresh that follows.
+     */
+    async function persistTask(t, draft) {
+        const payload = {
+            title: String(draft.title || "").trim(),
+            due: draft.due || "", priority: draft.priority || "",
+            tags: String(draft.tags || "").trim(), context: String(draft.context || "").trim(),
+            status: draft.status || "Open",
+            goal: String(draft.goal || "").trim(), measure: String(draft.measure || "").trim(),
+            steps: String(draft.steps || "").trim(), why: String(draft.why || "").trim(),
+            importance: draft.importance || "auto", urgency: draft.urgency || "auto",
+        };
+        if (!payload.title) { toast("Title required", "", "err"); return false; }
+        try {
+            if (t) {
+                await api(`/api/tasks/${t.id}`, { method: "PUT", body: { ...payload, dueDate: payload.due } });
+                toast("Task updated", payload.title, "ok");
+            } else {
+                await api("/api/tasks", { method: "POST", body: payload });
+                toast("Task added", payload.title, "ok");
+            }
+            await refreshSummary(); go("tasks");
+            return true;
+        } catch (e) { toast("Error", e.message, "err"); return false; }
+    }
+
     function taskModal(t, prefill = {}) {
         const editing = !!t;
         const f = {};
@@ -1087,6 +1116,23 @@
         });
         const paintMeter = () => { meterHost.innerHTML = ""; meterHost.append(smartMeter(readDraft())); };
 
+        // Everything currently in the form, and the rule for folding a Copilot draft
+        // over it: a non-empty drafted value wins, anything the draft leaves out keeps
+        // what you already typed.
+        const formState = () => ({
+            ...readDraft(),
+            status: f.status.value, tags: f.tags.value, priority: f.priority.value,
+            importance: f.importance.value, urgency: f.urgency.value,
+        });
+        const mergeDraft = (d) => {
+            const merged = formState();
+            Object.entries(d || {}).forEach(([k, val]) => {
+                if (val !== undefined && val !== null && String(val).trim() !== "") merged[k] = val;
+            });
+            merged.status = merged.status || "Open";
+            return merged;
+        };
+
         // The SMART block is collapsible and entirely optional — the title is still
         // the only required field. It is open by default when the task already has
         // SMART content, so nothing is ever hidden from you.
@@ -1119,22 +1165,24 @@
                     title: "Describe the task in plain words and let Copilot draft the SMART fields for you",
                     onclick: () => smartCopilotModal({
                         seed: readDraft(),
+                        editing,
                         // The Copilot popup replaces this modal (single modal host), so
-                        // re-open the task modal seeded with the draft merged over
-                        // whatever was already typed. Nothing is lost either way.
+                        // both callbacks work from a snapshot of the form taken *now* —
+                        // the inputs are gone by the time either one runs.
                         onDraft: (d) => {
-                            const current = readDraft();
-                            current.status = f.status.value;
-                            current.tags = f.tags.value;
-                            current.priority = f.priority.value;
-                            current.importance = f.importance.value;
-                            current.urgency = f.urgency.value;
-                            const merged = { ...current };
-                            Object.entries(d || {}).forEach(([k, val]) => {
-                                if (val !== undefined && val !== null && String(val).trim() !== "") merged[k] = val;
-                            });
+                            const merged = mergeDraft(d);
                             taskModal(t, merged);
-                            toast("Draft applied", "Review and edit before saving", "ok");
+                            toast("Draft applied", "Review and edit, then press Save", "ok");
+                        },
+                        // Shortcut for "the draft is already right": write it straight to
+                        // disk instead of bouncing back through the form, so a good draft
+                        // can never be lost between the popup and the Save button. If the
+                        // write fails we re-open the form with the draft intact.
+                        onCommit: async (d) => {
+                            const merged = mergeDraft(d);
+                            const ok = await persistTask(t, merged);
+                            if (!ok) taskModal(t, merged);
+                            return ok;
                         },
                     }),
                 })),
@@ -1147,24 +1195,13 @@
         paintMeter();
 
         const save = el("button", { class: "btn btn-primary", text: editing ? "Save changes" : "Add task", onclick: async () => {
-            const payload = {
-                title: f.title.value.trim(), due: f.due.value, priority: f.priority.value,
-                tags: f.tags.value.trim(), context: f.context.value.trim(), status: f.status.value,
-                goal: f.goal.value.trim(), measure: f.measure.value.trim(),
-                steps: f.steps.value.trim(), why: f.why.value.trim(),
+            const ok = await persistTask(t, {
+                title: f.title.value, due: f.due.value, priority: f.priority.value,
+                tags: f.tags.value, context: f.context.value, status: f.status.value,
+                goal: f.goal.value, measure: f.measure.value, steps: f.steps.value, why: f.why.value,
                 importance: f.importance.value || "auto", urgency: f.urgency.value || "auto",
-            };
-            if (!payload.title) { toast("Title required", "", "err"); return; }
-            try {
-                if (editing) {
-                    await api(`/api/tasks/${t.id}`, { method: "PUT", body: { ...payload, dueDate: payload.due } });
-                    toast("Task updated", payload.title, "ok");
-                } else {
-                    await api("/api/tasks", { method: "POST", body: payload });
-                    toast("Task added", payload.title, "ok");
-                }
-                closeModal(); await refreshSummary(); go("tasks");
-            } catch (e) { toast("Error", e.message, "err"); }
+            });
+            if (ok) closeModal();
         } });
         openModal({ title: editing ? "Edit task" : "New task", width: 640, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
         setTimeout(() => f.title.focus(), 50);
@@ -1198,7 +1235,7 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
      * When no chat session is attached the popup degrades into a clear, copy-able
      * step-by-step so it still works from the GitHub Copilot App.
      */
-    function smartCopilotModal({ seed = {}, onDraft } = {}) {
+    function smartCopilotModal({ seed = {}, onDraft, onCommit, editing = false } = {}) {
         const ta = el("textarea", { class: "md-input", rows: 3, placeholder: "Describe it the way you'd say it out loud — e.g. “I need to sort out the export endpoint before the reporting demo”" });
         if (seed.title) ta.value = seed.title;
         const status = el("div", { class: "copilot-status muted small" });
@@ -1207,7 +1244,7 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
         const steps = el("ol", { class: "copilot-steps" },
             el("li", { html: "<strong>Describe it roughly.</strong> One or two sentences is plenty — no need to sound formal." }),
             el("li", { html: "<strong>Copilot drafts the SMART fields</strong> — goal, measure, steps, why, a realistic due date, and where it belongs in the Eisenhower Matrix." }),
-            el("li", { html: "<strong>You review and edit.</strong> Nothing is saved until you press Save in the task form." }));
+            el("li", { html: "<strong>You decide.</strong> Save the draft straight away, or open it in the task form to edit first — nothing is written until you pick one." }));
 
         function showFallback(reason) {
             preview.classList.remove("hidden");
@@ -1261,7 +1298,19 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
                 smartMeter({ title: d.title, goal: d.goal, measure: d.measure, steps: d.steps, why: d.why, due: d.due, context: d.context }),
                 el("div", { class: "copilot-draft-actions" },
                     el("button", { class: "btn btn-sm", html: "🔄 Try again", onclick: () => { preview.classList.add("hidden"); ta.focus(); } }),
-                    el("button", { class: "btn btn-sm btn-primary", html: "⬇️ Use this draft", onclick: () => { closeModal(); if (onDraft) onDraft(d); } })));
+                    el("button", { class: "btn btn-sm", html: "✏️ Edit first", title: "Open the task form with these values filled in", onclick: () => { closeModal(); if (onDraft) onDraft(d); } }),
+                    el("button", {
+                        class: "btn btn-sm btn-primary", html: editing ? "💾 Save changes" : "✅ Create this task",
+                        title: "Write it straight to your tasks file",
+                        onclick: async (ev) => {
+                            const btn = ev.currentTarget;
+                            btn.disabled = true; btn.innerHTML = "⏳ Saving…";
+                            try {
+                                if (onCommit) { const ok = await onCommit(d); if (ok) closeModal(); }
+                                else { closeModal(); if (onDraft) onDraft(d); }
+                            } finally { btn.disabled = false; btn.innerHTML = editing ? "💾 Save changes" : "✅ Create this task"; }
+                        },
+                    })));
         }
 
         const body = el("div", { class: "form copilot-modal" },

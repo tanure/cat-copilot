@@ -34,8 +34,9 @@ All notable changes to this project are documented in this file.
 - **✨ Build with Copilot (SMART popup).** The task modal has a collapsible **🎯 Make it SMART**
   block with a live quality meter and a Copilot button that turns a plain-language description
   into a drafted SMART task (title, goal, measure, why, steps, due, priority, importance,
-  urgency) for you to review and edit before saving. If no chat session is attached it degrades
-  to a clear step-by-step card with a copy-able prompt, so it still works from the Copilot App.
+  urgency). The draft preview offers **✅ Create this task** to save it as-is and **✏️ Edit first**
+  to open it in the task form. If no chat session is attached it degrades to a clear step-by-step
+  card with a copy-able prompt, so it still works from the Copilot App.
   The toolbar also gained **🎯 Focus plan** and **🧭 Triage with Copilot**.
 - **`prioritization-coach` skill.** A new skill that explains the matrix, runs a triage pass over
   unclassified tasks, produces a focus plan or a day plan, and coaches on rebalancing when Q1 is

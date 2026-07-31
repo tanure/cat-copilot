@@ -1229,6 +1229,18 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
 {"title":"...","goal":"...","measure":"...","steps":"...","why":"...","due":"YYYY-MM-DD","priority":"P0|P1|P2|P3","tags":"comma,separated","context":"...","importance":"High|Low","urgency":"High|Low"}`;
     }
 
+    /** Pull the draft object out of whatever Copilot replied with — bare JSON, a
+     *  code fence, or JSON with a sentence wrapped around it. Returns null if
+     *  there is no usable object in there. */
+    function parseDraft(text) {
+        const match = String(text || "").match(/\{[\s\S]*\}/);
+        if (!match) return null;
+        try {
+            const parsed = JSON.parse(match[0]);
+            return parsed && parsed.title ? parsed : null;
+        } catch { return null; }
+    }
+
     /**
      * "Build with Copilot" popup. Describe the task in plain words; Copilot drafts
      * every SMART field and both Eisenhower axes, and you edit before saving.
@@ -1250,18 +1262,32 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
             preview.classList.remove("hidden");
             preview.innerHTML = "";
             const prompt = smartDraftPrompt(ta.value.trim() || "<describe your task here>", seed);
+            const paste = el("textarea", { class: "md-input", rows: 4, placeholder: '{"title":"…","goal":"…", …}' });
             preview.append(
                 el("div", { class: "copilot-fallback" },
-                    el("h4", { html: "💬 No chat session attached" }),
+                    el("h4", { html: "💬 Copilot didn't answer here" }),
                     el("p", { class: "muted small", text: reason || "This canvas isn't connected to a Copilot chat right now — but you can still get the same result in three steps." }),
                     el("ol", { class: "copilot-steps" },
                         el("li", { html: "Copy the prompt below." }),
                         el("li", { html: "Paste it into GitHub Copilot (the app, the CLI, or the chat panel next to this canvas)." }),
-                        el("li", { html: "Paste Copilot's answer back into the task form, or just ask Copilot to run <code>cat-pilot task add</code> with those values." })),
+                        el("li", { html: "Paste Copilot's JSON answer into the box below and press <strong>Use this answer</strong>." })),
                     el("pre", { class: "copilot-prompt", text: prompt }),
                     el("button", {
                         class: "btn btn-sm", html: "📋 Copy prompt",
                         onclick: () => { navigator.clipboard.writeText(prompt).then(() => toast("Prompt copied", "Paste it into Copilot", "ok"), () => toast("Copy failed", "Select the text manually", "err")); },
+                    }),
+                    // The escape hatch that makes this popup impossible to get stuck in:
+                    // if Copilot answered anywhere at all, that answer can still become
+                    // the task without retyping a thing.
+                    el("h4", { class: "cf-paste-title", html: "⬇️ Already have Copilot's answer?" }),
+                    paste,
+                    el("button", {
+                        class: "btn btn-sm btn-primary", html: "Use this answer",
+                        onclick: () => {
+                            const parsed = parseDraft(paste.value);
+                            if (!parsed) { toast("Couldn't read that", "Paste the JSON object Copilot replied with", "err"); return; }
+                            renderPreview(parsed);
+                        },
                     }),
                     el("p", { class: "muted small", html: "Prefer the terminal? <code>cat-pilot task add \"Your title\" --guided</code> walks you through the same questions." })));
         }
@@ -1270,17 +1296,22 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
             const description = ta.value.trim();
             if (!description) { toast("Describe the task first", "Even one line is enough", "err"); return; }
             gen.disabled = true; gen.innerHTML = "⏳ Thinking…";
-            status.textContent = "Asking Copilot to shape this into a SMART task…";
+            // A silent spinner for up to two minutes reads as "frozen", so keep a
+            // running clock next to it and say where the answer is coming from.
+            const startedAt = Date.now();
+            status.textContent = "Asking Copilot to shape this into a SMART task… (0s)";
+            const tick = setInterval(() => {
+                const s = Math.round((Date.now() - startedAt) / 1000);
+                status.textContent = `Asking Copilot to shape this into a SMART task… (${s}s)${s > 25 ? " — it's answering in the chat, hang on" : ""}`;
+            }, 1000);
             try {
-                const r = await api("/api/agent/generate", { method: "POST", body: { prompt: smartDraftPrompt(description, seed), timeout: 120000 } });
-                if (!r || r.ok === false) { showFallback(r && r.error ? r.error : ""); status.textContent = ""; return; }
-                let data = null;
-                try { const mt = (r.content || "").match(/\{[\s\S]*\}/); data = mt ? JSON.parse(mt[0]) : null; } catch { data = null; }
-                if (!data || !data.title) { status.textContent = ""; showFallback("Copilot answered, but not in the expected format."); return; }
-                status.textContent = "";
+                const r = await api("/api/agent/generate", { method: "POST", body: { prompt: smartDraftPrompt(description, seed), timeout: 180000, expect: "json" } });
+                if (!r || r.ok === false) { showFallback(r && r.error ? r.error : ""); return; }
+                const data = parseDraft(r.content);
+                if (!data) { showFallback("Copilot answered, but not in the expected format — paste its reply below."); return; }
                 renderPreview(data);
-            } catch (e) { status.textContent = ""; showFallback(e.message); }
-            finally { gen.disabled = false; gen.innerHTML = "✨ Draft it"; }
+            } catch (e) { showFallback(e.message); }
+            finally { clearInterval(tick); status.textContent = ""; gen.disabled = false; gen.innerHTML = "✨ Draft it"; }
         } });
 
         function renderPreview(d) {

@@ -45,6 +45,15 @@ All notable changes to this project are documented in this file.
   `GET /api/tasks/smart-meta`, `PUT /api/tasks/:id/smart`.
 
 ### Fixed
+- **"Build with Copilot" could hang with the popup open and nothing to show.** The canvas
+  agent bridge used `session.sendAndWait`, which settles on the *first* `session.idle` it
+  observes and returns `undefined` when no assistant message landed in that window — so a
+  stray idle handed the popup an empty string and it could only report "Copilot answered,
+  but not in the expected format", even though the real answer arrived seconds later. The
+  bridge now listens for the answer itself, ignores an idle it has nothing to show for, and
+  keeps waiting for a reply that actually parses. The popup shows a running clock while it
+  waits, and its fallback card gained a **paste Copilot's answer** box, so a draft produced
+  anywhere — the chat panel, the Copilot App, the CLI — can still become the task.
 - **Phantom task from the tasks-file parser.** The table header index was not reset when the
   parser crossed the `## Completed Tasks` heading, so the completed table's header row was
   parsed as a task and surfaced as a bogus `{ id: 0 }` entry.

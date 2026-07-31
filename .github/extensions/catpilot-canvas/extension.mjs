@@ -212,14 +212,77 @@ async function handleApi(req, url) {
         return { ok: true, id };
     }
     if (p === "/api/agent/generate" && m === "POST") {
-        const { prompt, timeout } = await readBody(req);
-        if (!prompt || !String(prompt).trim()) throw new Error("prompt is required");
-        if (!sessionRef?.sendAndWait) return { ok: false, error: "No active session." };
-        const ev = await sessionRef.sendAndWait(String(prompt), Number(timeout) || 120000);
-        return { ok: true, content: ev?.data?.content || "" };
+        const body = await readBody(req);
+        if (!body?.prompt || !String(body.prompt).trim()) throw new Error("prompt is required");
+        return await generateFromAgent(String(body.prompt), Number(body.timeout) || 120000, body.expect === "json");
     }
 
     return null; // not an API route we know
+}
+
+/**
+ * Ask the attached Copilot session a question and return its answer.
+ *
+ * We deliberately do NOT use `session.sendAndWait`: it resolves on the *first*
+ * `session.idle` it observes and returns `undefined` when no assistant message
+ * was captured in that window. A stray idle — the tail of an earlier turn, or a
+ * second request racing the first — therefore hands the caller an empty string,
+ * which the UI can only report as "Copilot answered, but not in the expected
+ * format" even though the real answer arrives moments later.
+ *
+ * Instead we listen ourselves and settle on the first outcome that is actually
+ * useful: an answer that parses as JSON, or an answer followed by idle. An idle
+ * with nothing to show for it is ignored, not treated as the result. Callers
+ * that need JSON pass `expectJson`, which also makes a non-JSON reply keep the
+ * request open rather than settling on chatter.
+ */
+function generateFromAgent(prompt, timeoutMs, expectJson = false) {
+    if (!sessionRef?.on || !sessionRef?.send) return { ok: false, error: "No active session." };
+    return new Promise((resolve) => {
+        let settled = false, sent = false, answer = "", off = null, timer = null;
+        const finish = (payload) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            try { off?.(); } catch { /* already gone */ }
+            resolve(payload);
+        };
+        const isJson = (text) => {
+            const match = String(text).match(/\{[\s\S]*\}/);
+            if (!match) return false;
+            try { return !!JSON.parse(match[0]); } catch { return false; }
+        };
+
+        off = sessionRef.on((ev) => {
+            const type = ev?.type;
+            if (type === "assistant.message") {
+                // Ignore anything that predates our own send — it belongs to
+                // whatever the session was doing before we asked.
+                if (!sent) return;
+                const content = String(ev?.data?.content || "");
+                if (!content.trim()) return;
+                if (expectJson && !isJson(content)) return; // chatter, not the answer
+                answer = content;
+                if (isJson(content)) finish({ ok: true, content });
+            } else if (type === "session.idle") {
+                if (answer.trim()) finish({ ok: true, content: answer });
+                // else: not our idle — keep waiting for the real answer.
+            } else if (type === "session.error") {
+                finish({ ok: false, error: ev?.data?.message || "The Copilot session reported an error." });
+            }
+        });
+
+        timer = setTimeout(() => {
+            log(`agent/generate timed out after ${timeoutMs}ms (answer=${answer ? "partial" : "none"})`, "warn");
+            finish(answer.trim()
+                ? { ok: true, content: answer }
+                : { ok: false, error: `No answer from Copilot within ${Math.round(timeoutMs / 1000)}s. It may still be working — try again, or paste its reply below.` });
+        }, timeoutMs);
+
+        Promise.resolve(sessionRef.send(prompt))
+            .then(() => { sent = true; })
+            .catch((e) => finish({ ok: false, error: e?.message || "Could not reach the Copilot session." }));
+    });
 }
 
 // Reject cross-origin / DNS-rebinding attempts against the loopback API. The

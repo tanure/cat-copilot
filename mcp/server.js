@@ -138,6 +138,15 @@ server.registerTool('task_focus', {
   }
 }, async (args) => fromCore(await core.task_focus(args)));
 
+server.registerTool('task_carry', {
+  title: 'Carry tasks forward',
+  description: 'Move open tasks that are still filed under an earlier period (month/week/day) into the current one. CatPilot partitions storage by period, so after a rollover unfinished work stays in the period it was created in — which makes the current period look empty. Use this when a task listing reports stranded tasks, or the user asks where their tasks went. Completed tasks stay where they were finished.',
+  inputSchema: {
+    dryRun: z.boolean().optional().describe('Preview what would move without writing anything'),
+    ids: z.array(z.number().int()).optional().describe('Only carry these task IDs (default: all open stranded tasks)')
+  }
+}, async (args) => fromCore(await core.task_carry(args)));
+
 server.registerTool('task_complete', {
   title: 'Complete task',
   description: 'Mark a task as Done by its numeric ID.',

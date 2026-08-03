@@ -116,11 +116,33 @@ an automatic placement is never a black box. Anything the user sets explicitly a
 
 CLI: `cat-pilot task matrix [--quadrant q1|q2|q3|q4] [--status …] [--json]`,
 `cat-pilot task focus [--limit N]`, `cat-pilot task list --quadrant q2`.
-MCP tools: `task_matrix`, `task_focus`.
+MCP tools: `task_matrix`, `task_focus`, `task_carry`.
 In the canvas, the Tasks page has a **🎯 Matrix** view mode with drag-and-drop between
 quadrants (dropping a card pins its importance/urgency explicitly).
 
 For triage, rebalancing and day planning, use the **prioritization-coach** skill.
+
+## Tasks stranded in an earlier period
+
+Storage is partitioned by period (month by default). A task lives in the file for the period it
+was **created** in, and nothing moves it automatically — so after a rollover the current
+period's `tasks.md` can be empty while a dozen tasks are still open in the previous one. To the
+user this looks exactly like data loss, and *"where are my tasks?"* is the question it produces.
+
+`list_tasks` returns a `stranded` summary (`{ total, partitions, current, hint }`, or `null`
+when there is nothing to report). **Always check it**: if the current period looks empty or
+thin and `stranded` is set, say where the tasks actually are before anything else — nothing is
+lost, they are filed under an earlier period.
+
+Then offer to move them: `task_carry` (`dryRun`, `ids`) or `cat-pilot task carry [--dry-run]
+[--ids 4,12]`. Carrying **moves** open tasks into the current period, keeping their ID where
+it is free, preserving SMART details and the progress log, and appending a
+`Carried forward from …` log entry. Completed tasks stay where they were finished, so each
+period keeps an honest record of what got done there.
+
+Do not carry silently — show what will move first. A task that has been carried several months
+running is usually a Q4 task in disguise; that is worth saying out loud rather than moving it
+again.
 
 ## Task statuses
 Canonical stored statuses are **`Open`** (shown as "To do" in the canvas),

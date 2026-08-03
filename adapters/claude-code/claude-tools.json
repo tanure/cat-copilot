@@ -120,6 +120,17 @@
     }
   },
   {
+    "name": "task_carry",
+    "description": "Move open tasks that are still filed under an earlier period (month/week/day) into the current one. Use this when list_tasks reports a 'stranded' summary, or the user asks where their tasks went after a period rolled over. Completed tasks stay where they were finished.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "dryRun": { "type": "boolean", "description": "Preview what would move without writing anything" },
+        "ids": { "type": "array", "items": { "type": "number" }, "description": "Only carry these task IDs (default: all open stranded tasks)" }
+      }
+    }
+  },
+  {
     "name": "complete_task",
     "description": "Mark a task as completed",
     "input_schema": {

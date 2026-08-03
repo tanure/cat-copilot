@@ -377,6 +377,84 @@ async function testGeminiAdapter() {
 }
 
 // ============================================================================
+// CARRY-FORWARD (cross-partition) TESTS
+// ============================================================================
+
+/**
+ * Storage is partitioned by period, so open work left in a previous month is
+ * invisible from the current one. These tests cover the detect-and-move path,
+ * including that SMART details and the task log survive the trip.
+ */
+async function testCarryForward() {
+  log('blue', '\n📦 Testing carry-forward across partitions');
+
+  const cliUtils = await import('../lib/cli-utils.js');
+  const utils = cliUtils.default || cliUtils;
+  const config = utils.loadConfig();
+
+  // Build a partition one month behind the current one and plant tasks in it.
+  const current = utils.getPartitionFolder('month');
+  const [year, ym] = current.split('/');
+  const month = Number(ym.split('-')[1]);
+  const prevDate = new Date(Date.UTC(Number(year), month - 2, 1));
+  const prev = `${prevDate.getUTCFullYear()}/${prevDate.getUTCFullYear()}-${String(prevDate.getUTCMonth() + 1).padStart(2, '0')}`;
+  const prevPath = utils.resolveFilePathInPartition('tasks', config, prev);
+
+  fs.mkdirSync(path.dirname(prevPath), { recursive: true });
+  fs.writeFileSync(prevPath, utils.formatTasksTable([
+    {
+      id: 901, status: 'Open', title: 'Stranded SMART task', dueDate: '2099-01-05',
+      priority: 'P1', tags: 'carry', context: 'left behind', project: '',
+      smart: { goal: 'Finish the migration', measure: 'All checks green', why: 'Unblocks Q3', steps: 'a -> b', importance: 'High', urgency: 'Low' },
+      log: [{ date: '2099-01-01 09:00', text: 'kick-off' }]
+    },
+    { id: 902, status: 'Done', title: 'Already finished', dueDate: '', priority: 'Med', tags: '', context: '', project: '', smart: {}, log: [] }
+  ]), 'utf8');
+
+  try {
+    const stranded = utils.findStrandedTasks(config);
+    const group = stranded.find(g => g.partition === prev);
+    logTest('claude', 'findStrandedTasks skips completed work', !!group && group.tasks.length === 1 && group.tasks[0].id === 901,
+      `${group?.tasks.length} open task(s) found in ${prev}`);
+  } catch (err) {
+    logTest('claude', 'findStrandedTasks skips completed work', false, err.message);
+  }
+
+  try {
+    const preview = await claudeTools.task_carry({ dryRun: true });
+    const untouched = utils.parseTasksTable(fs.readFileSync(prevPath, 'utf8')).some(t => t.id === 901);
+    logTest('claude', 'task_carry --dry-run writes nothing', preview.success && preview.data.moved.length >= 1 && untouched,
+      `${preview.data?.moved?.length} would move, source still intact`);
+  } catch (err) {
+    logTest('claude', 'task_carry --dry-run writes nothing', false, err.message);
+  }
+
+  try {
+    const res = await claudeTools.task_carry({});
+    const carried = res.data.moved.find(t => t.title === 'Stranded SMART task');
+    const now = utils.parseTasksTable(fs.readFileSync(utils.resolveFilePath('tasks', config), 'utf8')).find(t => t.title === 'Stranded SMART task');
+    const left = utils.parseTasksTable(fs.readFileSync(prevPath, 'utf8'));
+
+    logTest('claude', 'task_carry moves open tasks into the current period', res.success && !!now, `moved into ${res.data?.to}`);
+    logTest('claude', 'task_carry preserves SMART details', now?.smart?.goal === 'Finish the migration' && now?.smart?.importance === 'High',
+      `goal="${now?.smart?.goal}"`);
+    logTest('claude', 'task_carry preserves and annotates the log',
+      now?.log?.some(e => e.text === 'kick-off') && now?.log?.some(e => e.text.startsWith('Carried forward from')),
+      `${now?.log?.length} log entries`);
+    logTest('claude', 'task_carry leaves completed tasks behind',
+      left.length === 1 && left[0].id === 902 && !left.some(t => t.id === 901),
+      `${left.length} task(s) remain in ${prev}`);
+    logTest('claude', 'task_carry is idempotent', (await claudeTools.task_carry({})).data.moved.length === 0,
+      'second run moves nothing');
+    logTest('claude', 'list_tasks stops reporting stranded work', (await claudeTools.list_tasks({ status: 'all' })).stranded === null,
+      'stranded summary cleared');
+    if (carried) log('dim', `     carried as #${carried.id}`);
+  } catch (err) {
+    logTest('claude', 'task_carry moves open tasks into the current period', false, err.message);
+  }
+}
+
+// ============================================================================
 // SUMMARY AND REPORTING
 // ============================================================================
 
@@ -433,6 +511,7 @@ async function main() {
   try {
     await testClaudeAdapter();
     await testGeminiAdapter();
+    await testCarryForward();
     printSummary();
   } catch (err) {
     log('red', `\n❌ Fatal error: ${err.message}`);

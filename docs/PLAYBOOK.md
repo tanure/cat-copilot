@@ -49,6 +49,13 @@ lands in the same vault.
 
 ## Monthly (30 min)
 **Connect the dots.**
+- **Carry your open work forward.** CatPilot files tasks by period, so on the 1st the new
+  month starts empty and last month's unfinished work is still filed under last month.
+  `cat-pilot task list` says so, and the canvas Tasks page shows a banner. Run
+  `cat-pilot task carry` (preview with `--dry-run`) to move it across — SMART details and the
+  progress log come with it, and completed tasks stay behind as the record of what got done.
+  It is also a natural moment to *not* carry something forward: if a task has been rolling for
+  three months, it is a Q4 task pretending to be work. Drop it instead.
 - Open Obsidian. Visit the `Dashboards/` pages (Tasks, Knowledge, Learning, Growth, Projects, Achievements).
 - Link related notes; add tags so the graph connects knowledge, projects, learning, and achievements.
 - Convert finished learning into a **growth** entry (what you can now do).

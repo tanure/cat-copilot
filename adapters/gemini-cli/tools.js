@@ -138,6 +138,13 @@ async function catpilot_task_focus(params = {}) {
   return { success: true, result: { ...r.data } };
 }
 
+/** Move open tasks from earlier periods into the current one. */
+async function catpilot_task_carry(params = {}) {
+  const r = await core.task_carry(params);
+  if (!r || r.success === false) return { success: false, error: r?.error || 'unknown error' };
+  return { success: true, result: { ...r.data } };
+}
+
 async function catpilot_complete_task(params) {
   try {
     if (params.id === undefined) {
@@ -278,6 +285,7 @@ async function handleToolCall(toolName, params) {
     catpilot_set_task_smart,
     catpilot_task_matrix,
     catpilot_task_focus,
+    catpilot_task_carry,
     catpilot_complete_task,
     catpilot_add_journal,
     catpilot_list_journal,
@@ -301,6 +309,7 @@ export {
   catpilot_set_task_smart,
   catpilot_task_matrix,
   catpilot_task_focus,
+  catpilot_task_carry,
   catpilot_complete_task,
   catpilot_add_journal,
   catpilot_list_journal,

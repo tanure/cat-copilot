@@ -41,7 +41,8 @@ a large Q3 means other people's priorities are setting your agenda; a large Q4 m
 | `task_matrix` | Every task grouped by quadrant, then by Overdue / Today / Next 7 days / Later / No date / Completed. Also returns `insights` (counts + coaching hints). |
 | `task_focus` | Ranked "what to do next" list with a `focusReason` and a SMART `nudge` per task. |
 | `task_smart_set` | Pin `importance` / `urgency`, or fill in `goal` / `measure` / `steps` / `why`. |
-| `list_tasks` / `task_list` | Filter by `quadrant`, status, tag or project. |
+| `list_tasks` / `task_list` | Filter by `quadrant`, status, tag or project. Its `stranded` field tells you when open work is filed under an earlier period. |
+| `task_carry` | Move open tasks from an earlier period into the current one. Supports `dryRun` and `ids`. |
 
 CLI equivalents: `cat-pilot task matrix`, `cat-pilot task focus --limit 5`,
 `cat-pilot task smart <id> [--guided]`, `cat-pilot task list --quadrant q2`.
@@ -56,6 +57,10 @@ guessed. **Only ever propose changes to derived placements** unless the user ask
 2. Answer with a short ranked list: title, quadrant, deadline, one-line reason.
 3. Close with **one** concrete suggestion — start the top item, or, if Q1 is overloaded,
    name the specific task to reschedule first.
+
+> If the focus list comes back empty or suspiciously short, call `list_tasks` and check its
+> `stranded` field before concluding there is nothing to do. Tasks are filed by period and do
+> not follow the calendar forward — say where they are, then offer `task_carry`.
 4. Do not dump the whole matrix unless asked.
 
 ### 2. Triage

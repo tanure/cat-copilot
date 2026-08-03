@@ -41,8 +41,21 @@ All notable changes to this project are documented in this file.
 - **`prioritization-coach` skill.** A new skill that explains the matrix, runs a triage pass over
   unclassified tasks, produces a focus plan or a day plan, and coaches on rebalancing when Q1 is
   overloaded — proposing changes with reasons and only applying them once you confirm.
+- **Carry tasks forward across periods.** CatPilot files tasks under the period they were
+  created in (`<root>/2026/2026-08/tasks.md` by default), and nothing ever moved them — so on
+  the 1st of a month the Tasks page went blank and every open task silently stayed behind.
+  Nothing was lost, but there was no way to tell that from any surface. Now the CLI prints
+  where the open work actually is (`cat-pilot task list`), the canvas Tasks page shows a
+  banner naming the period and offering a one-click **📦 Carry them forward**, and
+  `list_tasks` returns a `stranded` summary so an agent can answer *"where are my tasks?"*
+  without guessing. `cat-pilot task carry [--dry-run] [--ids 4,12]` (MCP `task_carry`, adapter
+  `task_carry` / `catpilot_task_carry`, `POST /api/tasks/carry`) **moves** open tasks into the
+  current period, keeping the original ID where it is free, preserving SMART details and the
+  progress log, and appending a `Carried forward from …` log entry. Completed tasks stay where
+  they were finished, so each period keeps an honest record of what got done there.
 - **New REST routes:** `GET /api/tasks/matrix`, `GET /api/tasks/focus`,
-  `GET /api/tasks/smart-meta`, `PUT /api/tasks/:id/smart`.
+  `GET /api/tasks/smart-meta`, `PUT /api/tasks/:id/smart`,
+  `GET /api/tasks/stranded`, `POST /api/tasks/carry`.
 
 ### Fixed
 - **"Build with Copilot" could hang with the popup open and nothing to show.** The canvas

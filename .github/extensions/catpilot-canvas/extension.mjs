@@ -71,6 +71,10 @@ async function handleApi(req, url) {
     // Tasks
     if (p === "/api/tasks" && m === "GET") return { tasks: store.listTasks(url.searchParams.get("status") || "all") };
     if (p === "/api/tasks" && m === "POST") return { task: store.addTask(await readBody(req)) };
+    if (p === "/api/tasks/carry" && m === "POST") {
+        const body = (await readBody(req)) || {};
+        return store.carryForwardTasks({ dryRun: !!body.dryRun, ids: Array.isArray(body.ids) ? body.ids.map(Number) : null });
+    }
     if (p === "/api/tasks/matrix" && m === "GET") {
         return store.taskMatrix({
             quadrant: url.searchParams.get("quadrant") || undefined,
@@ -78,6 +82,7 @@ async function handleApi(req, url) {
         });
     }
     if (p === "/api/tasks/focus" && m === "GET") return store.taskFocus({ limit: url.searchParams.get("limit") || 5 });
+    if (p === "/api/tasks/stranded" && m === "GET") return store.strandedTasks();
     if (p === "/api/tasks/smart-meta" && m === "GET") {
         return { quadrants: store.eisen.QUADRANTS, dimensions: store.eisen.SMART_DIMENSIONS, timeGroups: store.eisen.TIME_GROUPS };
     }

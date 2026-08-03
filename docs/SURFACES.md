@@ -12,6 +12,7 @@ sync no matter which directory you capture from.
 | SMART task details | ✅ | ✅ | ✅ | ✅ | ✅ `task_add`, `task_smart_set` |
 | Eisenhower Matrix | ✅ `task matrix` | ✅ | ✅ | ✅ | ✅ `task_matrix` |
 | Focus plan / triage | ✅ `task focus` | ✅ | ✅ | ✅ | ✅ `task_focus` |
+| Carry tasks forward | ✅ `task carry` | ✅ | ✅ | ✅ | ✅ `task_carry` |
 | Journal | ✅ | ✅ | ✅ | ✅ | ✅ `journal_*` |
 | Milestones | ➖ | ✅ | ✅ | ✅ | ➖ (skill) |
 | Knowledge Base | ✅ | ✅ | ✅ | ✅ | ✅ `kb_*` (`memo_*` aliases) |

@@ -54,6 +54,28 @@ function readTasks() {
  * Each handler receives params and returns {success, data|error}
  */
 
+/**
+ * Open tasks left behind in an earlier partition.
+ *
+ * Returns null when there is nothing to report, so the common case adds no
+ * noise to the tool payload. Never throws: a broken older file must not take
+ * down a plain task listing.
+ */
+function strandedSummary(config) {
+  try {
+    const groups = cliUtils.findStrandedTasks(config);
+    if (!groups.length) return null;
+    return {
+      total: groups.reduce((n, g) => n + g.tasks.length, 0),
+      partitions: groups.map(g => g.partition),
+      current: cliUtils.getPartitionFolder(config.storage.partitioning),
+      hint: 'These tasks are open but filed under an earlier period. Use task_carry to move them into the current one.'
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function list_tasks(params = {}) {
   try {
     const config = cliUtils.loadConfig();
@@ -77,7 +99,10 @@ async function list_tasks(params = {}) {
       success: true,
       data: filtered,
       path: tasksPath,
-      count: filtered.length
+      count: filtered.length,
+      // Surfaced on every list so the agent can answer "where are my tasks?"
+      // without the user having to know that storage is partitioned by period.
+      stranded: strandedSummary(config)
     };
   } catch (err) {
     return { success: false, error: err.message };
@@ -188,6 +213,24 @@ async function task_focus(params = {}) {
       count: focus.length,
       path: tasksPath
     };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function task_carry(params = {}) {
+  try {
+    const config = cliUtils.loadConfig();
+    const dryRun = params.dryRun === true || params.dry_run === true;
+    const ids = Array.isArray(params.ids) && params.ids.length
+      ? params.ids.map(n => parseInt(n, 10)).filter(n => !isNaN(n))
+      : null;
+    const stranded = cliUtils.findStrandedTasks(config);
+    if (!stranded.length) {
+      return { success: true, data: { moved: [], from: [], to: cliUtils.getPartitionFolder(config.storage.partitioning), dryRun }, count: 0 };
+    }
+    const result = cliUtils.carryForwardTasks(config, { dryRun, ids });
+    return { success: true, data: result, count: result.moved.length };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -591,6 +634,7 @@ async function handleToolCall(toolName, params) {
     set_task_smart,
     task_matrix,
     task_focus,
+    task_carry,
     complete_task,
     set_task_status,
     remove_task,
@@ -625,6 +669,7 @@ export {
   set_task_smart,
   task_matrix,
   task_focus,
+  task_carry,
   complete_task,
   set_task_status,
   remove_task,

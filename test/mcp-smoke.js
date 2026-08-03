@@ -69,7 +69,7 @@ function assert(cond, msg) {
     'project_item_update', 'project_complete', 'achievement_add', 'achievement_list',
     'pomodoro_start', 'pomodoro_status', 'pomodoro_complete',
     'pomodoro_cancel', 'pomodoro_list', 'pomodoro_stats', 'pomodoro_report',
-    'task_smart_set', 'task_matrix', 'task_focus'];
+    'task_smart_set', 'task_matrix', 'task_focus', 'task_carry'];
   for (const name of expected) assert(names.includes(name), `exposes ${name}`);
 
   const json = (res) => JSON.parse(res.content[0].text);

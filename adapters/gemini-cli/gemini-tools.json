@@ -115,6 +115,17 @@
       }
     },
     {
+      "name": "catpilot_task_carry",
+      "description": "Move open tasks still filed under an earlier period (month/week/day) into the current one. Use when a task listing reports stranded tasks, or the user asks where their tasks went after a period rolled over. Completed tasks stay where they were finished.",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "dryRun": { "type": "BOOLEAN", "description": "Preview what would move without writing anything" },
+          "ids": { "type": "ARRAY", "items": { "type": "NUMBER" }, "description": "Only carry these task IDs (default: all open stranded tasks)" }
+        }
+      }
+    },
+    {
       "name": "catpilot_complete_task",
       "description": "Mark a task as completed",
       "inputSchema": {

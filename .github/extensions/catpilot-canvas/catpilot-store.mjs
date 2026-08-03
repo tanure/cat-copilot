@@ -144,6 +144,122 @@ function resolveStableDir(type, config) {
     return path.join(storageRoot, dirName);
 }
 
+// Resolve a file inside an explicit partition instead of today's, so
+// carry-forward can read a previous month/week/day without faking the clock.
+function resolveFilePathInPartition(type, config, partition) {
+    const current = path.normalize(getPartitionFolder(config.storage.partitioning));
+    const full = resolveFilePath(type, config);
+    const at = full.indexOf(current);
+    return path.join(full.slice(0, at), partition, full.slice(at + current.length));
+}
+
+// Every partition folder that already exists under storage.root, oldest first.
+// We scan instead of computing "the previous month" because a partition is only
+// created when something is written to it — after a quiet month the immediately
+// preceding folder is absent and a naive step-back would find nothing.
+function listPartitions(config) {
+    const base = config.__baseDir || process.cwd();
+    const storageRoot = path.resolve(base, config.storage.root);
+    if (!fs.existsSync(storageRoot)) return [];
+    const mode = config.storage.partitioning || "month";
+    const depth = mode === "day" ? 3 : 2;
+    const shaped = {
+        day: [/^\d{4}$/, /^\d{4}-\d{2}$/, /^\d{4}-\d{2}-\d{2}$/],
+        week: [/^\d{4}$/, /^W\d{2}$/],
+        month: [/^\d{4}$/, /^\d{4}-\d{2}$/],
+    }[mode] || [/^\d{4}$/, /^\d{4}-\d{2}$/];
+
+    const out = [];
+    const walk = (dir, parts) => {
+        if (parts.length === depth) { out.push(parts.join("/")); return; }
+        let entries = [];
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        for (const e of entries) {
+            if (!e.isDirectory()) continue;
+            if (!shaped[parts.length] || !shaped[parts.length].test(e.name)) continue;
+            walk(path.join(dir, e.name), [...parts, e.name]);
+        }
+    };
+    walk(storageRoot, []);
+    return out.sort();
+}
+
+/**
+ * Open tasks sitting in partitions older than the current one.
+ *
+ * Partitioning is a filing convention, not a deadline — unfinished work does not
+ * stop being unfinished because the calendar rolled over. Surfacing this is what
+ * stops the Tasks page looking empty (and alarming) on the 1st of the month.
+ */
+export function strandedTasks() {
+    const config = loadConfig();
+    const current = getPartitionFolder(config.storage.partitioning);
+    const groups = [];
+    for (const partition of listPartitions(config)) {
+        if (partition >= current) continue;
+        const filePath = resolveFilePathInPartition("tasks", config, partition);
+        if (!fs.existsSync(filePath)) continue;
+        let tasks = [];
+        try { tasks = parseTasksTable(fs.readFileSync(filePath, "utf8")); } catch { continue; }
+        const open = tasks.filter((t) => t.id && String(t.status).toLowerCase() !== "done");
+        if (open.length) groups.push({ partition, path: filePath, tasks: open.map(decorateTask) });
+    }
+    return {
+        current,
+        total: groups.reduce((n, g) => n + g.tasks.length, 0),
+        partitioning: config.storage.partitioning || "month",
+        groups,
+    };
+}
+
+/**
+ * Move open tasks from older partitions into the current one.
+ *
+ * Moved, not copied: two open copies of the same work means two sources of
+ * truth. Completed tasks stay where they were finished so each partition keeps
+ * an honest record of what actually got done there. SMART details and the
+ * progress log travel along, and the original ID is preserved when it is free
+ * in the target so "#21" still means the same task tomorrow.
+ */
+export function carryForwardTasks({ dryRun = false, ids = null } = {}) {
+    const config = loadConfig();
+    const { groups, current } = strandedTasks();
+    const targetPath = resolveFilePath("tasks", config);
+    const targetContent = fs.existsSync(targetPath) ? fs.readFileSync(targetPath, "utf8") : "";
+    const targetTasks = parseTasksTable(targetContent);
+    const usedIds = new Set(targetTasks.map((t) => t.id));
+
+    const moved = [];
+    const rewrites = [];
+    for (const group of groups) {
+        const taking = ids ? group.tasks.filter((t) => ids.includes(t.id)) : group.tasks;
+        if (!taking.length) continue;
+        for (const task of taking) {
+            const carried = { ...task, smart: { ...task.smart }, log: [...(task.log || [])] };
+            const originalId = carried.id;
+            if (usedIds.has(carried.id)) carried.id = getNextTaskId([...targetTasks, ...moved]);
+            usedIds.add(carried.id);
+            carried.log.push({
+                date: taskCommentStamp(),
+                text: `Carried forward from ${group.partition}${carried.id !== originalId ? ` (was #${originalId})` : ""}`,
+            });
+            moved.push(carried);
+            targetTasks.push(carried);
+        }
+        const takenIds = new Set(taking.map((t) => t.id));
+        const remaining = parseTasksTable(fs.readFileSync(group.path, "utf8")).filter((t) => !takenIds.has(t.id));
+        rewrites.push({ path: group.path, content: formatTasksTable(remaining) });
+    }
+
+    if (!dryRun && moved.length) {
+        ensureDir(path.dirname(targetPath));
+        fs.writeFileSync(targetPath, formatTasksTable(targetTasks), "utf8");
+        for (const r of rewrites) fs.writeFileSync(r.path, r.content, "utf8");
+    }
+
+    return { moved: moved.map(decorateTask), from: groups.map((g) => g.partition), to: current, dryRun };
+}
+
 function ensureDir(dir) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
@@ -373,12 +489,19 @@ function normalizeTaskStatus(value, fallback = "Open") {
     return match;
 }
 
-/** Attach the computed Eisenhower quadrant + SMART score to a task. */
+/**
+ * Attach the computed Eisenhower quadrant + SMART score to a task.
+ *
+ * `now` is guarded because this is a natural `.map(decorateTask)` target, and
+ * Array#map passes the index as the second argument — which would otherwise
+ * silently become the "current time" used to derive urgency.
+ */
 function decorateTask(task, now = new Date()) {
+    const at = now instanceof Date ? now : new Date();
     return {
         ...task,
         smart: eisen.normalizeSmart(task.smart),
-        eisenhower: eisen.classifyTask(task, now),
+        eisenhower: eisen.classifyTask(task, at),
         smartScore: eisen.smartScore(task),
     };
 }

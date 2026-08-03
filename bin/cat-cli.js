@@ -144,6 +144,26 @@ function smartMeter(task) {
   return `${cells}   ${s.score}/${s.max} ${s.label}`;
 }
 
+/**
+ * Tell you where your open work actually is.
+ *
+ * Storage is partitioned by month (or week/day), so on the 1st the current file
+ * is empty and every open task is still filed under the previous partition. That
+ * looks exactly like data loss if nobody says otherwise — so whenever the
+ * current partition is missing open work that exists further back, say so and
+ * point at the one command that fixes it.
+ */
+function printStrandedHint(config) {
+  let stranded = [];
+  try { stranded = cliUtils.findStrandedTasks(config); } catch { return; }
+  if (!stranded.length) return;
+  const total = stranded.reduce((n, g) => n + g.tasks.length, 0);
+  const where = stranded.map(g => `${g.partition} (${g.tasks.length})`).join(', ');
+  console.log(`💡 ${total} open task${total === 1 ? '' : 's'} still filed under ${where}.`);
+  console.log(`   Storage is partitioned by ${config.storage.partitioning}, so they stayed behind when the period rolled over.`);
+  console.log(`   Bring them into the current period: cat-pilot task carry   (preview with --dry-run)\n`);
+}
+
 /** Print the SMART block + quadrant for a task. */
 function printTaskSmart(task) {
   const s = eisen.normalizeSmart(task.smart);
@@ -286,6 +306,7 @@ taskCmd
 
       if (filtered.length === 0) {
         console.log(`\n📂 No ${options.status} tasks found in ${tasksPath}`);
+        printStrandedHint(config);
         return;
       }
 
@@ -300,6 +321,46 @@ taskCmd
         console.log(`| ${t.id} | ${t.status} | ${t.title} | ${due} | ${pri} | ${c.short}${c.source === 'derived' ? '?' : ''} | ${s.score}/${s.max} |`);
       });
       console.log();
+      printStrandedHint(config);
+    } catch (err) {
+      console.error(`❌ Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+taskCmd
+  .command('carry')
+  .description('Bring open tasks from previous periods into the current one')
+  .option('--dry-run', 'Show what would move without changing anything')
+  .option('--ids <ids>', 'Only carry these task IDs (comma-separated)')
+  .action((options) => {
+    try {
+      const config = cliUtils.loadConfig();
+      const ids = options.ids
+        ? options.ids.split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean)
+        : null;
+
+      const preview = cliUtils.carryForwardTasks(config, { dryRun: true, ids }, process.cwd());
+      if (!preview.moved.length) {
+        console.log(`\n✅ Nothing to carry — every open task is already in ${preview.to}.`);
+        return;
+      }
+
+      console.log(`\n${options.dryRun ? '🔍 Would carry' : '📦 Carrying'} ${preview.moved.length} open task${preview.moved.length === 1 ? '' : 's'} → ${preview.to}`);
+      console.log(`   from ${preview.from.join(', ')}\n`);
+      preview.moved.forEach(t => {
+        const due = t.dueDate ? ` · due ${t.dueDate}` : '';
+        console.log(`   #${t.id} ${t.title}${due}`);
+      });
+
+      if (options.dryRun) {
+        console.log(`\n   Run without --dry-run to move them. Completed tasks stay where they were finished.\n`);
+        return;
+      }
+
+      const result = cliUtils.carryForwardTasks(config, { ids }, process.cwd());
+      console.log(`\n✅ Moved ${result.moved.length} task${result.moved.length === 1 ? '' : 's'} into ${result.to}`);
+      console.log(`   Completed tasks stayed in ${result.from.join(', ')} as the record of what got done there.\n`);
     } catch (err) {
       console.error(`❌ Error: ${err.message}`);
       process.exit(1);

@@ -130,11 +130,19 @@ cat-pilot task matrix                   # the four quadrants, grouped by deadlin
 cat-pilot task matrix --quadrant q2     # just "Schedule"
 cat-pilot task focus --limit 5          # ranked "what to do next" + a reason each
 cat-pilot task list --quadrant q1
+cat-pilot task carry                    # bring open tasks forward from an earlier month
 ```
+
+CatPilot files tasks by period (month, by default), so unfinished work stays in the period it
+was created in. `task list` tells you when open tasks are sitting in an earlier period, and
+`task carry` (or the banner on the canvas Tasks page) moves them into the current one — the
+SMART details and progress log travel with them, and completed tasks stay where they were
+finished.
 
 In chat, just ask: *"what should I work on?"*, *"triage my tasks"*, *"plan my day"* — the
 **`prioritization-coach`** skill reads the matrix, proposes changes with reasons, and only
-applies them once you confirm. MCP/adapter tools: `task_smart_set`, `task_matrix`, `task_focus`.
+applies them once you confirm. MCP/adapter tools: `task_smart_set`, `task_matrix`, `task_focus`,
+`task_carry`.
 
 📚 **Start here:**
 [`docs/INSTALL.md`](docs/INSTALL.md) ·
@@ -512,6 +520,10 @@ cat-pilot task matrix --quadrant q1 --status all
 cat-pilot task matrix --json
 cat-pilot task focus --limit 5                # ranked next actions with a reason each
 cat-pilot task list --quadrant q2
+
+cat-pilot task carry --dry-run                # preview what would move forward
+cat-pilot task carry                          # move open tasks into the current period
+cat-pilot task carry --ids 4,12               # just these two
 ```
 
 #### Journal

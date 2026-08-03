@@ -525,10 +525,60 @@
         return tasks;
     }
 
+    /**
+     * CatPilot files tasks by period (month, by default). When the calendar rolls
+     * over, the new partition starts empty — so unfinished work from last month is
+     * still there, but nowhere you can see it, and the Tasks page looks wiped.
+     * This banner says where the work went and offers to bring it across.
+     */
+    async function strandedBanner() {
+        let info;
+        try { info = await api("/api/tasks/stranded"); } catch { return null; }
+        if (!info || !info.total) return null;
+        if (localStorage.getItem("cp-stranded-dismissed") === info.current) return null;
+
+        const where = info.groups.map((g) => g.partition).join(", ");
+        const noun = info.total === 1 ? "open task is" : "open tasks are";
+        const carry = el("button", {
+            class: "btn btn-primary btn-sm",
+            html: `📦 Carry ${info.total === 1 ? "it" : "them"} forward`,
+            onclick: async (e) => {
+                e.target.disabled = true;
+                e.target.textContent = "Carrying…";
+                try {
+                    const res = await api("/api/tasks/carry", { method: "POST", body: {} });
+                    toast("Carried forward", `${res.moved.length} task${res.moved.length === 1 ? "" : "s"} moved into ${res.to}`, "ok");
+                    go("tasks");
+                } catch (err) {
+                    e.target.disabled = false;
+                    e.target.innerHTML = "📦 Carry them forward";
+                    toast("Could not carry tasks", err.message, "err");
+                }
+            },
+        });
+
+        return el("div", { class: "notice" },
+            el("span", { class: "notice-icon", text: "📦" }),
+            el("div", { class: "notice-body" },
+                el("strong", { text: `${info.total} ${noun} still filed under ${where}` }),
+                el("div", { class: "muted small", text: `You're now in ${info.current}. Nothing is lost — CatPilot files tasks by ${info.partitioning}, and unfinished work stays in the period it was created in until you move it.` })),
+            el("div", { class: "notice-actions" }, carry,
+                el("button", {
+                    class: "btn btn-sm", text: "Dismiss",
+                    onclick: () => { localStorage.setItem("cp-stranded-dismissed", info.current); go("tasks"); },
+                })));
+    }
+
     VIEWS.tasks = async (root) => {
         const { tasks: allTasks } = await api("/api/tasks?status=all");
         const tasks = applyDueFilter(allTasks);
         root.innerHTML = "";
+        const stranded = await strandedBanner();
+        if (stranded) root.append(stranded);
+        // With everything stranded in an earlier period, "No tasks yet" is simply
+        // wrong — point at the banner instead of implying the list is really empty.
+        const noneTitle = stranded ? "Nothing filed in this period yet" : "No tasks yet";
+        const noneHint = stranded ? "Your open work is still in an earlier period — carry it forward above, or start something new." : null;
 
         // view switcher in topbar
         const seg = el("div", { class: "segmented" },
@@ -543,7 +593,7 @@
         if (taskViewMode === "calendar") {
             const holderCal = el("div", { id: "task-holder" });
             root.append(buildCalendarToolbar(allTasks), holderCal);
-            if (!allTasks.length) { holderCal.append(emptyState("🗒️", "No tasks yet", "Capture your first task and it will show up on the calendar.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
+            if (!allTasks.length) { holderCal.append(emptyState("🗒️", noneTitle, noneHint || "Capture your first task and it will show up on the calendar.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
             renderTaskCalendar(holderCal, allTasks);
             root._tasks = allTasks;
             return;
@@ -559,7 +609,7 @@
                 el("span", { class: "spacer" }),
                 el("button", { class: "btn btn-sm", html: "🎯 Focus plan", title: "Ranked next actions from the matrix", onclick: () => focusPlanModal() }),
                 el("button", { class: "btn btn-sm", html: "🧭 Triage with Copilot", title: "Ask Copilot to classify and rebalance your tasks", onclick: () => triageModal() })), holderMx);
-            if (!allTasks.length) { holderMx.append(emptyState("🗒️", "No tasks yet", "Add a task with a goal and a due date and it will land in the right quadrant.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
+            if (!allTasks.length) { holderMx.append(emptyState("🗒️", noneTitle, noneHint || "Add a task with a goal and a due date and it will land in the right quadrant.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
             await renderTaskMatrix(holderMx, allTasks);
             root._tasks = allTasks;
             return;
@@ -580,7 +630,7 @@
 
         const holder = el("div", { id: "task-holder" });
         root.append(holder);
-        if (!allTasks.length) { holder.append(emptyState("🗒️", "No tasks yet", "Capture your first task and it will sync straight to CatPilot.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
+        if (!allTasks.length) { holder.append(emptyState("🗒️", noneTitle, noneHint || "Capture your first task and it will sync straight to CatPilot.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
         if (!tasks.length) { holder.append(emptyState("🔍", "Nothing in this window", "No tasks match the current filter. Try “All”.")); return; }
         if (taskViewMode === "list") renderTaskList(holder, tasks);
         else renderTaskBoard(holder, tasks);

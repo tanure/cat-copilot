@@ -228,65 +228,108 @@ async function handleApi(req, url) {
 /**
  * Ask the attached Copilot session a question and return its answer.
  *
- * We deliberately do NOT use `session.sendAndWait`: it resolves on the *first*
- * `session.idle` it observes and returns `undefined` when no assistant message
- * was captured in that window. A stray idle — the tail of an earlier turn, or a
- * second request racing the first — therefore hands the caller an empty string,
- * which the UI can only report as "Copilot answered, but not in the expected
- * format" even though the real answer arrives moments later.
+ * Two earlier attempts at this failed for the same underlying reason, so it is
+ * worth writing down:
  *
- * Instead we listen ourselves and settle on the first outcome that is actually
- * useful: an answer that parses as JSON, or an answer followed by idle. An idle
- * with nothing to show for it is ignored, not treated as the result. Callers
- * that need JSON pass `expectJson`, which also makes a non-JSON reply keep the
- * request open rather than settling on chatter.
+ * 1. `session.sendAndWait` resolves on the first `session.idle` and returns the
+ *    last `assistant.message` it *observed* — `undefined` if it saw none.
+ * 2. Listening for `assistant.message` ourselves and settling on it.
+ *
+ * Both assume the live event stream delivers `assistant.message` to an
+ * extension. It does not reliably: the runtime gates event delivery by
+ * registered consumer interest (`session.eventLog.registerInterest`), so an
+ * extension that merely subscribes with `on()` can sit through an entire turn
+ * and see only lifecycle events. The answer lands in the chat while the popup
+ * waits for an event that is never coming — exactly the reported symptom.
+ *
+ * So we stop trusting the stream as the source of truth and read the
+ * conversation instead: `session.getEvents()` is a plain request that returns
+ * the full history. We snapshot its length before sending, then poll for a new
+ * assistant message after that point. The live listener is kept purely as a
+ * fast path — if an event does arrive we use it immediately rather than waiting
+ * for the next poll — but nothing depends on it.
  */
 function generateFromAgent(prompt, timeoutMs, expectJson = false) {
-    if (!sessionRef?.on || !sessionRef?.send) return { ok: false, error: "No active session." };
+    if (!sessionRef?.send) return { ok: false, error: "No active session." };
+
     return new Promise((resolve) => {
-        let settled = false, sent = false, answer = "", off = null, timer = null;
+        let settled = false;
+        let baseline = 0;
+        let off = null, timer = null, poll = null;
+        const seenTypes = new Set();
+
         const finish = (payload) => {
             if (settled) return;
             settled = true;
             clearTimeout(timer);
+            clearInterval(poll);
             try { off?.(); } catch { /* already gone */ }
             resolve(payload);
         };
-        const isJson = (text) => {
+
+        const extractJson = (text) => {
             const match = String(text).match(/\{[\s\S]*\}/);
-            if (!match) return false;
-            try { return !!JSON.parse(match[0]); } catch { return false; }
+            if (!match) return null;
+            try { return JSON.parse(match[0]) ? match[0] : null; } catch { return null; }
+        };
+        // A reply is only "the answer" if it satisfies what the caller asked for.
+        // Without this, a "Sure, let me think…" preamble would settle the request
+        // and the real JSON a few seconds later would be thrown away.
+        const usable = (text) => {
+            const content = String(text || "");
+            if (!content.trim()) return null;
+            if (!expectJson) return content;
+            return extractJson(content) ? content : null;
         };
 
-        off = sessionRef.on((ev) => {
+        // Read the conversation and return the first usable assistant message
+        // that appeared after our prompt.
+        const scanHistory = async () => {
+            if (settled || !sessionRef.getEvents) return;
+            let events;
+            try { events = await sessionRef.getEvents(); } catch { return; }
+            if (settled || !Array.isArray(events)) return;
+            for (const ev of events.slice(baseline)) {
+                if (ev?.type !== "assistant.message") continue;
+                const content = usable(ev?.data?.content);
+                if (content) { finish({ ok: true, content }); return; }
+            }
+        };
+
+        off = sessionRef.on?.((ev) => {
             const type = ev?.type;
+            if (type) seenTypes.add(type);
             if (type === "assistant.message") {
-                // Ignore anything that predates our own send — it belongs to
-                // whatever the session was doing before we asked.
-                if (!sent) return;
-                const content = String(ev?.data?.content || "");
-                if (!content.trim()) return;
-                if (expectJson && !isJson(content)) return; // chatter, not the answer
-                answer = content;
-                if (isJson(content)) finish({ ok: true, content });
+                const content = usable(ev?.data?.content);
+                if (content) finish({ ok: true, content });
             } else if (type === "session.idle") {
-                if (answer.trim()) finish({ ok: true, content: answer });
-                // else: not our idle — keep waiting for the real answer.
+                scanHistory(); // the turn ended — the answer is in the history now
             } else if (type === "session.error") {
                 finish({ ok: false, error: ev?.data?.message || "The Copilot session reported an error." });
             }
-        });
+        }) || null;
 
         timer = setTimeout(() => {
-            log(`agent/generate timed out after ${timeoutMs}ms (answer=${answer ? "partial" : "none"})`, "warn");
-            finish(answer.trim()
-                ? { ok: true, content: answer }
-                : { ok: false, error: `No answer from Copilot within ${Math.round(timeoutMs / 1000)}s. It may still be working — try again, or paste its reply below.` });
+            log(`agent/generate timed out after ${timeoutMs}ms (events seen: ${[...seenTypes].join(", ") || "none"})`, "warn");
+            finish({
+                ok: false,
+                error: `No answer from Copilot within ${Math.round(timeoutMs / 1000)}s. Its reply may still be in the chat — copy it and paste it below.`,
+            });
         }, timeoutMs);
 
-        Promise.resolve(sessionRef.send(prompt))
-            .then(() => { sent = true; })
-            .catch((e) => finish({ ok: false, error: e?.message || "Could not reach the Copilot session." }));
+        (async () => {
+            // Snapshot the history length first so we can tell our answer apart
+            // from everything that was already said before we asked.
+            try {
+                const before = await sessionRef.getEvents?.();
+                if (Array.isArray(before)) baseline = before.length;
+            } catch { /* no history access — the live listener still applies */ }
+
+            try { await sessionRef.send(prompt); }
+            catch (e) { finish({ ok: false, error: e?.message || "Could not reach the Copilot session." }); return; }
+
+            poll = setInterval(scanHistory, 2000);
+        })();
     });
 }
 
@@ -565,3 +608,14 @@ const canvas = createCanvas({
 });
 
 sessionRef = await joinSession({ canvases: [canvas] });
+
+// The runtime gates session events by registered consumer interest, so without
+// this an extension can sit through a whole turn and never see the assistant's
+// reply. `generateFromAgent` does not depend on it — it reads the conversation
+// history instead — but registering keeps the fast path available. Experimental
+// API: if it is missing or fails, that is fine and must not break startup.
+try {
+    await sessionRef?.eventLog?.registerInterest?.({ eventType: "assistant.message" });
+} catch {
+    log("could not register interest in assistant.message; falling back to history polling", "warn");
+}

@@ -5,6 +5,12 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **A guided canvas tour in the README**, with screenshots of the dashboard, the four task
+  views, the SMART detail popup and the "Build with Copilot" draft. Every screenshot is
+  produced from a throwaway vault of invented data via two new helpers:
+  `tools/seed-demo-vault.mjs` (seeds the fake vault) and `tools/demo-canvas.mjs` (serves the
+  real canvas UI against any vault outside the Copilot runtime — also handy for poking at the
+  UI without reloading the extension).
 - **SMART tasks.** Every task can now carry optional coaching fields — **Goal** (Specific),
   **Measure** (Measurable), **Steps** (Achievable), **Why** (Relevant) — with the existing
   **Due Date** covering Time-bound. They persist in a new `## Task Details` section of the

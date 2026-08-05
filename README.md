@@ -246,6 +246,83 @@ The canvas UI is rendered by the **GitHub Copilot app's** canvas panel. From eit
   there is no separate ASCII/terminal renderer for canvases. For a terminal-only dashboard, use
   [`cat-tui`](#option-3-terminal-dashboard-preview) instead.
 
+### A guided tour of the canvas
+
+> All screenshots below come from a throwaway demo vault (`tools/seed-demo-vault.mjs`) —
+> every task, name and date in them is invented.
+
+**1 · Dashboard — where you land.** Counts, today's focus, charts and the last few days of
+activity. The quick buttons in the hero add a task, journal entry or milestone without
+leaving the page.
+
+![CatPilot canvas dashboard](docs/images/canvas-dashboard.png)
+
+**2 · Tasks — four ways to look at the same work.** The switcher in the top right flips
+between **☰ List**, **▦ Board**, **📅 Calendar** and **🎯 Matrix**. Nothing is duplicated:
+they are all views over the same `tasks.md`, so a change in one shows up everywhere,
+including in the CLI.
+
+The list adds a **Quadrant** column, so you can see where each task sits at a glance.
+An `auto` marker means CatPilot inferred the quadrant; without it, you pinned it yourself.
+
+![Tasks list view with quadrant column](docs/images/canvas-tasks-list.png)
+
+The board is a kanban over **Backlog · Overdue · To do · In Progress · Blocked · Done**.
+Drag a card to change its status. (Done has no quick-add button — finished work is something
+you move into, not something you create.)
+
+![Tasks board view](docs/images/canvas-tasks-board.png)
+
+**3 · 🎯 Eisenhower Matrix — decide what actually deserves your day.** Four quadrants,
+each grouped by Overdue / Today / Next 7 days / Later, with a coaching strip that tells you
+when the balance is off (too much firefighting, nothing scheduled, and so on).
+
+- **Drag a card between quadrants** to pin its importance/urgency — that writes back to the
+  task, and the CLI will agree with you next time you run `cat-pilot task matrix`.
+- **＋** on a quadrant header creates a task already tagged for that quadrant.
+- **🎯 Focus plan** gives you a ranked "what next" list with a reason per task.
+- **🧭 Triage with Copilot** asks the agent to classify anything still unset.
+
+![Eisenhower Matrix view](docs/images/canvas-tasks-matrix.png)
+
+**4 · SMART details — make a task you can actually start.** Open any task and the detail
+popup shows its goal, measure, steps and why, the quadrant it landed in *and the reason it
+landed there*, plus a 0–5 quality meter. Every SMART field is optional; a title is still the
+only thing CatPilot requires.
+
+![Task detail with SMART fields and quality meter](docs/images/canvas-task-smart-detail.png)
+
+**5 · ✨ Build with Copilot — describe it roughly, get a SMART task.** In the task form,
+click **✨ Build with Copilot**, write one or two plain sentences, and press **Draft it**.
+Copilot fills in goal, measure, steps, why, a realistic due date, priority, tags and the
+Eisenhower axes. Then you choose:
+
+- **✅ Create this task** — save it as-is.
+- **✏️ Edit first** — open it in the normal task form with everything pre-filled.
+- **🔄 Try again** — reword the description and re-draft.
+
+Nothing is written to disk until you pick one.
+
+![Build a SMART task with Copilot](docs/images/canvas-copilot-draft-preview.png)
+
+If no Copilot session is attached, the popup degrades gracefully: it shows a copy-able prompt
+and a **paste Copilot's answer** box, so a draft produced anywhere — the chat panel, the
+Copilot app, the CLI — can still become a task.
+
+**6 · Carry work forward when the month rolls over.** CatPilot partitions storage by period,
+so on the 1st of a month your open tasks are still filed under the previous one. The Tasks
+page notices and shows a banner offering to move them across — or run
+`cat-pilot task carry` from the terminal. Completed tasks stay where they were, and the
+progress log follows the task.
+
+**Try it yourself without touching your own data:**
+
+```bash
+node tools/seed-demo-vault.mjs          # prints a config path, invented data only
+CATPILOT_CONFIG=<that path> node tools/demo-canvas.mjs
+# then open http://127.0.0.1:4173/
+```
+
 
 
 ### Option 1: Full Copilot Experience
@@ -654,6 +731,8 @@ Generate a monthly executive report in markdown.
 
 - Main visual asset: `assets/catpilot-pixel.png`
 - Alternative SVG asset: `assets/catpilot-pixel.svg`
+- Canvas screenshots (demo data): `docs/images/`
+- Demo vault + standalone canvas server: `tools/seed-demo-vault.mjs`, `tools/demo-canvas.mjs`
 - Deeper multi-client examples: `docs/MULTI_CLIENT_EXAMPLES.md`
 - Compatibility notes: `docs/PHASE2-COMPATIBILITY.md`
 - Release notes: `CHANGELOG.md`

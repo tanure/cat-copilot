@@ -71,9 +71,26 @@ async function handleApi(req, url) {
     // Tasks
     if (p === "/api/tasks" && m === "GET") return { tasks: store.listTasks(url.searchParams.get("status") || "all") };
     if (p === "/api/tasks" && m === "POST") return { task: store.addTask(await readBody(req)) };
+    if (p === "/api/tasks/carry" && m === "POST") {
+        const body = (await readBody(req)) || {};
+        return store.carryForwardTasks({ dryRun: !!body.dryRun, ids: Array.isArray(body.ids) ? body.ids.map(Number) : null });
+    }
+    if (p === "/api/tasks/matrix" && m === "GET") {
+        return store.taskMatrix({
+            quadrant: url.searchParams.get("quadrant") || undefined,
+            includeDone: url.searchParams.get("status") !== "open",
+        });
+    }
+    if (p === "/api/tasks/focus" && m === "GET") return store.taskFocus({ limit: url.searchParams.get("limit") || 5 });
+    if (p === "/api/tasks/stranded" && m === "GET") return store.strandedTasks();
+    if (p === "/api/tasks/smart-meta" && m === "GET") {
+        return { quadrants: store.eisen.QUADRANTS, dimensions: store.eisen.SMART_DIMENSIONS, timeGroups: store.eisen.TIME_GROUPS };
+    }
     let mm = p.match(/^\/api\/tasks\/(\d+)$/);
     if (mm && m === "PUT") return { task: store.updateTask(mm[1], await readBody(req)) };
     if (mm && m === "DELETE") return { removed: store.removeTask(mm[1]) };
+    mm = p.match(/^\/api\/tasks\/(\d+)\/smart$/);
+    if (mm && m === "PUT") return { task: store.updateTaskSmart(mm[1], await readBody(req)) };
     mm = p.match(/^\/api\/tasks\/(\d+)\/complete$/);
     if (mm && m === "POST") return { task: store.completeTask(mm[1]) };
     // Task progress log (dated comments)
@@ -200,14 +217,120 @@ async function handleApi(req, url) {
         return { ok: true, id };
     }
     if (p === "/api/agent/generate" && m === "POST") {
-        const { prompt, timeout } = await readBody(req);
-        if (!prompt || !String(prompt).trim()) throw new Error("prompt is required");
-        if (!sessionRef?.sendAndWait) return { ok: false, error: "No active session." };
-        const ev = await sessionRef.sendAndWait(String(prompt), Number(timeout) || 120000);
-        return { ok: true, content: ev?.data?.content || "" };
+        const body = await readBody(req);
+        if (!body?.prompt || !String(body.prompt).trim()) throw new Error("prompt is required");
+        return await generateFromAgent(String(body.prompt), Number(body.timeout) || 120000, body.expect === "json");
     }
 
     return null; // not an API route we know
+}
+
+/**
+ * Ask the attached Copilot session a question and return its answer.
+ *
+ * Two earlier attempts at this failed for the same underlying reason, so it is
+ * worth writing down:
+ *
+ * 1. `session.sendAndWait` resolves on the first `session.idle` and returns the
+ *    last `assistant.message` it *observed* — `undefined` if it saw none.
+ * 2. Listening for `assistant.message` ourselves and settling on it.
+ *
+ * Both assume the live event stream delivers `assistant.message` to an
+ * extension. It does not reliably: the runtime gates event delivery by
+ * registered consumer interest (`session.eventLog.registerInterest`), so an
+ * extension that merely subscribes with `on()` can sit through an entire turn
+ * and see only lifecycle events. The answer lands in the chat while the popup
+ * waits for an event that is never coming — exactly the reported symptom.
+ *
+ * So we stop trusting the stream as the source of truth and read the
+ * conversation instead: `session.getEvents()` is a plain request that returns
+ * the full history. We snapshot its length before sending, then poll for a new
+ * assistant message after that point. The live listener is kept purely as a
+ * fast path — if an event does arrive we use it immediately rather than waiting
+ * for the next poll — but nothing depends on it.
+ */
+function generateFromAgent(prompt, timeoutMs, expectJson = false) {
+    if (!sessionRef?.send) return { ok: false, error: "No active session." };
+
+    return new Promise((resolve) => {
+        let settled = false;
+        let baseline = 0;
+        let off = null, timer = null, poll = null;
+        const seenTypes = new Set();
+
+        const finish = (payload) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            clearInterval(poll);
+            try { off?.(); } catch { /* already gone */ }
+            resolve(payload);
+        };
+
+        const extractJson = (text) => {
+            const match = String(text).match(/\{[\s\S]*\}/);
+            if (!match) return null;
+            try { return JSON.parse(match[0]) ? match[0] : null; } catch { return null; }
+        };
+        // A reply is only "the answer" if it satisfies what the caller asked for.
+        // Without this, a "Sure, let me think…" preamble would settle the request
+        // and the real JSON a few seconds later would be thrown away.
+        const usable = (text) => {
+            const content = String(text || "");
+            if (!content.trim()) return null;
+            if (!expectJson) return content;
+            return extractJson(content) ? content : null;
+        };
+
+        // Read the conversation and return the first usable assistant message
+        // that appeared after our prompt.
+        const scanHistory = async () => {
+            if (settled || !sessionRef.getEvents) return;
+            let events;
+            try { events = await sessionRef.getEvents(); } catch { return; }
+            if (settled || !Array.isArray(events)) return;
+            for (const ev of events.slice(baseline)) {
+                if (ev?.type !== "assistant.message") continue;
+                const content = usable(ev?.data?.content);
+                if (content) { finish({ ok: true, content }); return; }
+            }
+        };
+
+        off = sessionRef.on?.((ev) => {
+            const type = ev?.type;
+            if (type) seenTypes.add(type);
+            if (type === "assistant.message") {
+                const content = usable(ev?.data?.content);
+                if (content) finish({ ok: true, content });
+            } else if (type === "session.idle") {
+                scanHistory(); // the turn ended — the answer is in the history now
+            } else if (type === "session.error") {
+                finish({ ok: false, error: ev?.data?.message || "The Copilot session reported an error." });
+            }
+        }) || null;
+
+        timer = setTimeout(() => {
+            log(`agent/generate timed out after ${timeoutMs}ms (events seen: ${[...seenTypes].join(", ") || "none"})`, "warn");
+            finish({
+                ok: false,
+                error: `No answer from Copilot within ${Math.round(timeoutMs / 1000)}s. Its reply may still be in the chat — copy it and paste it below.`,
+            });
+        }, timeoutMs);
+
+        (async () => {
+            // Snapshot the history length first so we can tell our answer apart
+            // from everything that was already said before we asked.
+            try {
+                const before = await sessionRef.getEvents?.();
+                if (Array.isArray(before)) baseline = before.length;
+            } catch { /* no history access — the live listener still applies */ }
+
+            try { await sessionRef.send(prompt); }
+            catch (e) { finish({ ok: false, error: e?.message || "Could not reach the Copilot session." }); return; }
+
+            poll = setInterval(scanHistory, 2000);
+        })();
+    });
 }
 
 // Reject cross-origin / DNS-rebinding attempts against the loopback API. The
@@ -318,21 +441,74 @@ const actions = [
     },
     {
         name: "add_task",
-        description: "Add a CatPilot task.",
+        description: "Add a CatPilot task. The SMART fields (goal, measure, steps, why) are optional but make the task clearer and let CatPilot place it accurately in the Eisenhower Matrix.",
         inputSchema: {
             type: "object",
             required: ["title"],
             properties: {
                 title: { type: "string" },
-                due: { type: "string", description: "YYYY-MM-DD" },
+                due: { type: "string", description: "YYYY-MM-DD — the Time-bound part of SMART" },
                 priority: { type: "string", description: "P0/P1/P2/P3 or High/Med/Low" },
                 tags: { type: "string" },
                 context: { type: "string" },
+                project: { type: "string" },
+                goal: { type: "string", description: "SMART Specific: what \"done\" concretely looks like" },
+                measure: { type: "string", description: "SMART Measurable: how success will be verified" },
+                steps: { type: "string", description: "SMART Achievable: the first concrete steps" },
+                why: { type: "string", description: "SMART Relevant: why this matters now" },
+                importance: { type: "string", description: "Eisenhower importance: High, Low or auto" },
+                urgency: { type: "string", description: "Eisenhower urgency: High, Low or auto" },
             },
         },
         handler: async (ctx) => {
             try { return { ok: true, task: store.addTask(ctx.input || {}) }; }
             catch (err) { throw new CanvasError("add_task_failed", err.message); }
+        },
+    },
+    {
+        name: "set_task_smart",
+        description: "Set or clear the SMART fields and Eisenhower importance/urgency axes of an existing CatPilot task. Only the fields you pass change; pass \"auto\" on an axis to hand control back to CatPilot's automatic classification.",
+        inputSchema: {
+            type: "object",
+            required: ["id"],
+            properties: {
+                id: { type: "number" },
+                goal: { type: "string" },
+                measure: { type: "string" },
+                steps: { type: "string" },
+                why: { type: "string" },
+                due: { type: "string", description: "YYYY-MM-DD" },
+                importance: { type: "string", description: "High, Low or auto" },
+                urgency: { type: "string", description: "High, Low or auto" },
+            },
+        },
+        handler: async (ctx) => {
+            try { return { ok: true, task: store.updateTaskSmart(ctx.input.id, ctx.input || {}) }; }
+            catch (err) { throw new CanvasError("set_task_smart_failed", err.message); }
+        },
+    },
+    {
+        name: "task_matrix",
+        description: "Return CatPilot tasks organised into the Eisenhower Matrix (Q1 do now, Q2 schedule, Q3 delegate or batch, Q4 drop or later), grouped by Overdue / Today / Next 7 days / Later / No date / Completed, plus coaching insights about the balance.",
+        inputSchema: {
+            type: "object",
+            properties: {
+                quadrant: { type: "string", enum: ["q1", "q2", "q3", "q4"] },
+                includeDone: { type: "boolean" },
+            },
+        },
+        handler: async (ctx) => {
+            try { return { ok: true, matrix: store.taskMatrix(ctx.input || {}) }; }
+            catch (err) { throw new CanvasError("task_matrix_failed", err.message); }
+        },
+    },
+    {
+        name: "task_focus",
+        description: "Return a ranked \"what should I do next\" list built from the Eisenhower Matrix, with a reason per task. Use when the user asks what to work on, how to prioritize, or to plan their day.",
+        inputSchema: { type: "object", properties: { limit: { type: "number" } } },
+        handler: async (ctx) => {
+            try { return { ok: true, ...store.taskFocus(ctx.input || {}) }; }
+            catch (err) { throw new CanvasError("task_focus_failed", err.message); }
         },
     },
     {
@@ -432,3 +608,14 @@ const canvas = createCanvas({
 });
 
 sessionRef = await joinSession({ canvases: [canvas] });
+
+// The runtime gates session events by registered consumer interest, so without
+// this an extension can sit through a whole turn and never see the assistant's
+// reply. `generateFromAgent` does not depend on it — it reads the conversation
+// history instead — but registering keeps the fast path available. Experimental
+// API: if it is missing or fails, that is fine and must not break startup.
+try {
+    await sessionRef?.eventLog?.registerInterest?.({ eventType: "assistant.message" });
+} catch {
+    log("could not register interest in assistant.message; falling back to history polling", "warn");
+}

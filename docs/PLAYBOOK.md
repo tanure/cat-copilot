@@ -7,10 +7,37 @@ lands in the same vault.
 ## Daily (2–5 min)
 **Capture, don't organize.**
 - Start: dump today's tasks. `cat-pilot task add "..."` or ask Copilot "add a task...".
+- Then ask **"what should I work on?"** — the `prioritization-coach` skill (or
+  `cat-pilot task focus --limit 5`) returns a ranked list with a reason per task, drawn from
+  the Eisenhower Matrix.
 - During the day: log wins, decisions, and blockers as they happen.
   - "Log a journal note: decided to use MCP for cross-surface parity."
   - "Log a growth note: unblocked the release; impact: shipped a day early."
 - End: `cat-pilot task list` (or ask for a daily summary) to see what's open.
+
+## Make it SMART (60 seconds per task that matters)
+**A title says *that*; SMART says *how to start*.**
+- Capture first, refine after — never let the form block the capture.
+- For anything that will take more than an hour, add the details:
+  `cat-pilot task add "Ship the v2 export" --guided`, or open the task in the canvas and
+  expand **🎯 Make it SMART** (Goal · Measure · Steps · Why; the due date covers Time-bound).
+- Stuck on wording? Use **✨ Build with Copilot** in the canvas, or just describe the task in
+  chat and let CatPilot draft the fields for you.
+- Aim for a **3/5 or better** quality score. `goal` + `measure` are the two that matter most —
+  they also make the task read as *important* to the matrix.
+
+## Prioritize with the Eisenhower Matrix (weekly, 5 min)
+**Urgent ≠ important.**
+- `cat-pilot task matrix` (or the canvas **🎯 Matrix** view) shows four quadrants:
+  🔥 **Q1 Do now** · 🗓️ **Q2 Schedule** · 🤝 **Q3 Delegate or batch** · 🧊 **Q4 Drop or later**.
+- Placement is derived automatically from due date, priority, project links and SMART fields.
+  Disagree? Pin it: `cat-pilot task smart 12 --importance high --urgency low`, drag the card
+  between quadrants in the canvas, or set it back to `auto`.
+- Ask Copilot to **"triage my tasks"** for a proposed classification of everything unset —
+  it explains each call and only writes once you confirm.
+- Health check: if **Q1 is crowded**, you are firefighting — move work into Q2 by scheduling
+  it earlier. If **Q2 is empty**, nothing is moving you forward. Q3 is for batching or
+  delegating; Q4 is permission to delete.
 
 ## Weekly (15 min)
 **Reflect and roll up.**
@@ -18,9 +45,17 @@ lands in the same vault.
 - Review **learning**: "What learning paths are due for review?" Re-schedule as needed.
 - Update **projects**: "Give me a portfolio overview of my active projects." Note status.
 - Triage tasks: complete, defer, block, start, or drop. Keep the list honest.
+- Rebalance the matrix (see above): drain Q1, protect Q2, batch Q3, delete Q4.
 
 ## Monthly (30 min)
 **Connect the dots.**
+- **Carry your open work forward.** CatPilot files tasks by period, so on the 1st the new
+  month starts empty and last month's unfinished work is still filed under last month.
+  `cat-pilot task list` says so, and the canvas Tasks page shows a banner. Run
+  `cat-pilot task carry` (preview with `--dry-run`) to move it across — SMART details and the
+  progress log come with it, and completed tasks stay behind as the record of what got done.
+  It is also a natural moment to *not* carry something forward: if a task has been rolling for
+  three months, it is a Q4 task pretending to be work. Drop it instead.
 - Open Obsidian. Visit the `Dashboards/` pages (Tasks, Knowledge, Learning, Growth, Projects, Achievements).
 - Link related notes; add tags so the graph connects knowledge, projects, learning, and achievements.
 - Convert finished learning into a **growth** entry (what you can now do).

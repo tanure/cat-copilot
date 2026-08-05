@@ -72,8 +72,9 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node test/quick-test.js && node test/adapter-integration.js && node test/mcp-smoke.js",
+    "test": "node test/quick-test.js && node test/adapter-integration.js && node test/canvas-bridge.js && node test/mcp-smoke.js",
     "test:mcp": "node test/mcp-smoke.js",
-    "mcp": "node bin/cat-mcp.js"
+    "mcp": "node bin/cat-mcp.js",
+    "test:bridge": "node test/canvas-bridge.js"
   }
 }

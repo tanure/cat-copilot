@@ -38,6 +38,36 @@ node bin/cat-cli.js task complete 5
 node bin/cat-cli.js task remove 5
 ```
 
+### SMART Tasks & Eisenhower Matrix
+
+```bash
+# Capture with SMART details (all optional)
+node bin/cat-cli.js task add "Ship the v2 export endpoint" \
+  --due 2026-04-10 --priority P1 \
+  --goal "v2 export live behind a feature flag" \
+  --measure "p95 < 300ms on staging, export tests green" \
+  --why "Unblocks the Q3 reporting milestone" \
+  --steps "Draft schema -> implement -> test -> roll out" \
+  --importance high --urgency low
+
+# Interactive SMART coach (one question at a time, skippable)
+node bin/cat-cli.js task add "Rework the onboarding email" --guided
+
+# View / edit SMART details on an existing task
+node bin/cat-cli.js task smart 5
+node bin/cat-cli.js task smart 5 --measure "NPS +5 in 30 days"
+node bin/cat-cli.js task smart 5 --urgency auto     # back to auto-derive
+
+# Eisenhower Matrix
+node bin/cat-cli.js task matrix                     # all four quadrants
+node bin/cat-cli.js task matrix --quadrant q1       # Do now
+node bin/cat-cli.js task matrix --json
+node bin/cat-cli.js task list --quadrant q2
+
+# Ranked "what should I do next?"
+node bin/cat-cli.js task focus --limit 5
+```
+
 ### Journal Management
 
 ```bash
@@ -142,6 +172,33 @@ console.log(completed.message); // Task #1 marked as Done
 // Remove task
 const removed = await catpilot.remove_task({ id: 5 });
 console.log(removed.message); // Task #5 removed
+
+// --- SMART + Eisenhower ---
+
+// Add a SMART task
+const smartTask = await catpilot.add_task({
+  title: "Ship the v2 export endpoint",
+  due: "2026-04-10",
+  priority: "P1",
+  goal: "v2 export live behind a feature flag",
+  measure: "p95 < 300ms on staging, export tests green",
+  why: "Unblocks the Q3 reporting milestone",
+  importance: "High",
+  urgency: "Low"
+});
+console.log(smartTask.data.eisenhower.quadrant);   // 'q2'
+console.log(smartTask.data.smartScore.score);      // 4 (of 5)
+
+// Update SMART fields later ('auto' clears an explicit axis)
+await catpilot.set_task_smart({ id: smartTask.data.id, urgency: 'High' });
+
+// The full matrix
+const matrix = await catpilot.task_matrix({ status: 'all' });
+matrix.data.quadrants.forEach(q => console.log(q.key, q.label, q.tasks.length));
+
+// Ranked next actions
+const focus = await catpilot.task_focus({ limit: 5 });
+focus.data.focus.forEach(t => console.log(`#${t.id} ${t.title} — ${t.focusReason}`));
 ```
 
 ### Journal Operations

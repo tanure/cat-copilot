@@ -10,6 +10,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import * as eisen from "./eisenhower.mjs";
+
+export { eisen };
 
 const GLOBAL_CONFIG_DIR = path.join(os.homedir(), ".catpilot");
 const GLOBAL_CONFIG_PATH = path.join(GLOBAL_CONFIG_DIR, "config.json");
@@ -141,6 +144,122 @@ function resolveStableDir(type, config) {
     return path.join(storageRoot, dirName);
 }
 
+// Resolve a file inside an explicit partition instead of today's, so
+// carry-forward can read a previous month/week/day without faking the clock.
+function resolveFilePathInPartition(type, config, partition) {
+    const current = path.normalize(getPartitionFolder(config.storage.partitioning));
+    const full = resolveFilePath(type, config);
+    const at = full.indexOf(current);
+    return path.join(full.slice(0, at), partition, full.slice(at + current.length));
+}
+
+// Every partition folder that already exists under storage.root, oldest first.
+// We scan instead of computing "the previous month" because a partition is only
+// created when something is written to it — after a quiet month the immediately
+// preceding folder is absent and a naive step-back would find nothing.
+function listPartitions(config) {
+    const base = config.__baseDir || process.cwd();
+    const storageRoot = path.resolve(base, config.storage.root);
+    if (!fs.existsSync(storageRoot)) return [];
+    const mode = config.storage.partitioning || "month";
+    const depth = mode === "day" ? 3 : 2;
+    const shaped = {
+        day: [/^\d{4}$/, /^\d{4}-\d{2}$/, /^\d{4}-\d{2}-\d{2}$/],
+        week: [/^\d{4}$/, /^W\d{2}$/],
+        month: [/^\d{4}$/, /^\d{4}-\d{2}$/],
+    }[mode] || [/^\d{4}$/, /^\d{4}-\d{2}$/];
+
+    const out = [];
+    const walk = (dir, parts) => {
+        if (parts.length === depth) { out.push(parts.join("/")); return; }
+        let entries = [];
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        for (const e of entries) {
+            if (!e.isDirectory()) continue;
+            if (!shaped[parts.length] || !shaped[parts.length].test(e.name)) continue;
+            walk(path.join(dir, e.name), [...parts, e.name]);
+        }
+    };
+    walk(storageRoot, []);
+    return out.sort();
+}
+
+/**
+ * Open tasks sitting in partitions older than the current one.
+ *
+ * Partitioning is a filing convention, not a deadline — unfinished work does not
+ * stop being unfinished because the calendar rolled over. Surfacing this is what
+ * stops the Tasks page looking empty (and alarming) on the 1st of the month.
+ */
+export function strandedTasks() {
+    const config = loadConfig();
+    const current = getPartitionFolder(config.storage.partitioning);
+    const groups = [];
+    for (const partition of listPartitions(config)) {
+        if (partition >= current) continue;
+        const filePath = resolveFilePathInPartition("tasks", config, partition);
+        if (!fs.existsSync(filePath)) continue;
+        let tasks = [];
+        try { tasks = parseTasksTable(fs.readFileSync(filePath, "utf8")); } catch { continue; }
+        const open = tasks.filter((t) => t.id && String(t.status).toLowerCase() !== "done");
+        if (open.length) groups.push({ partition, path: filePath, tasks: open.map(decorateTask) });
+    }
+    return {
+        current,
+        total: groups.reduce((n, g) => n + g.tasks.length, 0),
+        partitioning: config.storage.partitioning || "month",
+        groups,
+    };
+}
+
+/**
+ * Move open tasks from older partitions into the current one.
+ *
+ * Moved, not copied: two open copies of the same work means two sources of
+ * truth. Completed tasks stay where they were finished so each partition keeps
+ * an honest record of what actually got done there. SMART details and the
+ * progress log travel along, and the original ID is preserved when it is free
+ * in the target so "#21" still means the same task tomorrow.
+ */
+export function carryForwardTasks({ dryRun = false, ids = null } = {}) {
+    const config = loadConfig();
+    const { groups, current } = strandedTasks();
+    const targetPath = resolveFilePath("tasks", config);
+    const targetContent = fs.existsSync(targetPath) ? fs.readFileSync(targetPath, "utf8") : "";
+    const targetTasks = parseTasksTable(targetContent);
+    const usedIds = new Set(targetTasks.map((t) => t.id));
+
+    const moved = [];
+    const rewrites = [];
+    for (const group of groups) {
+        const taking = ids ? group.tasks.filter((t) => ids.includes(t.id)) : group.tasks;
+        if (!taking.length) continue;
+        for (const task of taking) {
+            const carried = { ...task, smart: { ...task.smart }, log: [...(task.log || [])] };
+            const originalId = carried.id;
+            if (usedIds.has(carried.id)) carried.id = getNextTaskId([...targetTasks, ...moved]);
+            usedIds.add(carried.id);
+            carried.log.push({
+                date: taskCommentStamp(),
+                text: `Carried forward from ${group.partition}${carried.id !== originalId ? ` (was #${originalId})` : ""}`,
+            });
+            moved.push(carried);
+            targetTasks.push(carried);
+        }
+        const takenIds = new Set(taking.map((t) => t.id));
+        const remaining = parseTasksTable(fs.readFileSync(group.path, "utf8")).filter((t) => !takenIds.has(t.id));
+        rewrites.push({ path: group.path, content: formatTasksTable(remaining) });
+    }
+
+    if (!dryRun && moved.length) {
+        ensureDir(path.dirname(targetPath));
+        fs.writeFileSync(targetPath, formatTasksTable(targetTasks), "utf8");
+        for (const r of rewrites) fs.writeFileSync(r.path, r.content, "utf8");
+    }
+
+    return { moved: moved.map(decorateTask), from: groups.map((g) => g.partition), to: current, dryRun };
+}
+
 function ensureDir(dir) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
@@ -229,8 +348,59 @@ function parseTasksTable(content) {
         }
     }
     const logs = parseTaskLog(content);
-    for (const t of tasks) t.log = logs[t.id] || [];
+    const details = parseTaskDetails(content);
+    for (const t of tasks) {
+        t.log = logs[t.id] || [];
+        t.smart = eisen.normalizeSmart(details[t.id]);
+    }
     return tasks;
+}
+
+// Per-task SMART details ("## Task Details" section): taskId -> {goal,...}.
+// Mirrors lib/cli-utils.js exactly so the CLI and the canvas round-trip the
+// same file. Empty fields are omitted on write, so old files stay untouched.
+const SMART_LABELS = {
+    goal: "Goal",
+    measure: "Measure",
+    why: "Why",
+    steps: "Steps",
+    importance: "Importance",
+    urgency: "Urgency",
+};
+
+function parseTaskDetails(content) {
+    const lines = String(content || "").split("\n");
+    const details = {};
+    let inSection = false;
+    let curId = null;
+    for (const line of lines) {
+        const h2 = line.match(/^##\s+(.+?)\s*$/);
+        if (h2) { inSection = /^task details$/i.test(h2[1].trim()); curId = null; continue; }
+        if (!inSection) continue;
+        const h3 = line.match(/^###\s+Task\s+(\d+)\s*$/i);
+        if (h3) { curId = parseInt(h3[1], 10); if (!details[curId]) details[curId] = {}; continue; }
+        if (curId == null) continue;
+        const field = line.match(/^-\s+\*\*(.+?):\*\*\s*(.*)$/);
+        if (!field) continue;
+        const label = field[1].trim().toLowerCase();
+        const key = Object.keys(SMART_LABELS).find((k) => SMART_LABELS[k].toLowerCase() === label);
+        if (key) details[curId][key] = field[2].trim();
+    }
+    return details;
+}
+
+function formatTaskDetails(tasks) {
+    const withDetails = tasks.filter((t) => !eisen.isSmartEmpty(t.smart));
+    if (!withDetails.length) return "";
+    let out = "## Task Details\n";
+    for (const t of withDetails) {
+        const s = eisen.normalizeSmart(t.smart);
+        out += `\n### Task ${t.id}\n`;
+        for (const key of eisen.SMART_FIELDS) {
+            if (s[key]) out += `- **${SMART_LABELS[key]}:** ${collapseComment(s[key])}\n`;
+        }
+    }
+    return out.trimEnd();
 }
 
 // Per-task progress log ("## Task Log" section): taskId -> [{date,text}].
@@ -296,8 +466,10 @@ function formatTasksTable(tasks) {
         out += "## Completed Tasks\n\n" + header;
         done.forEach((t) => { out += `| ${t.id} | ${encodeCell(t.status)} | ${encodeCell(t.title)} | ${encodeCell(t.dueDate)} | ${encodeCell(t.priority)} | ${encodeCell(t.tags)} | ${encodeCell(t.context)} | ${encodeCell(t.project)} |\n`; });
     }
+    const detailsSection = formatTaskDetails(tasks);
     const logSection = formatTaskLog(tasks);
     let result = out.trimEnd();
+    if (detailsSection) result += "\n\n" + detailsSection;
     if (logSection) result += "\n\n" + logSection;
     return result;
 }
@@ -317,10 +489,38 @@ function normalizeTaskStatus(value, fallback = "Open") {
     return match;
 }
 
+/**
+ * Attach the computed Eisenhower quadrant + SMART score to a task.
+ *
+ * `now` is guarded because this is a natural `.map(decorateTask)` target, and
+ * Array#map passes the index as the second argument — which would otherwise
+ * silently become the "current time" used to derive urgency.
+ */
+function decorateTask(task, now = new Date()) {
+    const at = now instanceof Date ? now : new Date();
+    return {
+        ...task,
+        smart: eisen.normalizeSmart(task.smart),
+        eisenhower: eisen.classifyTask(task, at),
+        smartScore: eisen.smartScore(task),
+    };
+}
+
+/** Pick only the SMART keys present in a payload, normalizing the two axes. */
+function smartFromParams(params = {}) {
+    const out = {};
+    ["goal", "measure", "why", "steps"].forEach((k) => {
+        if (params[k] !== undefined) out[k] = params[k];
+    });
+    if (params.importance !== undefined) out.importance = eisen.normalizeAxis(params.importance);
+    if (params.urgency !== undefined) out.urgency = eisen.normalizeAxis(params.urgency);
+    return out;
+}
+
 export function listTasks(status = "all") {
     const config = loadConfig();
     const p = resolveFilePath("tasks", config);
-    const tasks = parseTasksTable(readFileOrCreate(p));
+    const tasks = parseTasksTable(readFileOrCreate(p)).map((t) => decorateTask(t));
     if (status === "all") return tasks;
     return tasks.filter((t) => t.status.toLowerCase() === status.toLowerCase());
 }
@@ -339,10 +539,11 @@ export function addTask(params = {}) {
         tags: params.tags || "",
         context: params.context || "",
         project: params.project || "",
+        smart: eisen.normalizeSmart(params.smart ? { ...params.smart, ...smartFromParams(params) } : smartFromParams(params)),
     };
     tasks.push(task);
     fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
-    return task;
+    return decorateTask(task);
 }
 
 export function updateTask(id, patch = {}) {
@@ -354,8 +555,51 @@ export function updateTask(id, patch = {}) {
     for (const k of ["status", "title", "dueDate", "priority", "tags", "context", "project"]) {
         if (patch[k] !== undefined) t[k] = k === "status" ? normalizeTaskStatus(patch[k]) : patch[k];
     }
+    if (patch.due !== undefined) t.dueDate = patch.due;
+    const smartPatch = { ...(patch.smart || {}), ...smartFromParams(patch) };
+    if (Object.keys(smartPatch).length) {
+        t.smart = eisen.normalizeSmart({ ...eisen.normalizeSmart(t.smart), ...smartPatch });
+    }
     fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
-    return t;
+    return decorateTask(t);
+}
+
+/**
+ * Replace/merge the SMART fields and Eisenhower axes of a task.
+ * Used by the SMART editor and by drag-and-drop between matrix quadrants.
+ */
+export function updateTaskSmart(id, patch = {}) {
+    return updateTask(id, { smart: patch.smart, ...patch });
+}
+
+/** The full Eisenhower matrix plus balance insights. */
+export function taskMatrix(options = {}) {
+    const config = loadConfig();
+    const p = resolveFilePath("tasks", config);
+    const tasks = parseTasksTable(readFileOrCreate(p));
+    const includeDone = options.includeDone !== false;
+    const matrix = eisen.buildMatrix(tasks, { includeDone });
+    let quadrants = matrix.quadrants;
+    if (options.quadrant) {
+        const q = eisen.quadrantByKey(options.quadrant);
+        if (!q) throw new Error(`Unknown quadrant "${options.quadrant}". Use q1, q2, q3 or q4.`);
+        quadrants = quadrants.filter((x) => x.key === q.key);
+    }
+    return { ...matrix, quadrants, insights: eisen.matrixInsights(tasks) };
+}
+
+/** Ranked "what to do next" list with a reason per task. */
+export function taskFocus(options = {}) {
+    const config = loadConfig();
+    const p = resolveFilePath("tasks", config);
+    const tasks = parseTasksTable(readFileOrCreate(p));
+    const limit = options.limit === undefined ? 5 : Math.max(1, parseInt(options.limit, 10) || 5);
+    const focus = eisen.focusOrder(tasks, { limit }).map((t) => ({
+        ...t,
+        smartScore: eisen.smartScore(t),
+        nudge: eisen.smartNudge(t) || null,
+    }));
+    return { focus, insights: eisen.matrixInsights(tasks) };
 }
 
 export function completeTask(id) {

@@ -79,25 +79,73 @@ function fromCore(result) {
 // ----------------------------------------------------------------------------
 server.registerTool('task_add', {
   title: 'Add task',
-  description: 'Create a task in the configuration-resolved tasks file.',
+  description: 'Create a task in the configuration-resolved tasks file. The SMART fields (goal, measure, steps, why) are all optional but make the task clearer and let CatPilot place it accurately in the Eisenhower Matrix — offer them conversationally, never as an interrogation.',
   inputSchema: {
     title: z.string().describe('Short, action-oriented task title'),
-    due: z.string().optional().describe('Due date YYYY-MM-DD'),
+    due: z.string().optional().describe('Due date YYYY-MM-DD — the Time-bound part of SMART'),
     priority: z.string().optional().describe('P0/P1/P2/P3 or High/Med/Low'),
     tags: z.string().optional().describe('Comma-separated tags'),
     context: z.string().optional().describe('One-line context'),
     project: z.string().optional().describe('Optional project slug to link this task to'),
-    status: z.enum(['Open', 'In Progress', 'Blocked', 'Done']).optional().describe('Initial status (default Open)')
+    status: z.enum(['Open', 'In Progress', 'Blocked', 'Done']).optional().describe('Initial status (default Open)'),
+    goal: z.string().optional().describe('SMART Specific: what "done" concretely looks like'),
+    measure: z.string().optional().describe('SMART Measurable: how success will be verified'),
+    steps: z.string().optional().describe('SMART Achievable: the first concrete steps'),
+    why: z.string().optional().describe('SMART Relevant: why this matters now'),
+    importance: z.string().optional().describe('Eisenhower importance: High, Low or auto (default auto)'),
+    urgency: z.string().optional().describe('Eisenhower urgency: High, Low or auto (default auto)')
   }
 }, async (args) => fromCore(await core.add_task(args)));
 
 server.registerTool('task_list', {
   title: 'List tasks',
-  description: 'List tasks, optionally filtered by status (open/in progress/blocked/done/all).',
+  description: 'List tasks, optionally filtered by status (open/in progress/blocked/done/all) or Eisenhower quadrant. Every task comes back with its SMART fields, SMART score and computed quadrant.',
   inputSchema: {
-    status: z.enum(['open', 'in progress', 'blocked', 'done', 'all']).optional().describe('Filter by status')
+    status: z.enum(['open', 'in progress', 'blocked', 'done', 'all']).optional().describe('Filter by status'),
+    quadrant: z.enum(['q1', 'q2', 'q3', 'q4']).optional().describe('Filter by Eisenhower quadrant')
   }
 }, async (args) => fromCore(await core.list_tasks(args)));
+
+server.registerTool('task_smart_set', {
+  title: 'Set task SMART details',
+  description: 'Set or clear the SMART fields (goal, measure, steps, why), the due date and the Eisenhower importance/urgency axes of an existing task. Only the fields you pass are changed; pass an empty string to clear one, or "auto" on an axis to hand control back to CatPilot.',
+  inputSchema: {
+    id: z.number().int().describe('Task ID'),
+    goal: z.string().optional().describe('SMART Specific: what "done" concretely looks like'),
+    measure: z.string().optional().describe('SMART Measurable: how success will be verified'),
+    steps: z.string().optional().describe('SMART Achievable: the first concrete steps'),
+    why: z.string().optional().describe('SMART Relevant: why this matters now'),
+    due: z.string().optional().describe('SMART Time-bound: due date YYYY-MM-DD'),
+    importance: z.string().optional().describe('Eisenhower importance: High, Low or auto'),
+    urgency: z.string().optional().describe('Eisenhower urgency: High, Low or auto')
+  }
+}, async (args) => fromCore(await core.set_task_smart(args)));
+
+server.registerTool('task_matrix', {
+  title: 'Eisenhower Matrix',
+  description: 'Return tasks organised into the Eisenhower Matrix — Q1 urgent+important (do now), Q2 important (schedule), Q3 urgent (delegate or batch), Q4 neither (drop or later) — grouped by Overdue / Today / Next 7 days / Later / No date / Completed, together with coaching insights about the balance.',
+  inputSchema: {
+    quadrant: z.enum(['q1', 'q2', 'q3', 'q4']).optional().describe('Only return one quadrant'),
+    status: z.enum(['open', 'all']).optional().describe('"all" includes completed tasks (default "open")')
+  }
+}, async (args) => fromCore(await core.task_matrix(args)));
+
+server.registerTool('task_focus', {
+  title: 'Focus plan',
+  description: 'Return a ranked "what should I do next" list built from the Eisenhower Matrix, with a one-line reason per task plus coaching insights. Use this when the user asks what to work on, how to prioritize, or to plan their day.',
+  inputSchema: {
+    limit: z.number().int().optional().describe('How many tasks to return (default 5)')
+  }
+}, async (args) => fromCore(await core.task_focus(args)));
+
+server.registerTool('task_carry', {
+  title: 'Carry tasks forward',
+  description: 'Move open tasks that are still filed under an earlier period (month/week/day) into the current one. CatPilot partitions storage by period, so after a rollover unfinished work stays in the period it was created in — which makes the current period look empty. Use this when a task listing reports stranded tasks, or the user asks where their tasks went. Completed tasks stay where they were finished.',
+  inputSchema: {
+    dryRun: z.boolean().optional().describe('Preview what would move without writing anything'),
+    ids: z.array(z.number().int()).optional().describe('Only carry these task IDs (default: all open stranded tasks)')
+  }
+}, async (args) => fromCore(await core.task_carry(args)));
 
 server.registerTool('task_complete', {
   title: 'Complete task',

@@ -2,20 +2,24 @@
   "tools": [
     {
       "name": "catpilot_list_tasks",
-      "description": "List all tasks from CatPilot storage",
+      "description": "List all tasks from CatPilot storage. Each task includes its SMART fields, SMART score and computed Eisenhower quadrant.",
       "inputSchema": {
         "type": "OBJECT",
         "properties": {
           "status": {
             "type": "STRING",
             "description": "Filter by status: open, done, or all (default: all)"
+          },
+          "quadrant": {
+            "type": "STRING",
+            "description": "Only return tasks in this Eisenhower quadrant: q1, q2, q3 or q4"
           }
         }
       }
     },
     {
       "name": "catpilot_add_task",
-      "description": "Add a new task to CatPilot",
+      "description": "Add a new task to CatPilot. Optionally capture the SMART fields so the task lands in the right Eisenhower quadrant.",
       "inputSchema": {
         "type": "OBJECT",
         "properties": {
@@ -25,14 +29,100 @@
           },
           "due": {
             "type": "STRING",
-            "description": "Due date (YYYY-MM-DD format)"
+            "description": "Due date (YYYY-MM-DD format) — the Time-bound part of SMART"
           },
           "priority": {
             "type": "STRING",
             "description": "Priority level (P0, P1, P2, P3)"
+          },
+          "tags": {
+            "type": "STRING",
+            "description": "Comma-separated tags"
+          },
+          "context": {
+            "type": "STRING",
+            "description": "Context or notes"
+          },
+          "project": {
+            "type": "STRING",
+            "description": "Linked project name"
+          },
+          "goal": {
+            "type": "STRING",
+            "description": "SMART Specific: what \"done\" concretely looks like"
+          },
+          "measure": {
+            "type": "STRING",
+            "description": "SMART Measurable: how success will be verified"
+          },
+          "steps": {
+            "type": "STRING",
+            "description": "SMART Achievable: the first concrete steps"
+          },
+          "why": {
+            "type": "STRING",
+            "description": "SMART Relevant: why this matters now"
+          },
+          "importance": {
+            "type": "STRING",
+            "description": "Eisenhower importance: High, Low or auto (default auto)"
+          },
+          "urgency": {
+            "type": "STRING",
+            "description": "Eisenhower urgency: High, Low or auto (default auto)"
           }
         },
         "required": ["title"]
+      }
+    },
+    {
+      "name": "catpilot_set_task_smart",
+      "description": "Set or clear the SMART fields (goal, measure, steps, why) and Eisenhower axes of an existing task. Only the provided fields change.",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "id": { "type": "NUMBER", "description": "Task ID" },
+          "goal": { "type": "STRING", "description": "SMART Specific: what \"done\" concretely looks like" },
+          "measure": { "type": "STRING", "description": "SMART Measurable: how success will be verified" },
+          "steps": { "type": "STRING", "description": "SMART Achievable: the first concrete steps" },
+          "why": { "type": "STRING", "description": "SMART Relevant: why this matters now" },
+          "due": { "type": "STRING", "description": "SMART Time-bound: due date (YYYY-MM-DD)" },
+          "importance": { "type": "STRING", "description": "Eisenhower importance: High, Low or auto" },
+          "urgency": { "type": "STRING", "description": "Eisenhower urgency: High, Low or auto" }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "catpilot_task_matrix",
+      "description": "Return tasks organised into the Eisenhower Matrix (Q1 do now, Q2 schedule, Q3 delegate, Q4 drop), grouped by Overdue / Today / Next 7 days / Later / No date / Completed, plus coaching insights.",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "quadrant": { "type": "STRING", "description": "Only return one quadrant: q1, q2, q3 or q4" },
+          "status": { "type": "STRING", "description": "'all' includes completed tasks (default 'open')" }
+        }
+      }
+    },
+    {
+      "name": "catpilot_task_focus",
+      "description": "Return a ranked 'what should I do next' list built from the Eisenhower Matrix, with a reason per task.",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "limit": { "type": "NUMBER", "description": "How many tasks to return (default 5)" }
+        }
+      }
+    },
+    {
+      "name": "catpilot_task_carry",
+      "description": "Move open tasks still filed under an earlier period (month/week/day) into the current one. Use when a task listing reports stranded tasks, or the user asks where their tasks went after a period rolled over. Completed tasks stay where they were finished.",
+      "inputSchema": {
+        "type": "OBJECT",
+        "properties": {
+          "dryRun": { "type": "BOOLEAN", "description": "Preview what would move without writing anything" },
+          "ids": { "type": "ARRAY", "items": { "type": "NUMBER" }, "description": "Only carry these task IDs (default: all open stranded tasks)" }
+        }
       }
     },
     {

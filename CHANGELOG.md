@@ -5,6 +5,88 @@ All notable changes to this project are documented in this file.
 ## [Unreleased]
 
 ### Added
+- **A guided canvas tour in the README**, with screenshots of the dashboard, the four task
+  views, the SMART detail popup and the "Build with Copilot" draft. Every screenshot is
+  produced from a throwaway vault of invented data via two new helpers:
+  `tools/seed-demo-vault.mjs` (seeds the fake vault) and `tools/demo-canvas.mjs` (serves the
+  real canvas UI against any vault outside the Copilot runtime — also handy for poking at the
+  UI without reloading the extension).
+- **SMART tasks.** Every task can now carry optional coaching fields — **Goal** (Specific),
+  **Measure** (Measurable), **Steps** (Achievable), **Why** (Relevant) — with the existing
+  **Due Date** covering Time-bound. They persist in a new `## Task Details` section of the
+  tasks file (`### Task <id>` sub-headings, `- **Goal:** …` bullets), written before
+  `## Task Log` and round-tripped through every task mutation. Files without SMART data are
+  byte-identical to before, so there is **no migration**. A live **0–5 quality score** with
+  targeted nudges is available everywhere. New CLI flags `--goal --measure --why --steps
+  --importance --urgency` on `cat-pilot task add`, an interactive `--guided` SMART coach
+  (examples per question, skippable, prints the resulting score), and `cat-pilot task smart <id>`
+  to view/edit. New MCP tool `task_smart_set`; adapter tool `set_task_smart`.
+- **Eisenhower Matrix.** Tasks are classified into four quadrants — 🔥 **Q1 Do now**,
+  🗓️ **Q2 Schedule**, 🤝 **Q3 Delegate or batch**, 🧊 **Q4 Drop or do later** — by a new shared
+  core (`lib/eisenhower.js`, mirrored as `eisenhower.mjs` for the canvas). Classification is
+  **deterministic first**: urgency from overdue / due within 3 days / `P0`, importance from
+  priority, a linked project, or the presence of a `why`/`measure`; explicit `Importance` /
+  `Urgency` always wins and every derived placement carries a one-line rationale. New CLI
+  commands `cat-pilot task matrix` (`--quadrant`, `--status`, `--json`) and
+  `cat-pilot task focus [--limit N]` (ranked next actions with a reason each), plus
+  `cat-pilot task list --quadrant <q>` and compact `Q` / `SMART` columns. New MCP tools
+  `task_matrix`, `task_focus`; matching adapter tools.
+- **Canvas 🎯 Matrix view.** The Tasks page gained a fourth mode next to List / Board /
+  Calendar: four colored quadrant panels with counts, tasks grouped inside each quadrant by
+  **Overdue / Today / Next 7 days / Later / Completed**, per-quadrant quick-add that pre-sets
+  importance/urgency, and **drag-and-drop between quadrants** that writes the axes back to the
+  task. The list table gained a **Quadrant** column and the task detail shows the quadrant
+  badge, *why it landed there*, a **Pin it** action, and the full SMART section with its meter.
+- **✨ Build with Copilot (SMART popup).** The task modal has a collapsible **🎯 Make it SMART**
+  block with a live quality meter and a Copilot button that turns a plain-language description
+  into a drafted SMART task (title, goal, measure, why, steps, due, priority, importance,
+  urgency). The draft preview offers **✅ Create this task** to save it as-is and **✏️ Edit first**
+  to open it in the task form. If no chat session is attached it degrades to a clear step-by-step
+  card with a copy-able prompt, so it still works from the Copilot App.
+  The toolbar also gained **🎯 Focus plan** and **🧭 Triage with Copilot**.
+- **`prioritization-coach` skill.** A new skill that explains the matrix, runs a triage pass over
+  unclassified tasks, produces a focus plan or a day plan, and coaches on rebalancing when Q1 is
+  overloaded — proposing changes with reasons and only applying them once you confirm.
+- **Carry tasks forward across periods.** CatPilot files tasks under the period they were
+  created in (`<root>/2026/2026-08/tasks.md` by default), and nothing ever moved them — so on
+  the 1st of a month the Tasks page went blank and every open task silently stayed behind.
+  Nothing was lost, but there was no way to tell that from any surface. Now the CLI prints
+  where the open work actually is (`cat-pilot task list`), the canvas Tasks page shows a
+  banner naming the period and offering a one-click **📦 Carry them forward**, and
+  `list_tasks` returns a `stranded` summary so an agent can answer *"where are my tasks?"*
+  without guessing. `cat-pilot task carry [--dry-run] [--ids 4,12]` (MCP `task_carry`, adapter
+  `task_carry` / `catpilot_task_carry`, `POST /api/tasks/carry`) **moves** open tasks into the
+  current period, keeping the original ID where it is free, preserving SMART details and the
+  progress log, and appending a `Carried forward from …` log entry. Completed tasks stay where
+  they were finished, so each period keeps an honest record of what got done there.
+- **New REST routes:** `GET /api/tasks/matrix`, `GET /api/tasks/focus`,
+  `GET /api/tasks/smart-meta`, `PUT /api/tasks/:id/smart`,
+  `GET /api/tasks/stranded`, `POST /api/tasks/carry`.
+
+### Fixed
+- **"Build with Copilot" could hang with the popup open and nothing to show.** The canvas
+  agent bridge used `session.sendAndWait`, which settles on the *first* `session.idle` it
+  observes and returns `undefined` when no assistant message landed in that window — so a
+  stray idle handed the popup an empty string and it could only report "Copilot answered,
+  but not in the expected format", even though the real answer arrived seconds later. The
+  bridge now listens for the answer itself, ignores an idle it has nothing to show for, and
+  keeps waiting for a reply that actually parses. The popup shows a running clock while it
+  waits, and its fallback card gained a **paste Copilot's answer** box, so a draft produced
+  anywhere — the chat panel, the Copilot App, the CLI — can still become the task.
+- **"Build with Copilot" never received the answer at all (the real root cause).** The runtime
+  gates session events by *registered consumer interest*, so an extension that only subscribes
+  with `on()` can sit through an entire turn and never be handed `assistant.message` — the reply
+  is visible in chat while the popup waits forever. The bridge no longer depends on the event
+  stream: it snapshots `session.getEvents()` before sending, then polls that history for the
+  first assistant message that actually parses, keeping the live listener only as a fast path.
+  It also registers interest in `assistant.message` where the runtime supports it.
+  Covered by a new `test/canvas-bridge.js` harness (7 cases, incl. the exact gating failure and
+  a stale-answer guard) wired into `npm test`.
+- **Phantom task from the tasks-file parser.** The table header index was not reset when the
+  parser crossed the `## Completed Tasks` heading, so the completed table's header row was
+  parsed as a task and surfaced as a bogus `{ id: 0 }` entry.
+
+### Added (earlier in this cycle)
 - **Task progress log (dated comments).** Every task now carries a timeline of dated
   progress updates so you can log what you're acting on. Comments persist in the tasks file
   under a `## Task Log` section (`### Task <id>` sub-headings, Obsidian-friendly

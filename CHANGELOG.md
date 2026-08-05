@@ -67,6 +67,15 @@ All notable changes to this project are documented in this file.
   keeps waiting for a reply that actually parses. The popup shows a running clock while it
   waits, and its fallback card gained a **paste Copilot's answer** box, so a draft produced
   anywhere — the chat panel, the Copilot App, the CLI — can still become the task.
+- **"Build with Copilot" never received the answer at all (the real root cause).** The runtime
+  gates session events by *registered consumer interest*, so an extension that only subscribes
+  with `on()` can sit through an entire turn and never be handed `assistant.message` — the reply
+  is visible in chat while the popup waits forever. The bridge no longer depends on the event
+  stream: it snapshots `session.getEvents()` before sending, then polls that history for the
+  first assistant message that actually parses, keeping the live listener only as a fast path.
+  It also registers interest in `assistant.message` where the runtime supports it.
+  Covered by a new `test/canvas-bridge.js` harness (7 cases, incl. the exact gating failure and
+  a stale-answer guard) wired into `npm test`.
 - **Phantom task from the tasks-file parser.** The table header index was not reset when the
   parser crossed the `## Completed Tasks` heading, so the completed table's header row was
   parsed as a task and surfaced as a bogus `{ id: 0 }` entry.

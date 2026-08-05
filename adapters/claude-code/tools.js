@@ -8,6 +8,7 @@
 
 import * as cliUtils from '../../lib/cli-utils.js';
 import * as pomodoro from '../../lib/pomodoro.js';
+import * as eisen from '../../lib/eisenhower.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -19,10 +20,61 @@ function normalizeTaskStatus(value, fallback = 'Open') {
   return match;
 }
 
+/** Extract SMART fields from a tool payload (only keys that were provided). */
+function smartFromParams(params = {}) {
+  const out = {};
+  ['goal', 'measure', 'why', 'steps'].forEach(k => {
+    if (params[k] !== undefined) out[k] = params[k];
+  });
+  if (params.importance !== undefined) out.importance = eisen.normalizeAxis(params.importance);
+  if (params.urgency !== undefined) out.urgency = eisen.normalizeAxis(params.urgency);
+  return out;
+}
+
+/** Decorate a task with its Eisenhower classification and SMART score. */
+function decorateTask(task) {
+  return {
+    ...task,
+    smart: eisen.normalizeSmart(task.smart),
+    eisenhower: eisen.classifyTask(task),
+    smartScore: eisen.smartScore(task)
+  };
+}
+
+/** Load + parse the tasks file once, returning the path alongside. */
+function readTasks() {
+  const config = cliUtils.loadConfig();
+  const tasksPath = cliUtils.resolveFilePath('tasks', config);
+  const tasks = cliUtils.parseTasksTable(cliUtils.readFileOrCreate(tasksPath));
+  return { tasksPath, tasks };
+}
+
 /**
  * Tool handlers - implement CatPilot workflows
  * Each handler receives params and returns {success, data|error}
  */
+
+/**
+ * Open tasks left behind in an earlier partition.
+ *
+ * Returns null when there is nothing to report, so the common case adds no
+ * noise to the tool payload. Never throws: a broken older file must not take
+ * down a plain task listing.
+ */
+function strandedSummary(config) {
+  try {
+    const groups = cliUtils.findStrandedTasks(config);
+    if (!groups.length) return null;
+    return {
+      total: groups.reduce((n, g) => n + g.tasks.length, 0),
+      partitions: groups.map(g => g.partition),
+      current: cliUtils.getPartitionFolder(config.storage.partitioning),
+      hint: 'These tasks are open but filed under an earlier period. Use task_carry to move them into the current one.'
+    };
+  } catch {
+    return null;
+  }
+}
 
 async function list_tasks(params = {}) {
   try {
@@ -32,15 +84,25 @@ async function list_tasks(params = {}) {
     const tasks = cliUtils.parseTasksTable(content);
 
     const status = params.status || 'all';
-    const filtered = status === 'all'
+    let filtered = status === 'all'
       ? tasks
       : tasks.filter(t => t.status.toLowerCase() === status.toLowerCase());
+
+    filtered = filtered.map(decorateTask);
+    if (params.quadrant) {
+      const q = eisen.quadrantByKey(params.quadrant);
+      if (!q) return { success: false, error: `Unknown quadrant "${params.quadrant}". Use q1, q2, q3 or q4.` };
+      filtered = filtered.filter(t => t.eisenhower.quadrant === q.key);
+    }
 
     return {
       success: true,
       data: filtered,
       path: tasksPath,
-      count: filtered.length
+      count: filtered.length,
+      // Surfaced on every list so the agent can answer "where are my tasks?"
+      // without the user having to know that storage is partitioned by period.
+      stranded: strandedSummary(config)
     };
   } catch (err) {
     return { success: false, error: err.message };
@@ -66,7 +128,8 @@ async function add_task(params) {
       priority: params.priority || '',
       tags: params.tags || '',
       context: params.context || '',
-      project: params.project || ''
+      project: params.project || '',
+      smart: eisen.normalizeSmart(smartFromParams(params))
     };
 
     tasks.push(newTask);
@@ -74,11 +137,100 @@ async function add_task(params) {
     cliUtils.ensureDir(path.dirname(tasksPath));
     fs.writeFileSync(tasksPath, newContent, 'utf8');
 
+    const decorated = decorateTask(newTask);
     return {
       success: true,
-      data: newTask,
+      data: decorated,
+      coaching: eisen.smartNudge(newTask) || null,
       path: tasksPath
     };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/**
+ * Set or clear the SMART fields / Eisenhower axes on an existing task.
+ * Only the keys present in `params` are touched; pass an empty string to clear.
+ */
+async function set_task_smart(params = {}) {
+  try {
+    if (params.id === undefined) return { success: false, error: 'id is required' };
+    const { tasksPath, tasks } = readTasks();
+    const task = tasks.find(t => t.id === parseInt(params.id, 10));
+    if (!task) return { success: false, error: `Task #${params.id} not found` };
+
+    task.smart = eisen.normalizeSmart({ ...eisen.normalizeSmart(task.smart), ...smartFromParams(params) });
+    if (params.due !== undefined) task.dueDate = params.due;
+
+    fs.writeFileSync(tasksPath, cliUtils.formatTasksTable(tasks), 'utf8');
+    return {
+      success: true,
+      data: decorateTask(task),
+      coaching: eisen.smartNudge(task) || null,
+      path: tasksPath
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/** Build the full Eisenhower matrix, optionally narrowed to one quadrant. */
+async function task_matrix(params = {}) {
+  try {
+    const { tasksPath, tasks } = readTasks();
+    const includeDone = params.includeDone === true || String(params.status || '').toLowerCase() === 'all';
+    const matrix = eisen.buildMatrix(tasks, { includeDone });
+    let quadrants = matrix.quadrants;
+    if (params.quadrant) {
+      const q = eisen.quadrantByKey(params.quadrant);
+      if (!q) return { success: false, error: `Unknown quadrant "${params.quadrant}". Use q1, q2, q3 or q4.` };
+      quadrants = quadrants.filter(x => x.key === q.key);
+    }
+    return {
+      success: true,
+      data: { ...matrix, quadrants, insights: eisen.matrixInsights(tasks) },
+      path: tasksPath
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+/** Ranked "what should I do next" list with a reason per task. */
+async function task_focus(params = {}) {
+  try {
+    const { tasksPath, tasks } = readTasks();
+    const limit = params.limit === undefined ? 5 : Math.max(1, parseInt(params.limit, 10) || 5);
+    const focus = eisen.focusOrder(tasks, { limit }).map(t => ({
+      ...t,
+      smartScore: eisen.smartScore(t),
+      nudge: eisen.smartNudge(t) || null
+    }));
+    return {
+      success: true,
+      data: { focus, insights: eisen.matrixInsights(tasks) },
+      count: focus.length,
+      path: tasksPath
+    };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+async function task_carry(params = {}) {
+  try {
+    const config = cliUtils.loadConfig();
+    const dryRun = params.dryRun === true || params.dry_run === true;
+    const ids = Array.isArray(params.ids) && params.ids.length
+      ? params.ids.map(n => parseInt(n, 10)).filter(n => !isNaN(n))
+      : null;
+    const stranded = cliUtils.findStrandedTasks(config);
+    if (!stranded.length) {
+      return { success: true, data: { moved: [], from: [], to: cliUtils.getPartitionFolder(config.storage.partitioning), dryRun }, count: 0 };
+    }
+    const result = cliUtils.carryForwardTasks(config, { dryRun, ids });
+    return { success: true, data: result, count: result.moved.length };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -479,6 +631,10 @@ async function handleToolCall(toolName, params) {
   const tools = {
     list_tasks,
     add_task,
+    set_task_smart,
+    task_matrix,
+    task_focus,
+    task_carry,
     complete_task,
     set_task_status,
     remove_task,
@@ -510,6 +666,10 @@ async function handleToolCall(toolName, params) {
 export {
   list_tasks,
   add_task,
+  set_task_smart,
+  task_matrix,
+  task_focus,
+  task_carry,
   complete_task,
   set_task_status,
   remove_task,

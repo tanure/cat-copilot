@@ -3,7 +3,9 @@
 import { Command } from 'commander';
 import fs from 'fs';
 import path from 'path';
+import readline from 'readline';
 import * as cliUtils from '../lib/cli-utils.js';
+import * as eisen from '../lib/eisenhower.js';
 import { runSetup } from '../lib/setup.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
@@ -119,14 +121,124 @@ function normalizeTaskStatus(value, fallback = 'Open') {
   return match;
 }
 
+// ----------------------------------------------------------------------------
+// SMART helpers (shared by `task add`, `task smart` and the guided coach)
+// ----------------------------------------------------------------------------
+
+/** Pull the SMART flags off a commander options object (undefined = untouched). */
+function smartFromOptions(options = {}) {
+  const out = {};
+  if (options.goal !== undefined) out.goal = options.goal;
+  if (options.measure !== undefined) out.measure = options.measure;
+  if (options.why !== undefined) out.why = options.why;
+  if (options.steps !== undefined) out.steps = options.steps;
+  if (options.importance !== undefined) out.importance = eisen.normalizeAxis(options.importance);
+  if (options.urgency !== undefined) out.urgency = eisen.normalizeAxis(options.urgency);
+  return out;
+}
+
+/** A compact "S M A R T" meter, e.g. `S M · · T  3/5 Decent`. */
+function smartMeter(task) {
+  const s = eisen.smartScore(task);
+  const cells = eisen.SMART_DIMENSIONS.map(d => (s.met.includes(d.key) ? d.letter : '·')).join(' ');
+  return `${cells}   ${s.score}/${s.max} ${s.label}`;
+}
+
+/**
+ * Tell you where your open work actually is.
+ *
+ * Storage is partitioned by month (or week/day), so on the 1st the current file
+ * is empty and every open task is still filed under the previous partition. That
+ * looks exactly like data loss if nobody says otherwise — so whenever the
+ * current partition is missing open work that exists further back, say so and
+ * point at the one command that fixes it.
+ */
+function printStrandedHint(config) {
+  let stranded = [];
+  try { stranded = cliUtils.findStrandedTasks(config); } catch { return; }
+  if (!stranded.length) return;
+  const total = stranded.reduce((n, g) => n + g.tasks.length, 0);
+  const where = stranded.map(g => `${g.partition} (${g.tasks.length})`).join(', ');
+  console.log(`💡 ${total} open task${total === 1 ? '' : 's'} still filed under ${where}.`);
+  console.log(`   Storage is partitioned by ${config.storage.partitioning}, so they stayed behind when the period rolled over.`);
+  console.log(`   Bring them into the current period: cat-pilot task carry   (preview with --dry-run)\n`);
+}
+
+/** Print the SMART block + quadrant for a task. */
+function printTaskSmart(task) {
+  const s = eisen.normalizeSmart(task.smart);
+  const c = eisen.classifyTask(task);
+  console.log(`   🎯 SMART: ${smartMeter(task)}`);
+  if (s.goal) console.log(`   🧭 Goal: ${s.goal}`);
+  if (s.measure) console.log(`   📏 Measure: ${s.measure}`);
+  if (s.why) console.log(`   💡 Why: ${s.why}`);
+  if (s.steps) console.log(`   🪜 Steps: ${s.steps}`);
+  console.log(`   ${c.icon} ${c.short} ${c.label} → ${c.action}${c.source === 'derived' ? ' (auto)' : ''}`);
+  const nudge = eisen.smartNudge(task);
+  if (nudge) console.log(`   👉 Next: ${nudge}`);
+}
+
+/** Ask one question on stdin, returning '' when the user just presses Enter. */
+function ask(rl, question) {
+  return new Promise(resolve => rl.question(question, answer => resolve(String(answer || '').trim())));
+}
+
+/**
+ * The interactive SMART coach. Walks the five dimensions one at a time with an
+ * example, lets every answer be skipped with Enter, and finishes with the two
+ * Eisenhower axes plus a preview of the resulting quadrant.
+ * @param {object} task - The task being built or edited (mutated copy is returned)
+ * @returns {Promise<object>} The task with updated `smart`, `dueDate` and `priority`
+ */
+async function runGuidedCoach(task) {
+  const draft = { ...task, smart: eisen.normalizeSmart(task.smart) };
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  console.log('\n😺 Let\'s make this task SMART. Press Enter to skip any question.\n');
+  console.log(`   📌 Task: ${draft.title}`);
+  try {
+    for (const dim of eisen.SMART_DIMENSIONS) {
+      const current = dim.field === 'dueDate' ? draft.dueDate : draft.smart[dim.field];
+      console.log(`\n${dim.letter} · ${dim.label} — ${dim.question}`);
+      console.log(`   e.g. ${dim.example}`);
+      if (current) console.log(`   current: ${current}`);
+      const answer = await ask(rl, '   > ');
+      if (!answer) continue;
+      if (dim.field === 'dueDate') draft.dueDate = answer;
+      else draft.smart[dim.field] = answer;
+    }
+
+    console.log('\n⚖️  Eisenhower — these drive the matrix. Enter = let CatPilot decide.');
+    console.log('   Is this important (moves a real goal forward)? [high/low]');
+    const imp = eisen.normalizeAxis(await ask(rl, '   > '));
+    if (imp) draft.smart.importance = imp;
+    console.log('   Is this urgent (needs attention within days)? [high/low]');
+    const urg = eisen.normalizeAxis(await ask(rl, '   > '));
+    if (urg) draft.smart.urgency = urg;
+  } finally {
+    rl.close();
+  }
+
+  console.log('\n───────────────────────────────');
+  printTaskSmart(draft);
+  console.log('───────────────────────────────');
+  return draft;
+}
+
 taskCmd
   .command('add <title>')
   .description('Add new task')
-  .option('--due <date>', 'Due date (YYYY-MM-DD)')
+  .option('--due <date>', 'Due date (YYYY-MM-DD) — the "T" in SMART')
   .option('--priority <priority>', 'Priority (P0|P1|P2|P3)')
   .option('--tags <tags>', 'Tags (comma-separated)')
   .option('--context <context>', 'Context or notes')
   .option('--status <status>', 'Status (Open|In Progress|Blocked|Done)', 'Open')
+  .option('--goal <goal>', 'SMART · Specific: what "done" looks like')
+  .option('--measure <measure>', 'SMART · Measurable: how you will know it worked')
+  .option('--steps <steps>', 'SMART · Achievable: the first concrete steps')
+  .option('--why <why>', 'SMART · Relevant: why this matters now')
+  .option('--importance <level>', 'Eisenhower importance (high|low, default auto)')
+  .option('--urgency <level>', 'Eisenhower urgency (high|low, default auto)')
+  .option('--guided', 'Walk through the SMART questions interactively')
   .action(async (title, options) => {
     try {
       const config = cliUtils.loadConfig();
@@ -135,15 +247,20 @@ taskCmd
       const tasks = cliUtils.parseTasksTable(content);
 
       const status = normalizeTaskStatus(options.status);
-      const newTask = {
+      let newTask = {
         id: cliUtils.getNextTaskId(tasks),
         status,
         title,
         dueDate: options.due || '',
         priority: options.priority || '',
         tags: options.tags || '',
-        context: options.context || ''
+        context: options.context || '',
+        project: '',
+        smart: eisen.normalizeSmart(smartFromOptions(options)),
+        log: []
       };
+
+      if (options.guided) newTask = await runGuidedCoach(newTask);
 
       tasks.push(newTask);
       const newContent = cliUtils.formatTasksTable(tasks);
@@ -151,10 +268,14 @@ taskCmd
       fs.writeFileSync(tasksPath, newContent, 'utf8');
 
       console.log(`\n✅ Task added to ${tasksPath}`);
-      console.log(`   📌 ID #${newTask.id}: ${title}`);
-      if (options.due) console.log(`   📅 Due: ${options.due}`);
-      if (options.priority) console.log(`   ⚡ Priority: ${options.priority}`);
+      console.log(`   📌 ID #${newTask.id}: ${newTask.title}`);
+      if (newTask.dueDate) console.log(`   📅 Due: ${newTask.dueDate}`);
+      if (newTask.priority) console.log(`   ⚡ Priority: ${newTask.priority}`);
       if (status !== 'Open') console.log(`   🚦 Status: ${status}`);
+      printTaskSmart(newTask);
+      if (!options.guided && eisen.smartScore(newTask).score < 3) {
+        console.log(`   💬 Tip: run \`cat-pilot task smart ${newTask.id} --guided\` to sharpen it.`);
+      }
     } catch (err) {
       console.error(`❌ Error: ${err.message}`);
       process.exit(1);
@@ -165,6 +286,7 @@ taskCmd
   .command('list')
   .description('List tasks')
   .option('--status <status>', 'Filter by status (open|blocked|done|all)', 'open')
+  .option('--quadrant <q>', 'Filter by Eisenhower quadrant (q1|q2|q3|q4)')
   .action((options) => {
     try {
       const config = cliUtils.loadConfig();
@@ -172,24 +294,73 @@ taskCmd
       const content = cliUtils.readFileOrCreate(tasksPath);
       const tasks = cliUtils.parseTasksTable(content);
 
-      const filtered = options.status === 'all'
+      let filtered = options.status === 'all'
         ? tasks
         : tasks.filter(t => t.status.toLowerCase() === options.status.toLowerCase());
 
+      if (options.quadrant) {
+        const q = eisen.quadrantByKey(options.quadrant);
+        if (!q) { console.error(`❌ Unknown quadrant "${options.quadrant}". Use q1, q2, q3 or q4.`); process.exit(1); }
+        filtered = filtered.filter(t => eisen.classifyTask(t).quadrant === q.key);
+      }
+
       if (filtered.length === 0) {
         console.log(`\n📂 No ${options.status} tasks found in ${tasksPath}`);
+        printStrandedHint(config);
         return;
       }
 
       console.log(`\n📂 Tasks from ${tasksPath}\n`);
-      console.log('| ID | Status | Title | Due | Priority |');
-      console.log('| --- | --- | --- | --- | --- |');
+      console.log('| ID | Status | Title | Due | Priority | Q | SMART |');
+      console.log('| --- | --- | --- | --- | --- | --- | --- |');
       filtered.forEach(t => {
         const due = t.dueDate ? `${t.dueDate}` : '-';
         const pri = t.priority || '-';
-        console.log(`| ${t.id} | ${t.status} | ${t.title} | ${due} | ${pri} |`);
+        const c = eisen.classifyTask(t);
+        const s = eisen.smartScore(t);
+        console.log(`| ${t.id} | ${t.status} | ${t.title} | ${due} | ${pri} | ${c.short}${c.source === 'derived' ? '?' : ''} | ${s.score}/${s.max} |`);
       });
       console.log();
+      printStrandedHint(config);
+    } catch (err) {
+      console.error(`❌ Error: ${err.message}`);
+      process.exit(1);
+    }
+  });
+
+taskCmd
+  .command('carry')
+  .description('Bring open tasks from previous periods into the current one')
+  .option('--dry-run', 'Show what would move without changing anything')
+  .option('--ids <ids>', 'Only carry these task IDs (comma-separated)')
+  .action((options) => {
+    try {
+      const config = cliUtils.loadConfig();
+      const ids = options.ids
+        ? options.ids.split(',').map(s => parseInt(s.trim(), 10)).filter(Boolean)
+        : null;
+
+      const preview = cliUtils.carryForwardTasks(config, { dryRun: true, ids }, process.cwd());
+      if (!preview.moved.length) {
+        console.log(`\n✅ Nothing to carry — every open task is already in ${preview.to}.`);
+        return;
+      }
+
+      console.log(`\n${options.dryRun ? '🔍 Would carry' : '📦 Carrying'} ${preview.moved.length} open task${preview.moved.length === 1 ? '' : 's'} → ${preview.to}`);
+      console.log(`   from ${preview.from.join(', ')}\n`);
+      preview.moved.forEach(t => {
+        const due = t.dueDate ? ` · due ${t.dueDate}` : '';
+        console.log(`   #${t.id} ${t.title}${due}`);
+      });
+
+      if (options.dryRun) {
+        console.log(`\n   Run without --dry-run to move them. Completed tasks stay where they were finished.\n`);
+        return;
+      }
+
+      const result = cliUtils.carryForwardTasks(config, { ids }, process.cwd());
+      console.log(`\n✅ Moved ${result.moved.length} task${result.moved.length === 1 ? '' : 's'} into ${result.to}`);
+      console.log(`   Completed tasks stayed in ${result.from.join(', ')} as the record of what got done there.\n`);
     } catch (err) {
       console.error(`❌ Error: ${err.message}`);
       process.exit(1);
@@ -288,6 +459,138 @@ taskCmd
       console.error(`❌ Error: ${err.message}`);
       process.exit(1);
     }
+  });
+
+// --- SMART fields + Eisenhower views -----------------------------------------
+
+function loadTasksCli() {
+  const config = cliUtils.loadConfig();
+  const tasksPath = cliUtils.resolveFilePath('tasks', config);
+  const tasks = cliUtils.parseTasksTable(cliUtils.readFileOrCreate(tasksPath));
+  return { tasksPath, tasks };
+}
+
+taskCmd
+  .command('smart <id>')
+  .description('View or edit the SMART fields (goal, measure, steps, why) and Eisenhower axes of a task')
+  .option('--goal <goal>', 'Specific: what "done" looks like')
+  .option('--measure <measure>', 'Measurable: how you will know it worked')
+  .option('--steps <steps>', 'Achievable: the first concrete steps')
+  .option('--why <why>', 'Relevant: why this matters now')
+  .option('--due <date>', 'Time-bound: due date (YYYY-MM-DD)')
+  .option('--importance <level>', 'Eisenhower importance (high|low|auto)')
+  .option('--urgency <level>', 'Eisenhower urgency (high|low|auto)')
+  .option('--guided', 'Walk through the SMART questions interactively')
+  .action(async (id, options) => {
+    try {
+      const { tasksPath, tasks } = loadTasksCli();
+      const task = tasks.find(t => t.id === parseInt(id, 10));
+      if (!task) { console.error(`❌ Task #${id} not found`); process.exit(1); }
+
+      const patch = smartFromOptions(options);
+      const touched = Object.keys(patch).length > 0 || options.due !== undefined || options.guided;
+
+      if (!touched) {
+        console.log(`\n📌 Task #${task.id}: ${task.title}`);
+        if (task.dueDate) console.log(`   📅 Due: ${task.dueDate}`);
+        printTaskSmart(task);
+        console.log(`\n   💬 Sharpen it with: cat-pilot task smart ${task.id} --guided\n`);
+        return;
+      }
+
+      task.smart = eisen.normalizeSmart({ ...eisen.normalizeSmart(task.smart), ...patch });
+      if (options.due !== undefined) task.dueDate = options.due;
+      if (options.guided) {
+        const draft = await runGuidedCoach(task);
+        task.smart = draft.smart;
+        task.dueDate = draft.dueDate;
+      }
+
+      fs.writeFileSync(tasksPath, cliUtils.formatTasksTable(tasks), 'utf8');
+      console.log(`\n✅ SMART details updated on task #${task.id}: ${task.title}`);
+      printTaskSmart(task);
+    } catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
+  });
+
+taskCmd
+  .command('matrix')
+  .description('Show tasks organised into the Eisenhower Matrix (urgent/important)')
+  .option('--quadrant <q>', 'Only show one quadrant (q1|q2|q3|q4)')
+  .option('--status <status>', 'open (default) or all — "all" includes completed tasks', 'open')
+  .option('--json', 'Emit JSON instead of the formatted matrix')
+  .action((options) => {
+    try {
+      const { tasks } = loadTasksCli();
+      const includeDone = String(options.status).toLowerCase() === 'all';
+      const matrix = eisen.buildMatrix(tasks, { includeDone });
+      const insights = eisen.matrixInsights(tasks);
+
+      let quadrants = matrix.quadrants;
+      if (options.quadrant) {
+        const q = eisen.quadrantByKey(options.quadrant);
+        if (!q) { console.error(`❌ Unknown quadrant "${options.quadrant}". Use q1, q2, q3 or q4.`); process.exit(1); }
+        quadrants = quadrants.filter(x => x.key === q.key);
+      }
+
+      if (options.json) {
+        console.log(JSON.stringify({ ...matrix, quadrants, insights }, null, 2));
+        return;
+      }
+
+      console.log('\n🎯 Eisenhower Matrix\n');
+      for (const q of quadrants) {
+        console.log(`${q.icon}  ${q.short} · ${q.label} — ${q.action}  (${q.openCount} open${q.doneCount ? `, ${q.doneCount} done` : ''})`);
+        if (!q.groups.length) { console.log('   — nothing here —\n'); continue; }
+        for (const g of q.groups) {
+          console.log(`   ${g.icon} ${g.label} (${g.tasks.length})`);
+          for (const t of g.tasks) {
+            const done = String(t.status).toLowerCase() === 'done';
+            const mark = done ? '✅' : t.eisenhower.source === 'derived' ? '○' : '●';
+            const due = t.dueDate ? ` · 📅 ${t.dueDate}` : '';
+            const pri = t.priority ? ` · ⚡ ${t.priority}` : '';
+            console.log(`      ${mark} #${t.id} ${t.title}${due}${pri}`);
+          }
+        }
+        console.log();
+      }
+      console.log('   ● explicitly triaged   ○ auto-classified by CatPilot\n');
+      if (insights.hints.length) {
+        console.log('💡 Coaching');
+        insights.hints.forEach(h => console.log(`   · ${h}`));
+        console.log();
+      }
+    } catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
+  });
+
+taskCmd
+  .command('focus')
+  .description('Show a ranked "what to do next" list built from the Eisenhower Matrix')
+  .option('--limit <n>', 'How many tasks to show', '5')
+  .option('--json', 'Emit JSON instead of the formatted list')
+  .action((options) => {
+    try {
+      const { tasks } = loadTasksCli();
+      const limit = Math.max(1, parseInt(options.limit, 10) || 5);
+      const ranked = eisen.focusOrder(tasks, { limit });
+      const insights = eisen.matrixInsights(tasks);
+
+      if (options.json) { console.log(JSON.stringify({ focus: ranked, insights }, null, 2)); return; }
+
+      if (!ranked.length) { console.log('\n🎉 Nothing open — enjoy the quiet.\n'); return; }
+      console.log(`\n🎯 Focus plan — next ${ranked.length} of ${insights.counts.total} open task${insights.counts.total === 1 ? '' : 's'}\n`);
+      ranked.forEach((t, i) => {
+        console.log(`${String(i + 1).padStart(2)}. #${t.id} ${t.title}`);
+        console.log(`      ${t.focusReason}`);
+        const nudge = eisen.smartNudge(t);
+        if (nudge) console.log(`      👉 ${nudge}`);
+      });
+      console.log();
+      if (insights.hints.length) {
+        console.log('💡 Coaching');
+        insights.hints.forEach(h => console.log(`   · ${h}`));
+        console.log();
+      }
+    } catch (err) { console.error(`❌ Error: ${err.message}`); process.exit(1); }
   });
 
 // --- Task progress log (dated comments) ---

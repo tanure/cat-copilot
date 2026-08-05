@@ -68,7 +68,8 @@ function assert(cond, msg) {
     'project_create', 'project_board', 'project_read', 'project_item_add',
     'project_item_update', 'project_complete', 'achievement_add', 'achievement_list',
     'pomodoro_start', 'pomodoro_status', 'pomodoro_complete',
-    'pomodoro_cancel', 'pomodoro_list', 'pomodoro_stats', 'pomodoro_report'];
+    'pomodoro_cancel', 'pomodoro_list', 'pomodoro_stats', 'pomodoro_report',
+    'task_smart_set', 'task_matrix', 'task_focus', 'task_carry'];
   for (const name of expected) assert(names.includes(name), `exposes ${name}`);
 
   const json = (res) => JSON.parse(res.content[0].text);
@@ -104,6 +105,42 @@ function assert(cond, msg) {
   assert(!cRemove.isError, 'task_comment_remove succeeds');
   const cEmpty = await client.callTool({ name: 'task_comment_list', arguments: { id: 1 } });
   assert(json(cEmpty).comments.length === 0, 'log is empty after removal');
+
+  // SMART fields + Eisenhower classification.
+  const smartAdd = await client.callTool({
+    name: 'task_add',
+    arguments: {
+      title: 'Ship the export endpoint', due: '2099-01-01', priority: 'P2',
+      goal: 'Ship v2 export behind a flag', measure: 'p95 under 300ms',
+      why: 'Unblocks Q3 reporting', steps: 'Draft -> build -> test',
+      importance: 'High', urgency: 'Low',
+    },
+  });
+  assert(!smartAdd.isError, 'task_add accepts SMART fields');
+  const smartTask = json(smartAdd).data;
+  const smartId = smartTask.id;
+  assert(smartTask.smart.goal === 'Ship v2 export behind a flag', 'SMART goal round-trips through task_add');
+  assert(smartTask.eisenhower.quadrant === 'q2', 'explicit High/Low lands in Q2 (Schedule)');
+  assert(smartTask.eisenhower.source === 'explicit', 'explicit axes are reported as explicit');
+  assert(smartTask.smartScore.score === 5, 'a fully filled task scores 5/5');
+
+  // SMART data survives an unrelated whole-file mutation.
+  await client.callTool({ name: 'task_set_status', arguments: { id: smartId, status: 'In Progress' } });
+  const reList = json(await client.callTool({ name: 'task_list', arguments: { status: 'all' } })).data;
+  const reFound = reList.find((t) => String(t.id) === String(smartId));
+  assert(reFound && reFound.smart.measure === 'p95 under 300ms', 'SMART fields survive a status change');
+
+  const smartSet = await client.callTool({ name: 'task_smart_set', arguments: { id: smartId, urgency: 'High' } });
+  assert(!smartSet.isError && json(smartSet).data.eisenhower.quadrant === 'q1', 'task_smart_set re-classifies into Q1');
+
+  const matrix = json(await client.callTool({ name: 'task_matrix', arguments: {} })).data;
+  assert(Array.isArray(matrix.quadrants) && matrix.quadrants.length === 4, 'task_matrix returns four quadrants');
+  assert(matrix.quadrants.some((q) => q.tasks.some((t) => String(t.id) === String(smartId))), 'task_matrix places the SMART task');
+  assert(matrix.insights && typeof matrix.insights.counts.total === 'number', 'task_matrix returns insights');
+
+  const focus = json(await client.callTool({ name: 'task_focus', arguments: { limit: 3 } })).data;
+  assert(Array.isArray(focus.focus) && focus.focus.length <= 3, 'task_focus honours the limit');
+  assert(focus.focus.every((t) => typeof t.focusReason === 'string'), 'every focus item carries a reason');
 
   const learn = await client.callTool({ name: 'learning_add', arguments: { title: 'AZ-104', goal: 'Pass cert', target_date: '2026-09-01' } });
   assert(!learn.isError && learn.content[0].text.includes('learning'), 'learning_add creates a frontmatter note');

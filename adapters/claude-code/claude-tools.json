@@ -1,7 +1,7 @@
 [
   {
     "name": "list_tasks",
-    "description": "List all tasks from CatPilot storage, filtered by status",
+    "description": "List all tasks from CatPilot storage, filtered by status. Each task includes its SMART fields, SMART score and computed Eisenhower quadrant.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -9,6 +9,11 @@
           "type": "string",
           "enum": ["open", "done", "all"],
           "description": "Filter tasks by status (default: all)"
+        },
+        "quadrant": {
+          "type": "string",
+          "enum": ["q1", "q2", "q3", "q4"],
+          "description": "Only return tasks in this Eisenhower quadrant (optional)"
         }
       }
     }
@@ -39,9 +44,90 @@
         "context": {
           "type": "string",
           "description": "Context or notes (optional)"
+        },
+        "project": {
+          "type": "string",
+          "description": "Linked project name (optional)"
+        },
+        "goal": {
+          "type": "string",
+          "description": "SMART · Specific — what \"done\" concretely looks like (optional)"
+        },
+        "measure": {
+          "type": "string",
+          "description": "SMART · Measurable — how success will be verified (optional)"
+        },
+        "steps": {
+          "type": "string",
+          "description": "SMART · Achievable — the first concrete steps (optional)"
+        },
+        "why": {
+          "type": "string",
+          "description": "SMART · Relevant — why this matters now (optional)"
+        },
+        "importance": {
+          "type": "string",
+          "enum": ["High", "Low", "auto"],
+          "description": "Eisenhower importance. Omit or 'auto' to let CatPilot derive it (optional)"
+        },
+        "urgency": {
+          "type": "string",
+          "enum": ["High", "Low", "auto"],
+          "description": "Eisenhower urgency. Omit or 'auto' to let CatPilot derive it (optional)"
         }
       },
       "required": ["title"]
+    }
+  },
+  {
+    "name": "set_task_smart",
+    "description": "Set or clear the SMART fields (goal, measure, steps, why) and the Eisenhower importance/urgency axes on an existing task. Only the provided fields change; pass an empty string to clear one.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "number", "description": "Task ID (required)" },
+        "goal": { "type": "string", "description": "SMART · Specific — what \"done\" concretely looks like" },
+        "measure": { "type": "string", "description": "SMART · Measurable — how success will be verified" },
+        "steps": { "type": "string", "description": "SMART · Achievable — the first concrete steps" },
+        "why": { "type": "string", "description": "SMART · Relevant — why this matters now" },
+        "due": { "type": "string", "description": "SMART · Time-bound — due date in YYYY-MM-DD format" },
+        "importance": { "type": "string", "enum": ["High", "Low", "auto"], "description": "Eisenhower importance ('auto' clears the override)" },
+        "urgency": { "type": "string", "enum": ["High", "Low", "auto"], "description": "Eisenhower urgency ('auto' clears the override)" }
+      },
+      "required": ["id"]
+    }
+  },
+  {
+    "name": "task_matrix",
+    "description": "Return tasks organised into the Eisenhower Matrix (Q1 urgent+important, Q2 important, Q3 urgent, Q4 neither), grouped by Overdue / Today / Next 7 days / Later / No date / Completed, plus coaching insights about the balance.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "quadrant": { "type": "string", "enum": ["q1", "q2", "q3", "q4"], "description": "Only return one quadrant (optional)" },
+        "status": { "type": "string", "enum": ["open", "all"], "description": "'all' includes completed tasks (default 'open')" },
+        "includeDone": { "type": "boolean", "description": "Include completed tasks (optional)" }
+      }
+    }
+  },
+  {
+    "name": "task_focus",
+    "description": "Return a ranked 'what should I do next' list built from the Eisenhower Matrix, with a one-line reason per task and coaching insights.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "limit": { "type": "number", "description": "How many tasks to return (default 5)" }
+      }
+    }
+  },
+  {
+    "name": "task_carry",
+    "description": "Move open tasks that are still filed under an earlier period (month/week/day) into the current one. Use this when list_tasks reports a 'stranded' summary, or the user asks where their tasks went after a period rolled over. Completed tasks stay where they were finished.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "dryRun": { "type": "boolean", "description": "Preview what would move without writing anything" },
+        "ids": { "type": "array", "items": { "type": "number" }, "description": "Only carry these task IDs (default: all open stranded tasks)" }
+      }
     }
   },
   {

@@ -1,6 +1,6 @@
 {
     "name": "catpilot",
-    "description": "CatPilot assistant for GitHub Copilot: tasks, journaling, milestones, memos, learning/cert tracking, growth/review-prep, project status, and pomodoro focus timers (file-based, Obsidian-friendly).",
+    "description": "CatPilot assistant for GitHub Copilot: SMART tasks with an Eisenhower Matrix, journaling, milestones, memos, learning/cert tracking, growth/review-prep, project status, and pomodoro focus timers (file-based, Obsidian-friendly).",
     "version": "0.5.0",
     "author": {
         "name": "Albert Tanure",
@@ -20,7 +20,10 @@
         "second-brain",
         "learning",
         "growth",
-        "pomodoro"
+        "pomodoro",
+        "smart-goals",
+        "eisenhower-matrix",
+        "prioritization"
     ],
     "tags": [
         "personal-assistant",

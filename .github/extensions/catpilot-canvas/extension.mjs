@@ -5,6 +5,8 @@
 
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
+import fsSync from "node:fs";
+import os from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
@@ -402,6 +404,30 @@ async function requestListener(req, res) {
     res.writeHead(404); res.end("Not found");
 }
 
+// A panel keeps the URL it was opened with. When the extension host reloads,
+// binding a fresh random port would strand every already-open panel on a dead
+// address, so the last port is remembered and reclaimed when it is still free.
+const PORT_FILE = path.join(os.tmpdir(), "catpilot-canvas-port");
+function rememberedPort() {
+    try {
+        const n = Number(fsSync.readFileSync(PORT_FILE, "utf8").trim());
+        return Number.isInteger(n) && n > 1024 && n < 65536 ? n : 0;
+    } catch { return 0; }
+}
+function rememberPort(port) {
+    try { fsSync.writeFileSync(PORT_FILE, String(port), "utf8"); } catch { /* best effort */ }
+}
+
+function listenOn(server, port) {
+    return new Promise((resolve, reject) => {
+        const onError = (err) => { server.removeListener("listening", onOk); reject(err); };
+        const onOk = () => { server.removeListener("error", onError); resolve(); };
+        server.once("error", onError);
+        server.once("listening", onOk);
+        server.listen(port, "127.0.0.1");
+    });
+}
+
 async function ensureServer() {
     if (sharedServer) return sharedServer;
     // Cache the in-flight init so concurrent open() calls share one server
@@ -411,11 +437,15 @@ async function ensureServer() {
             const server = createServer((req, res) => {
                 requestListener(req, res).catch(() => { try { res.writeHead(500); res.end(); } catch { /* */ } });
             });
-            await new Promise((resolve, reject) => {
-                server.once("error", reject);
-                server.listen(0, "127.0.0.1", resolve);
-            });
+            const preferred = rememberedPort();
+            if (preferred) {
+                try { await listenOn(server, preferred); }
+                catch { await listenOn(server, 0); }
+            } else {
+                await listenOn(server, 0);
+            }
             const port = server.address().port;
+            rememberPort(port);
             sharedServer = { server, url: `http://127.0.0.1:${port}/` };
             log(`CatPilot canvas server listening on ${sharedServer.url}`);
             return sharedServer;

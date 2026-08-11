@@ -80,8 +80,14 @@ async function handleApi(req, url) {
     if (p === "/api/milestones" && m === "GET") return { milestones: store.listMilestones() };
     if (p === "/api/memos" && m === "GET") return { memos: store.listMemos() };
     if (p === "/api/growth" && m === "GET") return { notes: store.listNotes("growth") };
-    if (p === "/api/knowledge" && m === "GET") return { docs: store.kbList({}) };
+    if (p === "/api/knowledge" && m === "GET") {
+        return { docs: store.kbList({ folder: q.get("folder") || undefined, tag: q.get("tag") || undefined, q: q.get("q") || undefined }) };
+    }
+    if (p === "/api/knowledge" && m === "POST") return { doc: store.kbAdd(await readBody(req)) };
     if (p === "/api/knowledge/folders" && m === "GET") return store.kbFolders();
+    if (p === "/api/knowledge/doc" && m === "GET") return { doc: store.kbRead(q.get("id")) };
+    if (p === "/api/knowledge/doc" && m === "PUT") return { doc: store.kbUpdate(q.get("id"), await readBody(req)) };
+    if (p === "/api/knowledge/doc" && m === "DELETE") return { removed: store.kbRemove(q.get("id")) };
     if (p === "/api/learning-paths" && m === "GET") return { paths: store.learningList({}) };
     if (p === "/api/projects" && m === "GET") return { projects: store.projectList({}) };
     if (p === "/api/achievements" && m === "GET") return { achievements: store.achievementList({}) };

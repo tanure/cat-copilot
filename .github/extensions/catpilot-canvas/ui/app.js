@@ -26,18 +26,49 @@
     }
 
     async function api(path, { method = "GET", body } = {}) {
-        const res = await fetch(path, {
-            method,
-            headers: body ? { "Content-Type": "application/json" } : undefined,
-            body: body ? JSON.stringify(body) : undefined,
-        });
+        let res;
+        try {
+            res = await fetch(path, {
+                method,
+                headers: body ? { "Content-Type": "application/json" } : undefined,
+                body: body ? JSON.stringify(body) : undefined,
+            });
+        } catch {
+            // The panel outlives the extension host: on reload the server binds a
+            // new random port while this document keeps the old one, so every
+            // call dies in the network layer with no response to report.
+            const err = new Error("CatPilot's backend is not reachable from this panel.");
+            err.code = "BACKEND_UNREACHABLE";
+            showConnectionLost();
+            throw err;
+        }
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
             const err = new Error(data.error || `Request failed (${res.status})`);
             err.code = data.code; err.status = res.status;
             throw err;
         }
+        connectionOk();
         return data;
+    }
+
+    // ------------------------------------------------------- connection banner
+    let connLost = false;
+    function showConnectionLost() {
+        if (connLost) return;
+        connLost = true;
+        const bar = el("div", { class: "conn-lost", role: "alert" },
+            el("span", { class: "conn-ic", text: "🔌" }),
+            el("div", { class: "conn-msg" },
+                el("strong", { text: "CatPilot lost its connection" }),
+                el("span", { text: "This panel is talking to a server that is no longer running — usually after the extension reloaded. Nothing you save right now will be stored." })),
+            el("button", { class: "btn btn-sm btn-primary", text: "Reconnect", onclick: () => location.reload() }));
+        document.body.append(bar);
+    }
+    function connectionOk() {
+        if (!connLost) return;
+        connLost = false;
+        document.querySelectorAll(".conn-lost").forEach((n) => n.remove());
     }
 
     function toast(title, sub, kind = "") {
@@ -47,6 +78,40 @@
             el("div", {}, el("strong", { text: title }), sub ? el("span", { text: sub }) : null));
         $("#toasts").append(t);
         setTimeout(() => { t.style.opacity = "0"; t.style.transform = "translateX(20px)"; setTimeout(() => t.remove(), 250); }, 3200);
+    }
+
+    // A crash inside an async click handler is invisible otherwise: the button
+    // just stops doing anything. Surface it instead of failing silently.
+    function reportCrash(message) {
+        try { toast("Something went wrong", message || "Unexpected UI error", "err"); }
+        catch { /* toasts unavailable this early */ }
+    }
+    window.addEventListener("error", (e) => reportCrash(e.message));
+    window.addEventListener("unhandledrejection", (e) => {
+        const r = e.reason;
+        if (r && r.code === "BACKEND_UNREACHABLE") return; // already has a banner
+        reportCrash((r && r.message) || String(r || ""));
+    });
+
+    // ------------------------------------------------------------ form helpers
+    // Transient toasts are easy to miss and vanish while the user is still
+    // reading the form, so failures are also written into the dialog itself.
+    function formError() {
+        const node = el("div", { class: "form-error hidden", role: "alert" });
+        return {
+            node,
+            show(msg) { node.textContent = msg; node.classList.remove("hidden"); node.scrollIntoView({ block: "nearest" }); },
+            clear() { node.textContent = ""; node.classList.add("hidden"); },
+        };
+    }
+    async function withBusy(btn, label, fn) {
+        const original = btn.innerHTML;
+        btn.disabled = true; btn.innerHTML = label;
+        try { return await fn(); }
+        finally { btn.disabled = false; btn.innerHTML = original; }
+    }
+    function submitOnEnter(input, fn) {
+        input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); fn(); } });
     }
 
     // ---------------------------------------------------------------- modal
@@ -1794,21 +1859,26 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
         const f = {};
         const editor = mdEditor({ value: doc.body || "", placeholder: "Markdown content…", minRows: 12 });
         f.body = editor.textarea;
+        const err = formError();
         const meta = el("div", { class: "form-row" },
             field("Title", f, "title", { value: doc.title }),
             field("Folder", f, "folder", { value: doc.legacy ? "" : doc.folder, placeholder: "e.g. DevOps/Redis" }),
             field("Tags", f, "tags", { value: doc.tags.join(", "), placeholder: "comma,separated" }));
-        const body = el("div", { class: "form" }, meta, el("div", { class: "md-label" }, el("span", { text: "Content" }), editor.node));
+        const body = el("div", { class: "form" }, meta, el("div", { class: "md-label" }, el("span", { text: "Content" }), editor.node), err.node);
         const save = el("button", { class: "btn btn-primary", text: "Save", onclick: async () => {
-            try {
-                const r = await api(`/api/knowledge/doc?id=${encodeURIComponent(id)}`, { method: "PUT", body: { title: f.title.value.trim() || doc.title, folder: f.folder.value.trim(), tags: f.tags.value, body: f.body.value } });
-                toast("Saved", r.doc.title, "ok"); closeModal(); await refreshSummary(); if (state.view === "knowledge") go("knowledge");
-            } catch (e) { toast("Error", e.message, "err"); }
+            err.clear();
+            await withBusy(save, "⏳ Saving…", async () => {
+                try {
+                    const r = await api(`/api/knowledge/doc?id=${encodeURIComponent(id)}`, { method: "PUT", body: { title: f.title.value.trim() || doc.title, folder: f.folder.value.trim(), tags: f.tags.value, body: f.body.value } });
+                    toast("Saved", r.doc.title, "ok"); closeModal(); await refreshSummary(); if (state.view === "knowledge") go("knowledge");
+                } catch (e) { err.show(`Couldn't save: ${e.message}`); }
+            });
         } });
         const del = el("button", { class: "btn btn-ghost btn-danger", text: "Delete", onclick: async () => {
             if (!confirm(`Delete "${doc.title}"?`)) return;
+            err.clear();
             try { await api(`/api/knowledge/doc?id=${encodeURIComponent(id)}`, { method: "DELETE" }); toast("Deleted", doc.title, "ok"); closeModal(); await refreshSummary(); if (state.view === "knowledge") go("knowledge"); }
-            catch (e) { toast("Error", e.message, "err"); }
+            catch (e) { err.show(`Couldn't delete: ${e.message}`); }
         } });
         openModal({ title: doc.title, width: 760, body, foot: [del, el("span", { class: "spacer", style: "flex:1" }), el("button", { class: "btn", text: "Close", onclick: closeModal }), save] });
     }
@@ -1817,18 +1887,38 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
         const f = {};
         const editor = mdEditor({ value: "", placeholder: "Markdown content…", minRows: 8 });
         f.body = editor.textarea;
+        const err = formError();
         const body = el("div", { class: "form" },
             el("div", { class: "form-row" },
                 field("Title", f, "title", { required: true, placeholder: "Document title" }),
                 field("Folder", f, "folder", { placeholder: "General" }),
                 field("Tags", f, "tags", { placeholder: "comma,separated" })),
-            el("div", { class: "md-label" }, el("span", { text: "Content" }), editor.node));
-        const save = el("button", { class: "btn btn-primary", text: "Create", onclick: async () => {
+            el("div", { class: "md-label" }, el("span", { text: "Content" }), editor.node),
+            err.node);
+        const submit = async () => {
+            err.clear();
+            f.title.classList.remove("invalid");
             const title = f.title.value.trim();
-            if (!title) { toast("Title required", "", "err"); return; }
-            try { await api("/api/knowledge", { method: "POST", body: { title, folder: f.folder.value.trim(), tags: f.tags.value, body: f.body.value } }); toast("Document created", title, "ok"); closeModal(); await refreshSummary(); if (state.view === "knowledge") go("knowledge"); }
-            catch (e) { toast("Error", e.message, "err"); }
-        } });
+            if (!title) {
+                f.title.classList.add("invalid"); f.title.focus();
+                err.show("Give the document a title before creating it.");
+                return;
+            }
+            await withBusy(save, "⏳ Creating…", async () => {
+                try {
+                    const r = await api("/api/knowledge", { method: "POST", body: { title, folder: f.folder.value.trim(), tags: f.tags.value, body: f.body.value } });
+                    toast("Document created", (r.doc && r.doc.title) || title, "ok");
+                    closeModal();
+                    await refreshSummary();
+                    if (state.view === "knowledge") go("knowledge");
+                } catch (e) {
+                    // Keep the dialog open so the typed content is never lost.
+                    err.show(`Couldn't create the document: ${e.message}`);
+                }
+            });
+        };
+        const save = el("button", { class: "btn btn-primary", text: "Create", onclick: submit });
+        submitOnEnter(f.title, submit);
         openModal({ title: "New knowledge document", width: 720, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
         setTimeout(() => f.title.focus(), 50);
     }

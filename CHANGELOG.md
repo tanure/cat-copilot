@@ -64,6 +64,22 @@ All notable changes to this project are documented in this file.
   `GET /api/tasks/stranded`, `POST /api/tasks/carry`.
 
 ### Fixed
+- **The canvas could fail silently — the "Create" button appearing to do nothing.** Three gaps
+  combined to swallow failures. (1) A panel keeps the URL it was opened with, but the canvas
+  server bound a *random* port on every extension reload, so an open panel could end up talking
+  to a port nothing was listening on; every save then failed in the network layer with no
+  response to report. The server now remembers its port and reclaims it on restart, falling back
+  to a fresh one only if it is taken, so an already-open panel keeps working across reloads.
+  (2) When the backend genuinely is unreachable, the canvas now says so — a persistent
+  **"CatPilot lost its connection"** banner with a **Reconnect** button, instead of a toast that
+  vanishes in three seconds. (3) An exception inside an async click handler used to disappear as
+  an unhandled rejection with no UI feedback at all; uncaught errors and rejections now surface
+  as a toast. Covered by `test/canvas-port.js` (`npm run test:port`).
+- **Knowledge document create/save now behaves like a proper form.** An empty title is caught
+  inline and highlights the field instead of failing quietly; the button shows
+  **⏳ Creating…/⏳ Saving…** while the request is in flight so it cannot be double-submitted;
+  a failure keeps the dialog open with the reason shown inline, so nothing you typed is lost and
+  you can simply retry; and pressing **Enter** in the title field submits.
 - **"Build with Copilot" could hang with the popup open and nothing to show.** The canvas
   agent bridge used `session.sendAndWait`, which settles on the *first* `session.idle` it
   observes and returns `undefined` when no assistant message landed in that window — so a

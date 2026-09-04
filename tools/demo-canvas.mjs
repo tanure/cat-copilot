@@ -59,20 +59,37 @@ async function handleApi(req, url) {
     if (p === "/api/summary" && m === "GET") return store.summary();
     if (p === "/api/config" && m === "GET") return store.getConfig();
 
-    if (p === "/api/tasks" && m === "GET") return { tasks: store.listTasks(q.get("status") || "all") };
-    if (p === "/api/tasks" && m === "POST") return { task: store.addTask(await readBody(req)) };
-    if (p === "/api/tasks/matrix" && m === "GET") {
-        return store.taskMatrix({ quadrant: q.get("quadrant") || undefined, includeDone: q.get("status") !== "open" });
+    const period = () => q.get("period") || null;
+    if (p === "/api/task-periods" && m === "GET") {
+        return { periods: store.listTaskPeriods(), current: store.currentPeriod() };
     }
-    if (p === "/api/tasks/focus" && m === "GET") return store.taskFocus({ limit: q.get("limit") || 5 });
+    if (p === "/api/tasks" && m === "GET") {
+        const status = q.get("status") || "all";
+        const sel = period();
+        return { tasks: sel === "all" ? store.listAllTasks(status) : store.listTasks(status, sel) };
+    }
+    if (p === "/api/tasks" && m === "POST") return { task: store.addTask(await readBody(req), period()) };
+    if (p === "/api/tasks/carry-over" && m === "POST") {
+        const b = await readBody(req);
+        return store.carryOverTasks(b.fromPeriod, b.toPeriod);
+    }
+    if (p === "/api/tasks/matrix" && m === "GET") {
+        return store.taskMatrix({ quadrant: q.get("quadrant") || undefined, includeDone: q.get("status") !== "open", period: period() });
+    }
+    if (p === "/api/tasks/focus" && m === "GET") return store.taskFocus({ limit: q.get("limit") || 5, period: period() });
     if (p === "/api/tasks/stranded" && m === "GET") return store.strandedTasks();
     if (p === "/api/tasks/smart-meta" && m === "GET") {
         return { quadrants: store.eisen.QUADRANTS, dimensions: store.eisen.SMART_DIMENSIONS, timeGroups: store.eisen.TIME_GROUPS };
     }
     let mm = p.match(/^\/api\/tasks\/(\d+)$/);
-    if (mm && m === "PUT") return { task: store.updateTask(mm[1], await readBody(req)) };
+    if (mm && m === "PUT") return { task: store.updateTask(mm[1], await readBody(req), period()) };
+    mm = p.match(/^\/api\/tasks\/(\d+)\/move$/);
+    if (mm && m === "POST") {
+        const b = await readBody(req);
+        return store.moveTask(mm[1], b.toPeriod, b.fromPeriod || period());
+    }
     mm = p.match(/^\/api\/tasks\/(\d+)\/smart$/);
-    if (mm && m === "PUT") return { task: store.updateTaskSmart(mm[1], await readBody(req)) };
+    if (mm && m === "PUT") return { task: store.updateTaskSmart(mm[1], await readBody(req), period()) };
     mm = p.match(/^\/api\/tasks\/(\d+)\/comments$/);
     if (mm && m === "GET") return { comments: store.taskCommentList(mm[1]) };
 

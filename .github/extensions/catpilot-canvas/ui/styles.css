@@ -17,6 +17,10 @@
 }
 
 html[data-theme="dark"] {
+    /* Native widgets — the <select> popup list, date pickers, scrollbars — are
+       painted by the OS, not by us. Without this they render light on a dark
+       page, which made the month dropdown's options unreadable. */
+    color-scheme: dark;
     --bg: #0e0e14;
     --bg-2: #15151f;
     --panel: #1a1a26;
@@ -31,6 +35,7 @@ html[data-theme="dark"] {
 }
 
 html[data-theme="light"] {
+    color-scheme: light;
     --bg: #f4f4fb;
     --bg-2: #ececf6;
     --panel: #ffffff;
@@ -617,11 +622,17 @@ textarea { resize: vertical; min-height: 90px; }
 .period-picker { display: inline-flex; align-items: center; gap: 6px; }
 .period-select {
     appearance: none; padding: 7px 26px 7px 10px; border-radius: 8px;
-    border: 1px solid var(--border); background: var(--surface); color: inherit;
-    font: inherit; font-size: 13px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+    font: inherit; font-size: 13px; font-weight: 500; cursor: pointer;
     background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
     background-position: right 12px center, right 7px center;
     background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+/* The popup list is an OS surface: it ignores the select's own background, so
+   options need their own colours or they inherit light-on-light. */
+.period-select option, .period-select optgroup,
+select option, select optgroup {
+    background: var(--panel); color: var(--text);
 }
 .period-select:hover { border-color: var(--accent); }
 .period-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
@@ -629,7 +640,7 @@ textarea { resize: vertical; min-height: 90px; }
 .period-banner {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     margin: 0 0 14px; padding: 10px 14px; border-radius: 10px;
-    border: 1px dashed var(--border); background: var(--surface-2, var(--surface));
+    border: 1px dashed var(--border); background: var(--panel-2);
     font-size: 13px;
 }
 .period-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }

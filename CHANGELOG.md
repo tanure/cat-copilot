@@ -102,6 +102,21 @@ All notable changes to this project are documented in this file.
   parser crossed the `## Completed Tasks` heading, so the completed table's header row was
   parsed as a task and surfaced as a bogus `{ id: 0 }` entry.
 
+- **Month (period) selector for tasks.** Tasks live in date-partitioned markdown
+  (`<root>/YYYY/YYYY-MM/tasks.md`), so on the 1st of a month the Tasks page used to look
+  empty even though last month's unfinished work was still on disk. The canvas Tasks
+  toolbar gained a **month dropdown** (defaults to the current month, each option showing
+  its open count) so you can look back and replan, or plan ahead. Viewing an older month
+  shows a banner with **↪ Carry over N unfinished** to sweep everything not `Done` into the
+  current month, and the task detail gained **↪ Move…** to re-file a single task. The
+  **Calendar** now spans every month at once, so navigating to a past or future month shows
+  the tasks due there regardless of which file they live in. Creating or rescheduling a task
+  with a due date in a **later** month now writes it into *that* month's markdown instead of
+  the current one (a past due date always stays in the current month, so nothing is filed
+  into an archive). New REST routes `GET /api/task-periods`, `POST /api/tasks/:id/move`,
+  `POST /api/tasks/carry-over`, plus a `?period=` parameter (and `?period=all`) on the
+  existing task routes.
+
 ### Added (earlier in this cycle)
 - **Task progress log (dated comments).** Every task now carries a timeline of dated
   progress updates so you can log what you're acting on. Comments persist in the tasks file

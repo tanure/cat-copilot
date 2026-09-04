@@ -116,18 +116,30 @@ function getISOWeek(date) {
     return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
 }
 
-function getPartitionFolder(partitioning = "month") {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const date = String(now.getDate()).padStart(2, "0");
+function getPartitionFolder(partitioning = "month", ref = new Date()) {
+    const year = ref.getFullYear();
+    const month = String(ref.getMonth() + 1).padStart(2, "0");
+    const date = String(ref.getDate()).padStart(2, "0");
     if (partitioning === "day") return `${year}/${year}-${month}/${year}-${month}-${date}`;
-    if (partitioning === "week") return `${year}/W${String(getISOWeek(now)).padStart(2, "0")}`;
+    if (partitioning === "week") return `${year}/W${String(getISOWeek(ref)).padStart(2, "0")}`;
     return `${year}/${year}-${month}`;
 }
 
-function resolveFilePath(type, config) {
-    const partition = getPartitionFolder(config.storage.partitioning);
+// A "period" is a partition folder such as "2026/2026-09". Passing one lets a
+// caller read/write a past or future period instead of the one holding today.
+// Rejects traversal so a period can never escape the storage root.
+function normalizePeriod(period) {
+    if (!period) return null;
+    const clean = String(period).trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
+    if (!clean) return null;
+    if (clean.split("/").some((seg) => !seg || seg === "." || seg === "..")) {
+        throw new Error(`Invalid period: ${period}`);
+    }
+    return clean;
+}
+
+function resolveFilePath(type, config, period = null) {
+    const partition = normalizePeriod(period) || getPartitionFolder(config.storage.partitioning);
     const base = config.__baseDir || process.cwd();
     const storageRoot = path.resolve(base, config.storage.root);
     const fileName = (config.storage.files && config.storage.files[type]) || DEFAULT_FILES[type];
@@ -282,6 +294,12 @@ function readFileOrCreate(filePath, def = "") {
     ensureDir(path.dirname(filePath));
     if (!fs.existsSync(filePath)) fs.writeFileSync(filePath, def, "utf8");
     return fs.readFileSync(filePath, "utf8");
+}
+
+// Reads without creating anything — used when browsing a period that may not
+// exist yet, so merely looking at last month never litters the vault.
+function readFileIfExists(filePath, def = "") {
+    return fs.existsSync(filePath) ? fs.readFileSync(filePath, "utf8") : def;
 }
 
 function todayISO() {
@@ -517,18 +535,53 @@ function smartFromParams(params = {}) {
     return out;
 }
 
-export function listTasks(status = "all") {
+export function listTasks(status = "all", period = null) {
     const config = loadConfig();
-    const p = resolveFilePath("tasks", config);
-    const tasks = parseTasksTable(readFileOrCreate(p)).map((t) => decorateTask(t));
+    const resolved = normalizePeriod(period) || getPartitionFolder(config.storage.partitioning);
+    const p = resolveFilePath("tasks", config, resolved);
+    // Browsing an arbitrary period must not create it; only the live period
+    // (no explicit period) keeps the create-on-read behaviour callers rely on.
+    const raw = period ? readFileIfExists(p) : readFileOrCreate(p);
+    // Every task carries the period it lives in, so callers can edit/complete it
+    // later without having to remember where it came from.
+    const tasks = parseTasksTable(raw).map((t) => ({ ...decorateTask(t), period: resolved }));
     if (status === "all") return tasks;
     return tasks.filter((t) => t.status.toLowerCase() === status.toLowerCase());
 }
 
-export function addTask(params = {}) {
+// Union across every period that holds a tasks file. The calendar uses this so a
+// task shows on its due date no matter which month's file it was written to.
+export function listAllTasks(status = "all") {
+    const seen = new Set();
+    const out = [];
+    for (const { period, exists } of listTaskPeriods()) {
+        if (!exists || seen.has(period)) continue;
+        seen.add(period);
+        out.push(...listTasks(status, period));
+    }
+    return out;
+}
+
+// Where a new task belongs. An explicit period always wins. Otherwise a due date
+// in a *later* period files the task there, so planning ahead writes into that
+// month's markdown instead of piling up in the current one. Past due dates stay
+// in the live period so a task can never be filed into an archived month.
+function periodForNewTask(config, period, due) {
+    const explicit = normalizePeriod(period);
+    if (explicit) return explicit;
+    const live = getPartitionFolder(config.storage.partitioning);
+    if (!due || !/^\d{4}-\d{2}-\d{2}$/.test(String(due))) return live;
+    const [y, m, d] = String(due).split("-").map(Number);
+    const target = getPartitionFolder(config.storage.partitioning, new Date(y, m - 1, d));
+    // Partition folders sort chronologically as strings for day/week/month.
+    return target > live ? target : live;
+}
+
+export function addTask(params = {}, period = null) {
     if (!params.title) throw new Error("title is required");
     const config = loadConfig();
-    const p = resolveFilePath("tasks", config);
+    const target = periodForNewTask(config, period, params.due);
+    const p = resolveFilePath("tasks", config, target);
     const tasks = parseTasksTable(readFileOrCreate(p));
     const task = {
         id: nextId(tasks),
@@ -543,12 +596,13 @@ export function addTask(params = {}) {
     };
     tasks.push(task);
     fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
-    return decorateTask(task);
+    return { ...decorateTask(task), period: target };
 }
 
-export function updateTask(id, patch = {}) {
+export function updateTask(id, patch = {}, period = null) {
     const config = loadConfig();
-    const p = resolveFilePath("tasks", config);
+    const source = normalizePeriod(period) || getPartitionFolder(config.storage.partitioning);
+    const p = resolveFilePath("tasks", config, source);
     const tasks = parseTasksTable(readFileOrCreate(p));
     const t = tasks.find((x) => x.id === parseInt(id, 10));
     if (!t) throw new Error(`Task #${id} not found`);
@@ -561,22 +615,32 @@ export function updateTask(id, patch = {}) {
         t.smart = eisen.normalizeSmart({ ...eisen.normalizeSmart(t.smart), ...smartPatch });
     }
     fs.writeFileSync(p, formatTasksTable(tasks), "utf8");
-    return decorateTask(t);
+
+    // Pushing a due date into a later period reschedules the task into that
+    // period's markdown, matching how a new task with a future due date is filed.
+    if (patch.dueDate !== undefined || patch.due !== undefined) {
+        const target = periodForNewTask(config, null, t.dueDate);
+        if (target > source) {
+            const res = moveTask(t.id, target, source);
+            return { ...decorateTask(res.task), period: target, movedFrom: source };
+        }
+    }
+    return { ...decorateTask(t), period: source };
 }
 
 /**
  * Replace/merge the SMART fields and Eisenhower axes of a task.
  * Used by the SMART editor and by drag-and-drop between matrix quadrants.
  */
-export function updateTaskSmart(id, patch = {}) {
-    return updateTask(id, { smart: patch.smart, ...patch });
+export function updateTaskSmart(id, patch = {}, period = null) {
+    return updateTask(id, { smart: patch.smart, ...patch }, period);
 }
 
 /** The full Eisenhower matrix plus balance insights. */
 export function taskMatrix(options = {}) {
-    const config = loadConfig();
-    const p = resolveFilePath("tasks", config);
-    const tasks = parseTasksTable(readFileOrCreate(p));
+    const tasks = options.period === "all"
+        ? listAllTasks()
+        : listTasks("all", options.period || null);
     const includeDone = options.includeDone !== false;
     const matrix = eisen.buildMatrix(tasks, { includeDone });
     let quadrants = matrix.quadrants;
@@ -590,9 +654,9 @@ export function taskMatrix(options = {}) {
 
 /** Ranked "what to do next" list with a reason per task. */
 export function taskFocus(options = {}) {
-    const config = loadConfig();
-    const p = resolveFilePath("tasks", config);
-    const tasks = parseTasksTable(readFileOrCreate(p));
+    const tasks = options.period === "all"
+        ? listAllTasks()
+        : listTasks("all", options.period || null);
     const limit = options.limit === undefined ? 5 : Math.max(1, parseInt(options.limit, 10) || 5);
     const focus = eisen.focusOrder(tasks, { limit }).map((t) => ({
         ...t,
@@ -602,13 +666,13 @@ export function taskFocus(options = {}) {
     return { focus, insights: eisen.matrixInsights(tasks) };
 }
 
-export function completeTask(id) {
-    return updateTask(id, { status: "Done" });
+export function completeTask(id, period = null) {
+    return updateTask(id, { status: "Done" }, period);
 }
 
-export function removeTask(id) {
+export function removeTask(id, period = null) {
     const config = loadConfig();
-    const p = resolveFilePath("tasks", config);
+    const p = resolveFilePath("tasks", config, period);
     const tasks = parseTasksTable(readFileOrCreate(p));
     const idx = tasks.findIndex((x) => x.id === parseInt(id, 10));
     if (idx === -1) throw new Error(`Task #${id} not found`);
@@ -617,25 +681,151 @@ export function removeTask(id) {
     return removed;
 }
 
-// --- Task progress log (dated comments) ---
-function loadTaskForComment(id) {
+// --- Periods (browse past / future partitions) ---
+
+// Human label for a partition folder: "2026/2026-09" -> "September 2026".
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December"];
+
+export function periodLabel(period) {
+    const seg = String(period || "").split("/");
+    const last = seg[seg.length - 1] || "";
+    let m = last.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return `${MONTH_NAMES[parseInt(m[2], 10) - 1]} ${parseInt(m[3], 10)}, ${m[1]}`;
+    m = last.match(/^(\d{4})-(\d{2})$/);
+    if (m) return `${MONTH_NAMES[parseInt(m[2], 10) - 1]} ${m[1]}`;
+    m = last.match(/^W(\d{2})$/);
+    if (m) return `Week ${parseInt(m[1], 10)}, ${seg[0]}`;
+    return period;
+}
+
+export function currentPeriod() {
+    return getPartitionFolder(loadConfig().storage.partitioning);
+}
+
+// Shift the live partition by n units (months / weeks / days) to offer future
+// periods for replanning even before their folder exists.
+function shiftedPeriod(partitioning, n) {
+    const d = new Date();
+    if (partitioning === "day") d.setDate(d.getDate() + n);
+    else if (partitioning === "week") d.setDate(d.getDate() + n * 7);
+    else d.setMonth(d.getMonth() + n, 1);
+    return getPartitionFolder(partitioning, d);
+}
+
+// Every period that already holds a tasks file, plus the live one and a few
+// upcoming ones so tasks can be pushed forward.
+export function listTaskPeriods() {
     const config = loadConfig();
-    const p = resolveFilePath("tasks", config);
+    const base = config.__baseDir || process.cwd();
+    const storageRoot = path.resolve(base, config.storage.root);
+    const fileName = (config.storage.files && config.storage.files.tasks) || DEFAULT_FILES.tasks;
+    const partitioning = config.storage.partitioning;
+
+    const found = new Set();
+    const walk = (dir, rel, depth) => {
+        if (depth > 4 || !fs.existsSync(dir)) return;
+        let entries = [];
+        try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        if (rel && entries.some((e) => e.isFile() && e.name === fileName)) found.add(rel);
+        for (const e of entries) {
+            if (!e.isDirectory() || e.name.startsWith(".")) continue;
+            walk(path.join(dir, e.name), rel ? `${rel}/${e.name}` : e.name, depth + 1);
+        }
+    };
+    walk(storageRoot, "", 0);
+
+    const live = getPartitionFolder(partitioning);
+    found.add(live);
+    for (let i = 1; i <= 3; i++) found.add(shiftedPeriod(partitioning, i));
+
+    return [...found]
+        .sort((a, b) => b.localeCompare(a))
+        .map((period) => {
+            const p = path.join(storageRoot, period, fileName);
+            const tasks = parseTasksTable(readFileIfExists(p));
+            const open = tasks.filter((t) => t.status.toLowerCase() !== "done").length;
+            return {
+                period,
+                label: periodLabel(period),
+                isCurrent: period === live,
+                exists: fs.existsSync(p),
+                total: tasks.length,
+                open,
+            };
+        });
+}
+
+// Move a task between periods. The target file owns its own ID sequence, so the
+// task is re-numbered there; the progress log travels with it.
+export function moveTask(id, toPeriod, fromPeriod = null) {
+    const target = normalizePeriod(toPeriod);
+    if (!target) throw new Error("toPeriod is required");
+    const config = loadConfig();
+    const source = normalizePeriod(fromPeriod) || getPartitionFolder(config.storage.partitioning);
+    if (source === target) throw new Error("Task is already in that period");
+
+    const srcPath = resolveFilePath("tasks", config, source);
+    const srcTasks = parseTasksTable(readFileOrCreate(srcPath));
+    const idx = srcTasks.findIndex((x) => x.id === parseInt(id, 10));
+    if (idx === -1) throw new Error(`Task #${id} not found`);
+    const [task] = srcTasks.splice(idx, 1);
+
+    const dstPath = resolveFilePath("tasks", config, target);
+    const dstTasks = parseTasksTable(readFileOrCreate(dstPath));
+    const moved = { ...task, id: nextId(dstTasks), smart: { ...task.smart }, log: [...(task.log || [])] };
+    dstTasks.push(moved);
+
+    fs.writeFileSync(dstPath, formatTasksTable(dstTasks), "utf8");
+    fs.writeFileSync(srcPath, formatTasksTable(srcTasks), "utf8");
+    return { task: moved, from: source, to: target };
+}
+
+// Bulk replanning: sweep everything still unfinished into another period.
+export function carryOverTasks(fromPeriod, toPeriod) {
+    const config = loadConfig();
+    const source = normalizePeriod(fromPeriod) || getPartitionFolder(config.storage.partitioning);
+    const target = normalizePeriod(toPeriod) || getPartitionFolder(config.storage.partitioning);
+    if (source === target) throw new Error("Source and target periods are the same");
+
+    const srcPath = resolveFilePath("tasks", config, source);
+    const srcTasks = parseTasksTable(readFileOrCreate(srcPath));
+    const pending = srcTasks.filter((t) => t.status.toLowerCase() !== "done");
+    if (!pending.length) return { moved: [], from: source, to: target };
+
+    const remaining = srcTasks.filter((t) => t.status.toLowerCase() === "done");
+    const dstPath = resolveFilePath("tasks", config, target);
+    const dstTasks = parseTasksTable(readFileOrCreate(dstPath));
+    const moved = pending.map((t) => {
+        const copy = { ...t, id: nextId(dstTasks), smart: { ...t.smart }, log: [...(t.log || [])] };
+        dstTasks.push(copy);
+        return copy;
+    });
+
+    fs.writeFileSync(dstPath, formatTasksTable(dstTasks), "utf8");
+    fs.writeFileSync(srcPath, formatTasksTable(remaining), "utf8");
+    return { moved, from: source, to: target };
+}
+
+// --- Task progress log (dated comments) ---
+function loadTaskForComment(id, period = null) {
+    const config = loadConfig();
+    const p = resolveFilePath("tasks", config, period);
     const tasks = parseTasksTable(readFileOrCreate(p));
     const task = tasks.find((x) => x.id === parseInt(id, 10));
     return { p, tasks, task };
 }
 
-export function taskCommentList(id) {
-    const { task } = loadTaskForComment(id);
+export function taskCommentList(id, period = null) {
+    const { task } = loadTaskForComment(id, period);
     if (!task) throw new Error(`Task #${id} not found`);
     return task.log || [];
 }
 
-export function taskCommentAdd(id, params = {}) {
+export function taskCommentAdd(id, params = {}, period = null) {
     const text = String(params.text || "").trim();
     if (!text) throw new Error("text is required");
-    const { p, tasks, task } = loadTaskForComment(id);
+    const { p, tasks, task } = loadTaskForComment(id, period);
     if (!task) throw new Error(`Task #${id} not found`);
     const comment = { date: params.date || taskCommentStamp(), text };
     if (!Array.isArray(task.log)) task.log = [];
@@ -644,10 +834,10 @@ export function taskCommentAdd(id, params = {}) {
     return comment;
 }
 
-export function taskCommentUpdate(id, index, params = {}) {
+export function taskCommentUpdate(id, index, params = {}, period = null) {
     const text = String(params.text || "").trim();
     if (!text) throw new Error("text is required");
-    const { p, tasks, task } = loadTaskForComment(id);
+    const { p, tasks, task } = loadTaskForComment(id, period);
     if (!task) throw new Error(`Task #${id} not found`);
     const i = parseInt(index, 10);
     if (!Array.isArray(task.log) || !task.log[i]) throw new Error(`Comment #${i} not found on task #${id}`);
@@ -657,8 +847,8 @@ export function taskCommentUpdate(id, index, params = {}) {
     return task.log[i];
 }
 
-export function taskCommentRemove(id, index) {
-    const { p, tasks, task } = loadTaskForComment(id);
+export function taskCommentRemove(id, index, period = null) {
+    const { p, tasks, task } = loadTaskForComment(id, period);
     if (!task) throw new Error(`Task #${id} not found`);
     const i = parseInt(index, 10);
     if (!Array.isArray(task.log) || !task.log[i]) throw new Error(`Comment #${i} not found on task #${id}`);

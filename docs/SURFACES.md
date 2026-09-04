@@ -45,13 +45,20 @@ Notes:
   (Q1 Do now · Q2 Schedule · Q3 Delegate or batch · Q4 Drop or later), which is derived
   deterministically from due date, priority, project links and SMART fields unless you pin an
   axis explicitly. `prioritization-coach` is the chat skill on top.
+- Tasks are stored per **period** (the partition folder, e.g. `2026/2026-09`). A task with a
+  due date in a *later* period is written to that period's file, so planning ahead lands in
+  the right month; a past due date stays in the current period.
 
 ## Canvas views
 The browser canvas SPA provides richer review and editing views:
 - **Tasks:** four modes — List, Kanban (Backlog, Overdue, To do, In Progress, Blocked, Done),
   Calendar, and the **🎯 Eisenhower Matrix** (four quadrant panels, tasks grouped by
   Overdue / Today / Next 7 days / Later / Completed, drag-and-drop between quadrants,
-  per-quadrant quick-add). The task modal has a collapsible **🎯 Make it SMART** section with
+  per-quadrant quick-add). A **month dropdown** picks which period the List, Board and Matrix
+  act on (default: current, with open counts per month). Older months show a **Carry over
+  unfinished** banner, and the task detail offers **Move…** to re-file a single task. The
+  **Calendar** reads across every period so tasks appear on their due date whichever month's
+  file holds them. The task modal has a collapsible **🎯 Make it SMART** section with
   a live 0–5 quality meter and an **✨ Build with Copilot** popup; the toolbar has
   **🎯 Focus plan** and **🧭 Triage with Copilot**. The task detail shows a **Progress log**
   timeline with a markdown write/preview/Copilot editor, the quadrant badge with its

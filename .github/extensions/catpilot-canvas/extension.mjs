@@ -70,38 +70,59 @@ async function handleApi(req, url) {
     }
     if (p === "/api/summary" && m === "GET") return store.summary();
 
-    // Tasks
-    if (p === "/api/tasks" && m === "GET") return { tasks: store.listTasks(url.searchParams.get("status") || "all") };
-    if (p === "/api/tasks" && m === "POST") return { task: store.addTask(await readBody(req)) };
+    // Tasks. `period` selects which partition file to act on ("all" = every
+    // period, used by the calendar); omitting it means the live period.
+    const period = () => url.searchParams.get("period") || null;
+    if (p === "/api/task-periods" && m === "GET") {
+        return { periods: store.listTaskPeriods(), current: store.currentPeriod() };
+    }
+    if (p === "/api/tasks" && m === "GET") {
+        const status = url.searchParams.get("status") || "all";
+        const q = period();
+        return { tasks: q === "all" ? store.listAllTasks(status) : store.listTasks(status, q) };
+    }
+    if (p === "/api/tasks" && m === "POST") return { task: store.addTask(await readBody(req), period()) };
     if (p === "/api/tasks/carry" && m === "POST") {
         const body = (await readBody(req)) || {};
         return store.carryForwardTasks({ dryRun: !!body.dryRun, ids: Array.isArray(body.ids) ? body.ids.map(Number) : null });
+    }
+    if (p === "/api/tasks/carry-over" && m === "POST") {
+        const b = await readBody(req);
+        return store.carryOverTasks(b.fromPeriod, b.toPeriod);
     }
     if (p === "/api/tasks/matrix" && m === "GET") {
         return store.taskMatrix({
             quadrant: url.searchParams.get("quadrant") || undefined,
             includeDone: url.searchParams.get("status") !== "open",
+            period: period(),
         });
     }
-    if (p === "/api/tasks/focus" && m === "GET") return store.taskFocus({ limit: url.searchParams.get("limit") || 5 });
+    if (p === "/api/tasks/focus" && m === "GET") {
+        return store.taskFocus({ limit: url.searchParams.get("limit") || 5, period: period() });
+    }
     if (p === "/api/tasks/stranded" && m === "GET") return store.strandedTasks();
     if (p === "/api/tasks/smart-meta" && m === "GET") {
         return { quadrants: store.eisen.QUADRANTS, dimensions: store.eisen.SMART_DIMENSIONS, timeGroups: store.eisen.TIME_GROUPS };
     }
     let mm = p.match(/^\/api\/tasks\/(\d+)$/);
-    if (mm && m === "PUT") return { task: store.updateTask(mm[1], await readBody(req)) };
-    if (mm && m === "DELETE") return { removed: store.removeTask(mm[1]) };
+    if (mm && m === "PUT") return { task: store.updateTask(mm[1], await readBody(req), period()) };
+    if (mm && m === "DELETE") return { removed: store.removeTask(mm[1], period()) };
     mm = p.match(/^\/api\/tasks\/(\d+)\/smart$/);
-    if (mm && m === "PUT") return { task: store.updateTaskSmart(mm[1], await readBody(req)) };
+    if (mm && m === "PUT") return { task: store.updateTaskSmart(mm[1], await readBody(req), period()) };
     mm = p.match(/^\/api\/tasks\/(\d+)\/complete$/);
-    if (mm && m === "POST") return { task: store.completeTask(mm[1]) };
+    if (mm && m === "POST") return { task: store.completeTask(mm[1], period()) };
+    mm = p.match(/^\/api\/tasks\/(\d+)\/move$/);
+    if (mm && m === "POST") {
+        const b = await readBody(req);
+        return store.moveTask(mm[1], b.toPeriod, b.fromPeriod || period());
+    }
     // Task progress log (dated comments)
     mm = p.match(/^\/api\/tasks\/(\d+)\/comments$/);
-    if (mm && m === "GET") return { comments: store.taskCommentList(mm[1]) };
-    if (mm && m === "POST") return { comment: store.taskCommentAdd(mm[1], await readBody(req)) };
+    if (mm && m === "GET") return { comments: store.taskCommentList(mm[1], period()) };
+    if (mm && m === "POST") return { comment: store.taskCommentAdd(mm[1], await readBody(req), period()) };
     mm = p.match(/^\/api\/tasks\/(\d+)\/comments\/(\d+)$/);
-    if (mm && m === "PUT") return { comment: store.taskCommentUpdate(mm[1], mm[2], await readBody(req)) };
-    if (mm && m === "DELETE") return { removed: store.taskCommentRemove(mm[1], mm[2]) };
+    if (mm && m === "PUT") return { comment: store.taskCommentUpdate(mm[1], mm[2], await readBody(req), period()) };
+    if (mm && m === "DELETE") return { removed: store.taskCommentRemove(mm[1], mm[2], period()) };
 
     // Journal
     if (p === "/api/journal" && m === "GET") return { entries: store.listJournal(Number(url.searchParams.get("days")) || 3650) };

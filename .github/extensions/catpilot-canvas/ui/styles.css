@@ -613,6 +613,27 @@ textarea { resize: vertical; min-height: 90px; }
 .md-preview { padding: 12px 14px; min-height: 120px; }
 .hidden { display: none !important; }
 
+/* ---------- Task month (period) selector ---------- */
+.period-picker { display: inline-flex; align-items: center; gap: 6px; }
+.period-select {
+    appearance: none; padding: 7px 26px 7px 10px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface); color: inherit;
+    font: inherit; font-size: 13px; cursor: pointer;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: right 12px center, right 7px center;
+    background-size: 5px 5px, 5px 5px; background-repeat: no-repeat;
+}
+.period-select:hover { border-color: var(--accent); }
+.period-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.period-banner {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    margin: 0 0 14px; padding: 10px 14px; border-radius: 10px;
+    border: 1px dashed var(--border); background: var(--surface-2, var(--surface));
+    font-size: 13px;
+}
+.period-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
 /* ---------- Task progress log ---------- */
 .task-log { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
 .task-log-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }

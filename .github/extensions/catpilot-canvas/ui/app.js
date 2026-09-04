@@ -576,6 +576,15 @@
     let taskCalMode = localStorage.getItem("cp-task-cal-mode") || "month"; // month | week
     let taskCalAnchorISO = todayISO(); // which month/week is in view (module-persistent across re-renders)
     let taskCalFields = (localStorage.getItem("cp-task-cal-fields") || "priority").split(",").filter(Boolean);
+    // Which month's markdown the list/board views act on. null = the live period.
+    let taskPeriod = null;
+    let taskPeriods = [];
+    let taskCurrentPeriod = null;
+
+    // Tasks are stored per period, so every mutation has to say which file it means.
+    // Each task carries its own `period`, which keeps the calendar (a cross-period
+    // union) working without extra bookkeeping.
+    const pq = (t, sep = "?") => (t && t.period ? `${sep}period=${encodeURIComponent(t.period)}` : "");
 
     // Apply the active due-date filter. Today = due today or overdue;
     // 7days = due within the next 7 days (includes overdue). Undated tasks are
@@ -635,7 +644,16 @@
     }
 
     VIEWS.tasks = async (root) => {
-        const { tasks: allTasks } = await api("/api/tasks?status=all");
+        const meta = await api("/api/task-periods").catch(() => ({ periods: [], current: null }));
+        taskPeriods = meta.periods || [];
+        taskCurrentPeriod = meta.current || null;
+        // A remembered period that no longer exists must not strand the view.
+        if (taskPeriod && !taskPeriods.some((p) => p.period === taskPeriod)) taskPeriod = null;
+
+        // The calendar spans months, so it loads every period and buckets by due
+        // date; list/board show one period at a time.
+        const query = taskViewMode === "calendar" ? "all" : (taskPeriod || taskCurrentPeriod);
+        const { tasks: allTasks } = await api(`/api/tasks?status=all&period=${encodeURIComponent(query || "")}`);
         const tasks = applyDueFilter(allTasks);
         root.innerHTML = "";
         const stranded = await strandedBanner();
@@ -653,8 +671,6 @@
             el("button", { class: taskViewMode === "matrix" ? "active" : "", text: "🎯 Matrix", onclick: () => { taskViewMode = "matrix"; localStorage.setItem("cp-task-view", "matrix"); go("tasks"); } }));
         actionsHost.append(seg);
 
-        // Calendar mode uses the full task set (the due-window filter would hide most
-        // days) and its own toolbar; list/board keep the existing due filter.
         if (taskViewMode === "calendar") {
             const holderCal = el("div", { id: "task-holder" });
             root.append(buildCalendarToolbar(allTasks), holderCal);
@@ -669,12 +685,16 @@
         if (taskViewMode === "matrix") {
             const holderMx = el("div", { id: "task-holder" });
             root.append(el("div", { class: "toolbar" },
-                el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }),
+                el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal(null, {}, taskPeriod) }),
+                buildPeriodPicker(),
                 el("input", { class: "search", placeholder: "Search tasks…", oninput: (e) => filterTasks(e.target.value) }),
                 el("span", { class: "spacer" }),
                 el("button", { class: "btn btn-sm", html: "🎯 Focus plan", title: "Ranked next actions from the matrix", onclick: () => focusPlanModal() }),
-                el("button", { class: "btn btn-sm", html: "🧭 Triage with Copilot", title: "Ask Copilot to classify and rebalance your tasks", onclick: () => triageModal() })), holderMx);
-            if (!allTasks.length) { holderMx.append(emptyState("🗒️", noneTitle, noneHint || "Add a task with a goal and a due date and it will land in the right quadrant.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
+                el("button", { class: "btn btn-sm", html: "🧭 Triage with Copilot", title: "Ask Copilot to classify and rebalance your tasks", onclick: () => triageModal() })));
+            const mxBanner = buildPeriodBanner(allTasks, query);
+            if (mxBanner) root.append(mxBanner);
+            root.append(holderMx);
+            if (!allTasks.length) { holderMx.append(emptyState("🗒️", noneTitle, noneHint || "Add a task with a goal and a due date and it will land in the right quadrant.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal(null, {}, taskPeriod) }))); return; }
             await renderTaskMatrix(holderMx, allTasks);
             root._tasks = allTasks;
             return;
@@ -685,7 +705,8 @@
                 el("button", { class: taskDueFilter === key ? "active" : "", text: label, onclick: () => { taskDueFilter = key; localStorage.setItem("cp-task-filter", key); go("tasks"); } })));
 
         const toolbar = el("div", { class: "toolbar" },
-            el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }),
+            el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal(null, {}, taskPeriod) }),
+            buildPeriodPicker(),
             el("input", { class: "search", placeholder: "Search tasks…", oninput: (e) => filterTasks(e.target.value) }),
             filterSeg,
             el("span", { class: "spacer" }),
@@ -693,14 +714,72 @@
             el("span", { class: "muted small", text: `${tasks.filter((t) => t.status.toLowerCase() === "open").length} open · ${tasks.filter((t) => t.status.toLowerCase() === "in progress").length} in progress · ${tasks.filter((t) => t.status.toLowerCase() === "blocked").length} blocked · ${tasks.filter((t) => t.status.toLowerCase() === "done").length} done` }));
         root.append(toolbar);
 
+        const banner = buildPeriodBanner(allTasks, query);
+        if (banner) root.append(banner);
+
         const holder = el("div", { id: "task-holder" });
         root.append(holder);
-        if (!allTasks.length) { holder.append(emptyState("🗒️", noneTitle, noneHint || "Capture your first task and it will sync straight to CatPilot.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }))); return; }
+        if (!allTasks.length) {
+            const hint = noneHint || (taskPeriod && taskPeriod !== taskCurrentPeriod
+                ? `Nothing recorded for ${periodLabelOf(query)}. Add one, or carry unfinished work over from another month.`
+                : "Capture your first task and it will sync straight to CatPilot.");
+            holder.append(emptyState("🗒️", noneTitle, hint, el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal(null, {}, taskPeriod) })));
+            return;
+        }
         if (!tasks.length) { holder.append(emptyState("🔍", "Nothing in this window", "No tasks match the current filter. Try “All”.")); return; }
         if (taskViewMode === "list") renderTaskList(holder, tasks);
         else renderTaskBoard(holder, tasks);
         root._tasks = tasks;
     };
+
+    function periodLabelOf(period) {
+        const hit = taskPeriods.find((p) => p.period === period);
+        return hit ? hit.label : (period || "this month");
+    }
+
+    // Month picker. Each option carries its open count so you can spot a month
+    // with leftovers without opening it.
+    function buildPeriodPicker() {
+        const sel = el("select", { class: "period-select", "aria-label": "Month" });
+        for (const p of taskPeriods) {
+            const bits = [p.label];
+            if (p.isCurrent) bits.push("· current");
+            else if (p.open) bits.push(`· ${p.open} open`);
+            const opt = el("option", { value: p.period, text: bits.join(" ") });
+            if (p.period === (taskPeriod || taskCurrentPeriod)) opt.selected = true;
+            sel.append(opt);
+        }
+        sel.addEventListener("change", () => {
+            taskPeriod = sel.value === taskCurrentPeriod ? null : sel.value;
+            go("tasks");
+        });
+        return el("label", { class: "period-picker" }, el("span", { class: "muted small", text: "🗓️" }), sel);
+    }
+
+    // Viewing an older month: offer to sweep whatever is still unfinished into
+    // the live one, which is the whole point of being able to look back.
+    function buildPeriodBanner(tasks, viewing) {
+        if (!viewing || !taskCurrentPeriod || viewing === taskCurrentPeriod) return null;
+        const pending = tasks.filter((t) => t.status.toLowerCase() !== "done");
+        const past = viewing < taskCurrentPeriod;
+        const note = el("span", { text: `You're viewing ${periodLabelOf(viewing)} — not the current month.` });
+        const actions = el("div", { class: "period-banner-actions" },
+            el("button", { class: "btn btn-ghost", text: "Back to current", onclick: () => { taskPeriod = null; go("tasks"); } }));
+        if (past && pending.length) {
+            actions.prepend(el("button", {
+                class: "btn", text: `↪ Carry over ${pending.length} unfinished`,
+                onclick: async () => {
+                    if (!confirm(`Move ${pending.length} unfinished task(s) from ${periodLabelOf(viewing)} to ${periodLabelOf(taskCurrentPeriod)}?`)) return;
+                    try {
+                        const res = await api("/api/tasks/carry-over", { method: "POST", body: { fromPeriod: viewing, toPeriod: taskCurrentPeriod } });
+                        toast("Carried over", `${res.moved.length} task(s) moved to ${periodLabelOf(taskCurrentPeriod)}`, "ok");
+                        taskPeriod = null; await refreshSummary(); go("tasks");
+                    } catch (e) { toast("Error", e.message, "err"); }
+                },
+            }));
+        }
+        return el("div", { class: "period-banner" }, note, el("span", { class: "spacer" }), actions);
+    }
 
     function filterTasks(q) {
         q = q.toLowerCase().trim();
@@ -738,8 +817,8 @@
         const check = el("input", { type: "checkbox", style: "width:auto", "aria-label": done ? `Reopen ${t.title}` : `Complete ${t.title}`, ...(done ? { checked: "checked" } : {}) });
         check.addEventListener("change", async () => {
             try {
-                if (check.checked) { await api(`/api/tasks/${t.id}/complete`, { method: "POST" }); toast("Task completed", t.title, "ok"); }
-                else { await api(`/api/tasks/${t.id}`, { method: "PUT", body: { status: "Open" } }); toast("Reopened", t.title); }
+                if (check.checked) { await api(`/api/tasks/${t.id}/complete${pq(t)}`, { method: "POST" }); toast("Task completed", t.title, "ok"); }
+                else { await api(`/api/tasks/${t.id}${pq(t)}`, { method: "PUT", body: { status: "Open" } }); toast("Reopened", t.title); }
                 await refreshSummary(); go("tasks");
             } catch (e) { toast("Error", e.message, "err"); }
         });
@@ -787,7 +866,7 @@
             const items = tasks.filter(col.filter).sort((a, b) => priorityRank(a.priority) - priorityRank(b.priority));
             const colEl = el("div", { class: "board-col", dataset: { col: col.key }, style: `--col-accent:${col.accent}` });
 
-            const addPrefill = () => taskModal(null, { status: col.status, due: col.addDue ? todayISO() : undefined });
+            const addPrefill = () => taskModal(null, { status: col.status, due: col.addDue ? todayISO() : undefined }, taskPeriod);
             const head = el("div", { class: "board-col-head" },
                 el("span", { class: "bch-dot" }),
                 el("span", { class: "bch-icon", text: col.icon }),
@@ -813,14 +892,14 @@
                 const id = e.dataTransfer.getData("text/plain");
                 const task = tasks.find((x) => String(x.id) === String(id));
                 try {
-                    if (col.key === "done") { await api(`/api/tasks/${id}/complete`, { method: "POST" }); }
+                    if (col.key === "done") { await api(`/api/tasks/${id}/complete${pq(task)}`, { method: "POST" }); }
                     else {
                         // Backlog / To do share the stored "Open" status; the due date is what
                         // routes a card between them, so adjust it on drop.
                         const body = { status: col.status };
                         if (col.key === "backlog") body.dueDate = "";
                         else if (col.key === "open" && task && !task.dueDate) body.dueDate = todayISO();
-                        await api(`/api/tasks/${id}`, { method: "PUT", body });
+                        await api(`/api/tasks/${id}${pq(task)}`, { method: "PUT", body });
                     }
                     await refreshSummary(); go("tasks");
                 } catch (err) { toast("Error", err.message, "err"); }
@@ -1005,7 +1084,9 @@
             const important = q.key === "q1" || q.key === "q2" ? "High" : "Low";
             const urgent = q.key === "q1" || q.key === "q3" ? "High" : "Low";
             try {
-                await api(`/api/tasks/${id}/smart`, { method: "PUT", body: { importance: important, urgency: urgent } });
+                // The matrix only ever shows one period, so the selected period is
+                // the right file to write into.
+                await api(`/api/tasks/${id}/smart${pq({ period: taskPeriod })}`, { method: "PUT", body: { importance: important, urgency: urgent } });
                 toast("Task re-triaged", `${meta.short || q.key} · ${meta.action || ""}`, "ok");
                 await refreshSummary(); go("tasks");
             } catch (err) { toast("Error", err.message, "err"); }
@@ -1089,8 +1170,13 @@
             el("button", { class: "btn btn-ghost", html: "›", title: "Next", onclick: () => step(1) }),
             el("button", { class: "btn", text: "Today", onclick: () => { taskCalAnchorISO = todayISO(); go("tasks"); } }));
 
+        // Adding while looking at another month should plan *into* that month, so
+        // prefill the due date from the window in view.
+        const sameMonthAsToday = taskCalAnchorISO.slice(0, 7) === todayISO().slice(0, 7);
+        const addDue = sameMonthAsToday ? todayISO() : fmtLocalISO(new Date(anchor.getFullYear(), anchor.getMonth(), 1));
+
         return el("div", { class: "toolbar cal-toolbar" },
-            el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal() }),
+            el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal(null, { due: addDue }) }),
             nav,
             el("span", { class: "spacer" }),
             fields,
@@ -1161,7 +1247,7 @@
 
     async function removeTask(t) {
         if (!confirm(`Delete task "${t.title}"?`)) return;
-        try { await api(`/api/tasks/${t.id}`, { method: "DELETE" }); toast("Deleted", t.title, "ok"); await refreshSummary(); go("tasks"); }
+        try { await api(`/api/tasks/${t.id}${pq(t)}`, { method: "DELETE" }); toast("Deleted", t.title, "ok"); await refreshSummary(); go("tasks"); }
         catch (e) { toast("Error", e.message, "err"); }
     }
 
@@ -1169,8 +1255,11 @@
      * Single place where a task draft becomes a file on disk. Both the task form
      * and the Copilot popup's "Create it now" shortcut go through here, so the two
      * paths can never disagree about the payload shape or the refresh that follows.
+     *
+     * `period` pins the write to the month being viewed. Left null, the backend
+     * files it by due date, so planning ahead writes into that month's markdown.
      */
-    async function persistTask(t, draft) {
+    async function persistTask(t, draft, period = null) {
         const payload = {
             title: String(draft.title || "").trim(),
             due: draft.due || "", priority: draft.priority || "",
@@ -1182,19 +1271,28 @@
         };
         if (!payload.title) { toast("Title required", "", "err"); return false; }
         try {
+            let saved;
             if (t) {
-                await api(`/api/tasks/${t.id}`, { method: "PUT", body: { ...payload, dueDate: payload.due } });
+                saved = (await api(`/api/tasks/${t.id}${pq(t)}`, { method: "PUT", body: { ...payload, dueDate: payload.due } })).task;
                 toast("Task updated", payload.title, "ok");
+                if (saved?.movedFrom) toast("Rescheduled", `Moved to ${periodLabelOf(saved.period)}`, "ok");
             } else {
-                await api("/api/tasks", { method: "POST", body: payload });
+                const q = period ? `?period=${encodeURIComponent(period)}` : "";
+                saved = (await api(`/api/tasks${q}`, { method: "POST", body: payload })).task;
                 toast("Task added", payload.title, "ok");
+                // Filing ahead is invisible otherwise — the task vanishes from the
+                // month you were looking at because it landed in a later one.
+                const landed = saved?.period;
+                if (landed && landed !== (period || taskPeriod || taskCurrentPeriod)) {
+                    toast("Scheduled ahead", `Filed under ${periodLabelOf(landed)}`, "ok");
+                }
             }
             await refreshSummary(); go("tasks");
             return true;
         } catch (e) { toast("Error", e.message, "err"); return false; }
     }
 
-    function taskModal(t, prefill = {}) {
+    function taskModal(t, prefill = {}, period = null) {
         const editing = !!t;
         const f = {};
         const smart = t?.smart || {};
@@ -1286,7 +1384,7 @@
                         // the inputs are gone by the time either one runs.
                         onDraft: (d) => {
                             const merged = mergeDraft(d);
-                            taskModal(t, merged);
+                            taskModal(t, merged, period);
                             toast("Draft applied", "Review and edit, then press Save", "ok");
                         },
                         // Shortcut for "the draft is already right": write it straight to
@@ -1295,8 +1393,8 @@
                         // write fails we re-open the form with the draft intact.
                         onCommit: async (d) => {
                             const merged = mergeDraft(d);
-                            const ok = await persistTask(t, merged);
-                            if (!ok) taskModal(t, merged);
+                            const ok = await persistTask(t, merged, period);
+                            if (!ok) taskModal(t, merged, period);
                             return ok;
                         },
                     }),
@@ -1315,7 +1413,7 @@
                 tags: f.tags.value, context: f.context.value, status: f.status.value,
                 goal: f.goal.value, measure: f.measure.value, steps: f.steps.value, why: f.why.value,
                 importance: f.importance.value || "auto", urgency: f.urgency.value || "auto",
-            });
+            }, period);
             if (ok) closeModal();
         } });
         openModal({ title: editing ? "Edit task" : "New task", width: 640, body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
@@ -1562,6 +1660,7 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
             detailRow("Priority", priorityBadge(t.priority)),
             detailRow("Quadrant", quadrantBlock),
             detailRow("Tags", tagChips(t.tags)),
+            detailRow("Month", el("span", { class: "muted small", text: periodLabelOf(t.period) })),
             detailRow("Context", t.context ? mdRender(t.context) : el("span", { class: "muted small", text: "—" })),
             smartBlock,
             logHost);
@@ -1569,7 +1668,7 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
         async function renderLog() {
             logHost.innerHTML = "";
             let comments = t.log || [];
-            try { const r = await api(`/api/tasks/${t.id}/comments`); comments = r.comments || []; t.log = comments; }
+            try { const r = await api(`/api/tasks/${t.id}/comments${pq(t)}`); comments = r.comments || []; t.log = comments; }
             catch (e) { /* fall back to cached */ }
             const head = el("div", { class: "task-log-head" },
                 el("h4", { html: `💬 Progress log <span class="muted small">${comments.length}</span>` }),
@@ -1588,7 +1687,7 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
                 el("button", { class: "btn btn-sm btn-primary", text: "Save update", onclick: async () => {
                     const text = ed.getValue().trim();
                     if (!text) { toast("Nothing to save", "", "err"); return; }
-                    try { await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text } }); toast("Update logged", "", "ok"); await renderLog(); refreshSummary(); }
+                    try { await api(`/api/tasks/${t.id}/comments${pq(t)}`, { method: "POST", body: { text } }); toast("Update logged", "", "ok"); await renderLog(); refreshSummary(); }
                     catch (e) { toast("Error", e.message, "err"); }
                 } })));
             logHost.append(composer);
@@ -1604,7 +1703,7 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
                     el("div", { class: "task-log-item-actions" },
                         el("button", { class: "btn btn-xs btn-ghost", text: "Edit", onclick: () => editComment(row, c, i) }),
                         el("button", { class: "btn btn-xs btn-ghost btn-danger", text: "Delete", onclick: async () => {
-                            try { await api(`/api/tasks/${t.id}/comments/${i}`, { method: "DELETE" }); toast("Update removed", "", "ok"); await renderLog(); refreshSummary(); }
+                            try { await api(`/api/tasks/${t.id}/comments/${i}${pq(t)}`, { method: "DELETE" }); toast("Update removed", "", "ok"); await renderLog(); refreshSummary(); }
                             catch (e) { toast("Error", e.message, "err"); }
                         } }))),
                 bodyEl);
@@ -1618,7 +1717,7 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
                 el("button", { class: "btn btn-sm btn-primary", text: "Save", onclick: async () => {
                     const text = ed.getValue().trim();
                     if (!text) { toast("Nothing to save", "", "err"); return; }
-                    try { await api(`/api/tasks/${t.id}/comments/${i}`, { method: "PUT", body: { text } }); toast("Update saved", "", "ok"); await renderLog(); }
+                    try { await api(`/api/tasks/${t.id}/comments/${i}${pq(t)}`, { method: "PUT", body: { text } }); toast("Update saved", "", "ok"); await renderLog(); }
                     catch (e) { toast("Error", e.message, "err"); }
                 } })));
             row.replaceWith(editor);
@@ -1628,11 +1727,33 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
         const foot = [
             el("button", { class: "btn btn-danger", text: "Delete", onclick: () => { closeModal(); removeTask(t); } }),
             el("span", { class: "spacer", style: "flex:1" }),
+            el("button", { class: "btn", text: "↪ Move…", title: "Move this task to another month", onclick: () => moveTaskModal(t) }),
             el("button", { class: "btn", text: "Edit", onclick: () => taskModal(t) }),
-            !done ? el("button", { class: "btn btn-primary", text: "Complete", onclick: async () => { try { await api(`/api/tasks/${t.id}/complete`, { method: "POST" }); toast("Completed", t.title, "ok"); closeModal(); await refreshSummary(); go("tasks"); } catch (e) { toast("Error", e.message, "err"); } } }) : null,
+            !done ? el("button", { class: "btn btn-primary", text: "Complete", onclick: async () => { try { await api(`/api/tasks/${t.id}/complete${pq(t)}`, { method: "POST" }); toast("Completed", t.title, "ok"); closeModal(); await refreshSummary(); go("tasks"); } catch (e) { toast("Error", e.message, "err"); } } }) : null,
         ];
         openModal({ title: `Task #${t.id}`, body, foot });
         renderLog();
+    }
+
+    // Replanning a single task: re-file it into another month's markdown. The task
+    // is re-numbered by the target file, so always re-render rather than reuse it.
+    function moveTaskModal(t) {
+        const from = t.period || taskCurrentPeriod;
+        const options = taskPeriods.filter((p) => p.period !== from);
+        if (!options.length) { toast("Nowhere to move", "No other month is available yet.", "err"); return; }
+        const f = {};
+        const body = el("div", { class: "form" },
+            el("p", { class: "muted small", text: `“${t.title}” currently lives in ${periodLabelOf(from)}.` }),
+            selectField("Move to", f, "target", options.map((p) => p.period),
+                options[0].period, Object.fromEntries(options.map((p) => [p.period, p.label + (p.isCurrent ? " · current" : "")]))));
+        const save = el("button", { class: "btn btn-primary", text: "Move task", onclick: async () => {
+            try {
+                const res = await api(`/api/tasks/${t.id}/move`, { method: "POST", body: { toPeriod: f.target.value, fromPeriod: from } });
+                toast("Task moved", `Now in ${periodLabelOf(res.to)}`, "ok");
+                closeModal(); await refreshSummary(); go("tasks");
+            } catch (e) { toast("Error", e.message, "err"); }
+        } });
+        openModal({ title: "Move task", body, foot: [el("button", { class: "btn", text: "Cancel", onclick: closeModal }), save] });
     }
 
     // ---------- Journal ----------

@@ -91,6 +91,36 @@ const periods = store.listTaskPeriods();
 assert(periods.some((p) => p.isCurrent), 'listTaskPeriods marks the current period');
 assert(periods.every((p, i, a) => i === 0 || a[i - 1].period >= p.period), 'listTaskPeriods sorts newest first');
 
+// Inline updates must patch one field without dropping metadata or confusing
+// identical IDs in two partition files.
+const scoped = store.addTask({
+    title: 'Inline metadata', due: iso(ahead), context: 'Keep **context**',
+    priority: 'P1', tags: 'inline,test', project: 'demo-project',
+    goal: 'Preserve details', measure: 'All fields retained', why: 'Avoid data loss',
+}, planned.period);
+store.taskCommentAdd(scoped.id, { text: 'Keep this log' }, scoped.period);
+const baseline = store.listTasks('all', scoped.period).find((t) => t.id === scoped.id);
+for (const status of ['In Progress', 'Blocked', 'Done', 'Open']) {
+    const saved = store.updateTask(scoped.id, { status }, scoped.period);
+    assert(saved.status === status && saved.period === scoped.period, `inline status ${status} updates the source period`);
+}
+const afterStatus = store.listTasks('all', scoped.period).find((t) => t.id === scoped.id);
+assert(['title', 'dueDate', 'context', 'priority', 'tags', 'project', 'smart', 'log'].every((key) =>
+    JSON.stringify(baseline[key]) === JSON.stringify(afterStatus[key])), 'status-only edits preserve task metadata and log');
+const cleared = store.updateTask(scoped.id, { dueDate: '' }, scoped.period);
+assert(cleared.dueDate === '' && cleared.period === scoped.period, 'clearing a future task date keeps its existing period');
+const later = new Date(now.getFullYear(), now.getMonth() + 3, 18);
+const inlineMoved = store.updateTask(cleared.id, { dueDate: iso(later) }, cleared.period);
+assert(inlineMoved.movedFrom === cleared.period && inlineMoved.period > cleared.period, 'inline due edit reports its moved identity');
+assert(['context', 'priority', 'tags', 'project', 'smart', 'log'].every((key) =>
+    JSON.stringify(baseline[key]) === JSON.stringify(inlineMoved[key])), 'inline rescheduling preserves SMART fields and log');
+const twinA = store.addTask({ title: 'First same-id task' }, '2001/2001-01');
+const twinB = store.addTask({ title: 'Second same-id task' }, '2001/2001-02');
+assert(twinA.id === twinB.id, 'fixture tasks have duplicate IDs in separate periods');
+store.updateTask(twinA.id, { status: 'Blocked' }, twinA.period);
+assert(store.listTasks('all', twinA.period)[0].status === 'Blocked'
+    && store.listTasks('all', twinB.period)[0].status === 'Open', 'inline updates never change the same ID in another month');
+
 fs.rmSync(tmp, { recursive: true, force: true });
 
 if (failures) { console.error(`\n❌ ${failures} period test(s) failed.\n`); process.exit(1); }

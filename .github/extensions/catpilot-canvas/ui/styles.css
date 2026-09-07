@@ -477,6 +477,36 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--a
 textarea { resize: vertical; min-height: 90px; }
 .inline-edit { padding: 6px 8px; border-radius: 7px; font-size: 13px; }
 
+/* ---------- Inline task fields ---------- */
+.task-list-wrap { overflow-x: auto; }
+.task-inline-editor { display: inline-flex; flex-direction: column; gap: 3px; max-width: 100%; cursor: default; }
+.task-inline-fields { display: flex; align-items: center; gap: 4px; }
+.task-inline-date, .task-inline-status {
+    width: auto; min-height: 32px; font: inherit; font-size: 13px;
+    color: var(--text); background: var(--panel-2); border: 1px solid var(--border);
+}
+.task-inline-date { width: 9.5rem; font-variant-numeric: tabular-nums; }
+.task-inline-status { width: 9rem; cursor: pointer; font-weight: 600; }
+.task-inline-status.st-open { border-left: 3px solid var(--accent); }
+.task-inline-status.st-inprogress { border-left: 3px solid var(--true-color-blue, #5aa9ff); }
+.task-inline-status.st-blocked { border-left: 3px solid var(--true-color-orange, #ff8c32); }
+.task-inline-status.st-done { border-left: 3px solid var(--true-color-green, #35c88f); }
+.task-inline-date.p0 { border-left: 3px solid var(--true-color-red, #d1242f); }
+.task-inline-date.p1 { border-left: 3px solid var(--true-color-orange, #ff8c32); }
+.task-inline-date.muted { color: var(--text-muted); }
+.task-inline-date:focus-visible, .task-inline-status:focus-visible, .task-inline-clear:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.task-inline-clear { min-height: 32px; padding: 4px 6px; }
+.task-inline-editor :disabled { cursor: not-allowed; opacity: .55; }
+.task-inline-feedback { display: block; font-size: 11px; color: var(--text-muted); max-width: 24ch; }
+.task-inline-feedback:empty { display: none; }
+.task-saving { outline: 1px solid var(--accent); outline-offset: -1px; }
+.task-saving .task-inline-editor :disabled { cursor: wait; }
+.task-saving .cell-title, .task-saving .bc-title { cursor: wait; }
+.board-card:has(.task-inline-editor:focus-within):hover { transform: none; }
+.board-card.is-done:focus-within { opacity: 1; }
+
 /* ---------- Modal ---------- */
 .modal-backdrop {
     position: fixed; inset: 0; background: rgba(6,6,12,.55); backdrop-filter: blur(3px);

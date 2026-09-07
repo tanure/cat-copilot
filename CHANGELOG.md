@@ -4,7 +4,16 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-09-07
+
 ### Added
+- **Inline task editing.** List now supports Status and Due date changes directly
+  in the row; Board cards support Due date changes without opening the detail
+  dialog. Native, keyboard-accessible controls save on selection, support clearing
+  deadlines and retain the selected month and filters. Pending edits lock the task
+  to prevent conflicting actions; failed writes restore the persisted value.
+  Future-month rescheduling uses the existing period-aware API and reports where
+  the task went.
 - **A guided canvas tour in the README**, with screenshots of the dashboard, the four task
   views, the SMART detail popup and the "Build with Copilot" draft. Every screenshot is
   produced from a throwaway vault of invented data via two new helpers:

@@ -63,6 +63,13 @@ The browser canvas SPA provides richer review and editing views:
   **🎯 Focus plan** and **🧭 Triage with Copilot**. The task detail shows a **Progress log**
   timeline with a markdown write/preview/Copilot editor, the quadrant badge with its
   rationale, and the SMART fields.
+  **Inline editing:** List offers a Status dropdown (To do, In Progress, Blocked,
+  Done) and Due date picker; Board cards offer the same Due date picker while
+  drag-and-drop continues to change status. Changes save immediately on selection;
+  **Clear** removes a deadline. Saving locks that task's controls, and failed writes
+  restore the previous value with an error. The selected month, view, search and
+  due filter stay in place. Rescheduling follows the existing month-routing rules;
+  a notice identifies the destination month if the task moves out of view.
 - **Knowledge:** stats header, folder and tag filter rails, Grid/List/Folders/By-month
   view modes, search, Markdown detail popup, and a full write/preview editor with
   Save/Delete plus folder/tag editing.

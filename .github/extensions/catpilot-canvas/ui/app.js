@@ -211,10 +211,12 @@
         return "";
     }
     function priorityBadge(p) { return p ? el("span", { class: `badge ${priorityClass(p)}`, text: p }) : el("span", { class: "muted small", text: "—" }); }
-    function statusBadge(s) {
+    function statusClass(s) {
         const k = (s || "").toLowerCase().replace(/\s/g, "");
-        const cls = k === "done" ? "st-done" : k === "inprogress" ? "st-inprogress" : k === "planned" ? "st-planned" : k === "blocked" ? "st-blocked" : "st-open";
-        return el("span", { class: `badge ${cls}`, text: s || "Open" });
+        return k === "done" ? "st-done" : k === "inprogress" ? "st-inprogress" : k === "planned" ? "st-planned" : k === "blocked" ? "st-blocked" : "st-open";
+    }
+    function statusBadge(s) {
+        return el("span", { class: `badge ${statusClass(s)}`, text: s || "Open" });
     }
     function tagChips(tags) {
         const list = String(tags || "").split(",").map((t) => t.trim()).filter(Boolean);
@@ -392,9 +394,12 @@
     }
 
     // ---------------------------------------------------------------- refresh
-    async function refreshSummary() {
+    async function refreshSummary({ strict = false } = {}) {
         try { state.summary = await api("/api/summary"); }
-        catch { state.summary = null; }
+        catch (err) {
+            if (strict) throw err;
+            state.summary = null;
+        }
         renderNav();
     }
 
@@ -580,11 +585,208 @@
     let taskPeriod = null;
     let taskPeriods = [];
     let taskCurrentPeriod = null;
+    let taskSearch = "";
 
     // Tasks are stored per period, so every mutation has to say which file it means.
     // Each task carries its own `period`, which keeps the calendar (a cross-period
     // union) working without extra bookkeeping.
     const pq = (t, sep = "?") => (t && t.period ? `${sep}period=${encodeURIComponent(t.period)}` : "");
+
+    // Inline task editing
+    const TASK_STATUSES = ["Open", "In Progress", "Blocked", "Done"];
+    const pendingTaskEdits = new Set();
+    const taskKey = (t) => `${t.period || taskCurrentPeriod}#${t.id}`;
+    let taskInlineRefresh = 0;
+
+    function taskEditBlocked(t) {
+        if (!t || !pendingTaskEdits.has(taskKey(t))) return false;
+        toast("Task is saving", "Wait for this change before editing the task again.");
+        return true;
+    }
+
+    function syncTaskBusy(node, key) {
+        const busy = pendingTaskEdits.has(key);
+        node.classList.toggle("task-saving", busy);
+        node.setAttribute("aria-busy", String(busy));
+        node.querySelectorAll("input, select, button").forEach((control) => {
+            control.disabled = busy || control.dataset.idleDisabled === "true";
+        });
+        if (node.classList.contains("board-card")) node.draggable = !busy;
+    }
+
+    function syncPendingTasks() {
+        document.querySelectorAll("[data-task-key]").forEach((node) => {
+            syncTaskBusy(node, node.dataset.taskKey);
+        });
+    }
+
+    function taskSearchInput() {
+        return el("input", { class: "search", value: taskSearch, placeholder: "Search tasks…",
+            "aria-label": "Search tasks",
+            oninput: (e) => { taskSearch = e.target.value; filterTasks(taskSearch); } });
+    }
+
+    function validInlineDate(value) {
+        if (value === "") return true;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000")) return false;
+        const date = new Date(`${value}T12:00:00Z`);
+        return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+    }
+
+    function captureTaskViewport() {
+        const content = $("#content");
+        const focused = document.activeElement;
+        return {
+            focusKey: focused?.closest("[data-task-key]")?.dataset.taskKey,
+            focusField: focused?.dataset.inlineField,
+            focusSearch: focused?.classList.contains("search"),
+            scroll: [content, ...content.querySelectorAll(".table-wrap, .board, .board-col-body")].map((node) => ({
+                selector: node === content ? "#content" : node.classList.contains("board-col-body")
+                    ? `[data-col="${node.closest("[data-col]").dataset.col}"] .board-col-body`
+                    : `.${node.classList.contains("board") ? "board" : "table-wrap"}`,
+                top: node.scrollTop, left: node.scrollLeft,
+            })),
+        };
+    }
+
+    function restoreTaskViewport(snapshot) {
+        snapshot.scroll.forEach(({ selector, top, left }) => {
+            const node = $(selector);
+            if (node) { node.scrollTop = top; node.scrollLeft = left; }
+        });
+        if (snapshot.focusSearch) {
+            $(".toolbar .search")?.focus({ preventScroll: true });
+            return;
+        }
+        const row = [...document.querySelectorAll("[data-task-key]")].find((n) => n.dataset.taskKey === snapshot.focusKey);
+        const control = row && [...row.querySelectorAll("[data-inline-field]")].find((n) => n.dataset.inlineField === snapshot.focusField);
+        if (row?.style.display !== "none" && control && !control.disabled) control.focus({ preventScroll: true });
+    }
+
+    async function refreshInlineTasks(token, fallbackFocus) {
+        if (token !== navToken || state.view !== "tasks") return;
+        const revision = ++taskInlineRefresh;
+        const stage = el("div");
+        const actionStage = el("div");
+        await VIEWS.tasks(stage, actionStage);
+        // A newer navigation or inline refresh owns the screen now.
+        if (token !== navToken || revision !== taskInlineRefresh || state.view !== "tasks") return;
+        const snapshot = captureTaskViewport();
+        if (document.activeElement === document.body && fallbackFocus) {
+            snapshot.focusKey = fallbackFocus.key;
+            snapshot.focusField = fallbackFocus.field;
+        }
+        const content = $("#content");
+        content.replaceChildren(...stage.childNodes);
+        $("#view-actions").replaceChildren(...actionStage.childNodes);
+        const search = $(".toolbar .search");
+        if (search) search.value = taskSearch;
+        filterTasks(taskSearch);
+        syncPendingTasks();
+        restoreTaskViewport(snapshot);
+    }
+
+    function reconcileInlineTask(t, saved) {
+        const oldKey = taskKey(t);
+        const nodes = [...document.querySelectorAll("[data-task-key]")].filter((n) => n.dataset.taskKey === oldKey);
+        Object.assign(t, saved);
+        for (const node of nodes) {
+            if (saved.period !== (taskPeriod || taskCurrentPeriod) || !applyDueFilter([saved]).length) {
+                node.remove();
+            } else if (node.classList.contains("board-card")) {
+                const col = BOARD_COLS.find((c) => c.filter(saved));
+                const target = col && $(`[data-col="${col.key}"] .board-col-body`);
+                node.remove();
+                if (target) {
+                    target.querySelector(".board-col-empty")?.remove();
+                    target.append(boardCard(saved));
+                }
+            } else {
+                node.replaceWith(taskRow(saved));
+            }
+        }
+        filterTasks(taskSearch);
+    }
+
+    async function saveInlineTask(t, field, value, control, feedback) {
+        if (taskEditBlocked(t)) return false;
+        const previous = t[field] || "";
+        const valid = field === "dueDate" ? validInlineDate(value) && !control.validity?.badInput : TASK_STATUSES.includes(value);
+        if (!valid) {
+            feedback.textContent = field === "dueDate" ? "Choose a valid date." : "Choose a valid status.";
+            control.setAttribute("aria-invalid", "true");
+            control.value = previous;
+            toast("Invalid task value", feedback.textContent, "err");
+            return false;
+        }
+        control.removeAttribute("aria-invalid");
+        if (value === previous) return false;
+        const key = taskKey(t);
+        const token = navToken;
+        pendingTaskEdits.add(key);
+        syncPendingTasks();
+        feedback.textContent = "Saving...";
+        let saved;
+        try {
+            saved = (await api(`/api/tasks/${t.id}${pq(t)}`, { method: "PUT", body: { [field]: value } })).task;
+        } catch (err) {
+            control.value = previous;
+            feedback.textContent = `Could not save: ${err.message}`;
+            pendingTaskEdits.delete(key);
+            syncPendingTasks();
+            toast("Could not save task", err.message, "err");
+            if (token === navToken && document.activeElement === document.body) control.focus({ preventScroll: true });
+            return false;
+        }
+        pendingTaskEdits.delete(key);
+        syncPendingTasks();
+        // Update retained handlers/IDs even if the subsequent read fails.
+        const viewport = state.view === "tasks" ? captureTaskViewport() : null;
+        if (viewport) {
+            reconcileInlineTask(t, saved);
+            restoreTaskViewport(viewport);
+        } else Object.assign(t, saved);
+        const hiddenByFilter = !applyDueFilter([saved]).length;
+        toast(saved.movedFrom ? "Rescheduled" : "Task updated",
+            saved.movedFrom ? `Moved to ${periodLabelOf(saved.period)}` : hiddenByFilter
+                ? "Saved. This task is outside the current due-date filter." : t.title, "ok");
+        try {
+            await refreshInlineTasks(navToken, token === navToken ? { key: taskKey(saved), field: control.dataset.inlineField } : null);
+            await refreshSummary({ strict: true });
+        } catch (err) {
+            toast("Task saved; refresh failed", err.message, "err");
+        }
+        return true;
+    }
+
+    function taskInlineEditor(t, field) {
+        const date = field === "dueDate";
+        const done = t.status.toLowerCase() === "done";
+        const label = `${date ? "Due date" : "Status"} for ${t.title}`;
+        const feedback = el("span", { class: "task-inline-feedback", role: "status", "aria-live": "polite", text: date && !t.dueDate ? "No due date" : "" });
+        const control = date
+            ? el("input", { type: "date", value: t.dueDate || "", class: `inline-edit task-inline-date ${dueClass(t.dueDate || "9999-12-31", done).replace("badge ", "")}` })
+            : el("select", { class: `inline-edit task-inline-status ${statusClass(t.status)}` },
+                TASK_STATUSES.map((status) => el("option", { value: status, text: status === "Open" ? "To do" : status })));
+        control.value = t[field] || "";
+        control.setAttribute("aria-label", label);
+        control.title = `${label} (saves automatically)`;
+        control.dataset.inlineField = field;
+        control.addEventListener("change", () => saveInlineTask(t, field, control.value, control, feedback));
+        const fields = el("div", { class: "task-inline-fields" }, control);
+        if (date) fields.append(el("button", {
+            type: "button", class: "btn btn-sm btn-ghost task-inline-clear", text: "Clear",
+            "aria-label": `Clear due date for ${t.title}`, title: "Remove due date",
+            dataset: { idleDisabled: String(!t.dueDate), inlineField: "clearDueDate" },
+            disabled: !t.dueDate,
+            onclick: () => { control.value = ""; saveInlineTask(t, field, "", control, feedback); },
+        }));
+        const editor = el("div", { class: "task-inline-editor", role: "group", "aria-label": label }, fields, feedback);
+        editor.addEventListener("click", (e) => e.stopPropagation());
+        editor.addEventListener("keydown", (e) => e.stopPropagation());
+        editor.addEventListener("dragstart", (e) => { e.preventDefault(); e.stopPropagation(); });
+        return editor;
+    }
 
     // Apply the active due-date filter. Today = due today or overdue;
     // 7days = due within the next 7 days (includes overdue). Undated tasks are
@@ -617,6 +819,7 @@
             class: "btn btn-primary btn-sm",
             html: `📦 Carry ${info.total === 1 ? "it" : "them"} forward`,
             onclick: async (e) => {
+                if (pendingTaskEdits.size) { toast("Tasks are saving", "Wait before carrying tasks forward."); return; }
                 e.target.disabled = true;
                 e.target.textContent = "Carrying…";
                 try {
@@ -643,8 +846,8 @@
                 })));
     }
 
-    VIEWS.tasks = async (root) => {
-        const meta = await api("/api/task-periods").catch(() => ({ periods: [], current: null }));
+    VIEWS.tasks = async (root, taskActions = actionsHost) => {
+        const meta = await api("/api/task-periods");
         taskPeriods = meta.periods || [];
         taskCurrentPeriod = meta.current || null;
         // A remembered period that no longer exists must not strand the view.
@@ -669,7 +872,7 @@
             el("button", { class: taskViewMode === "board" ? "active" : "", text: "▦ Board", onclick: () => { taskViewMode = "board"; localStorage.setItem("cp-task-view", "board"); go("tasks"); } }),
             el("button", { class: taskViewMode === "calendar" ? "active" : "", text: "📅 Calendar", onclick: () => { taskViewMode = "calendar"; localStorage.setItem("cp-task-view", "calendar"); go("tasks"); } }),
             el("button", { class: taskViewMode === "matrix" ? "active" : "", text: "🎯 Matrix", onclick: () => { taskViewMode = "matrix"; localStorage.setItem("cp-task-view", "matrix"); go("tasks"); } }));
-        actionsHost.append(seg);
+        taskActions.append(seg);
 
         if (taskViewMode === "calendar") {
             const holderCal = el("div", { id: "task-holder" });
@@ -687,7 +890,7 @@
             root.append(el("div", { class: "toolbar" },
                 el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal(null, {}, taskPeriod) }),
                 buildPeriodPicker(),
-                el("input", { class: "search", placeholder: "Search tasks…", oninput: (e) => filterTasks(e.target.value) }),
+                taskSearchInput(),
                 el("span", { class: "spacer" }),
                 el("button", { class: "btn btn-sm", html: "🎯 Focus plan", title: "Ranked next actions from the matrix", onclick: () => focusPlanModal() }),
                 el("button", { class: "btn btn-sm", html: "🧭 Triage with Copilot", title: "Ask Copilot to classify and rebalance your tasks", onclick: () => triageModal() })));
@@ -696,6 +899,7 @@
             root.append(holderMx);
             if (!allTasks.length) { holderMx.append(emptyState("🗒️", noneTitle, noneHint || "Add a task with a goal and a due date and it will land in the right quadrant.", el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal(null, {}, taskPeriod) }))); return; }
             await renderTaskMatrix(holderMx, allTasks);
+            filterTasks(taskSearch, holderMx);
             root._tasks = allTasks;
             return;
         }
@@ -707,7 +911,7 @@
         const toolbar = el("div", { class: "toolbar" },
             el("button", { class: "btn btn-primary", html: "＋ Add task", onclick: () => taskModal(null, {}, taskPeriod) }),
             buildPeriodPicker(),
-            el("input", { class: "search", placeholder: "Search tasks…", oninput: (e) => filterTasks(e.target.value) }),
+            taskSearchInput(),
             filterSeg,
             el("span", { class: "spacer" }),
             el("button", { class: "btn btn-sm", html: "🎯 Focus plan", title: "Ranked next actions from the Eisenhower Matrix", onclick: () => focusPlanModal() }),
@@ -729,6 +933,7 @@
         if (!tasks.length) { holder.append(emptyState("🔍", "Nothing in this window", "No tasks match the current filter. Try “All”.")); return; }
         if (taskViewMode === "list") renderTaskList(holder, tasks);
         else renderTaskBoard(holder, tasks);
+        filterTasks(taskSearch, holder);
         root._tasks = tasks;
     };
 
@@ -769,6 +974,7 @@
             actions.prepend(el("button", {
                 class: "btn", text: `↪ Carry over ${pending.length} unfinished`,
                 onclick: async () => {
+                    if (pendingTaskEdits.size) { toast("Tasks are saving", "Wait before carrying tasks forward."); return; }
                     if (!confirm(`Move ${pending.length} unfinished task(s) from ${periodLabelOf(viewing)} to ${periodLabelOf(taskCurrentPeriod)}?`)) return;
                     try {
                         const res = await api("/api/tasks/carry-over", { method: "POST", body: { fromPeriod: viewing, toPeriod: taskCurrentPeriod } });
@@ -781,9 +987,9 @@
         return el("div", { class: "period-banner" }, note, el("span", { class: "spacer" }), actions);
     }
 
-    function filterTasks(q) {
+    function filterTasks(q, root = document) {
         q = q.toLowerCase().trim();
-        document.querySelectorAll("[data-task-title]").forEach((row) => {
+        root.querySelectorAll("[data-task-title]").forEach((row) => {
             const hit = !q || row.dataset.taskTitle.toLowerCase().includes(q);
             row.style.display = hit ? "" : "none";
         });
@@ -797,7 +1003,7 @@
         const ordered = [...inProgress, ...open, ...blocked, ...done];
         const tbody = el("tbody");
         ordered.forEach((t) => tbody.append(taskRow(t)));
-        holder.append(el("div", { class: "table-wrap" },
+        holder.append(el("div", { class: "table-wrap task-list-wrap" },
             el("table", { class: "tbl" },
                 el("thead", {}, el("tr", {},
                     el("th", { text: "" }),
@@ -813,28 +1019,28 @@
 
     function taskRow(t) {
         const done = t.status.toLowerCase() === "done";
-        const tr = el("tr", { class: done ? "done-row" : "", dataset: { taskTitle: t.title } });
+        const tr = el("tr", { class: done ? "done-row" : "", dataset: { taskTitle: t.title, taskKey: taskKey(t) } });
         const check = el("input", { type: "checkbox", style: "width:auto", "aria-label": done ? `Reopen ${t.title}` : `Complete ${t.title}`, ...(done ? { checked: "checked" } : {}) });
+        const checkFeedback = el("span", { class: "task-inline-feedback", role: "status" });
+        check.dataset.inlineField = "complete";
         check.addEventListener("change", async () => {
-            try {
-                if (check.checked) { await api(`/api/tasks/${t.id}/complete${pq(t)}`, { method: "POST" }); toast("Task completed", t.title, "ok"); }
-                else { await api(`/api/tasks/${t.id}${pq(t)}`, { method: "PUT", body: { status: "Open" } }); toast("Reopened", t.title); }
-                await refreshSummary(); go("tasks");
-            } catch (e) { toast("Error", e.message, "err"); }
+            const ok = await saveInlineTask(t, "status", check.checked ? "Done" : "Open", check, checkFeedback);
+            if (!ok) check.checked = t.status.toLowerCase() === "done";
         });
         tr.append(
-            el("td", { style: "width:34px" }, check),
+            el("td", { style: "width:34px" }, check, checkFeedback),
             el("td", {}, el("div", { class: "cell-title", text: t.title, onclick: () => taskDetail(t) }),
                 t.context ? el("div", { class: "muted small", text: t.context }) : null,
                 (t.log && t.log.length) ? el("div", { class: "muted small", text: `💬 ${t.log.length} update${t.log.length > 1 ? "s" : ""}` }) : null),
-            el("td", {}, statusBadge(t.status)),
-            el("td", {}, t.dueDate ? el("span", { class: dueClass(t.dueDate, done), text: t.dueDate }) : el("span", { class: "muted small", text: "—" })),
+            el("td", {}, taskInlineEditor(t, "status")),
+            el("td", {}, taskInlineEditor(t, "dueDate")),
             el("td", {}, priorityBadge(t.priority)),
             el("td", {}, quadrantBadge(t.eisenhower)),
             el("td", {}, tagChips(t.tags)),
             el("td", {}, el("div", { class: "row-actions" },
                 el("button", { class: "btn btn-sm btn-ghost", text: "Edit", onclick: () => taskModal(t) }),
                 el("button", { class: "btn btn-sm btn-ghost btn-danger", text: "Delete", onclick: () => removeTask(t) }))));
+        syncTaskBusy(tr, taskKey(t));
         return tr;
     }
 
@@ -891,6 +1097,11 @@
                 e.preventDefault(); colEl.classList.remove("drop");
                 const id = e.dataTransfer.getData("text/plain");
                 const task = tasks.find((x) => String(x.id) === String(id));
+                if (!task) { toast("Cannot move task", "Drop a task from this board.", "err"); return; }
+                if (taskEditBlocked(task)) return;
+                const key = taskKey(task);
+                pendingTaskEdits.add(key);
+                syncPendingTasks();
                 try {
                     if (col.key === "done") { await api(`/api/tasks/${id}/complete${pq(task)}`, { method: "POST" }); }
                     else {
@@ -903,6 +1114,7 @@
                     }
                     await refreshSummary(); go("tasks");
                 } catch (err) { toast("Error", err.message, "err"); }
+                finally { pendingTaskEdits.delete(key); syncPendingTasks(); }
             });
             board.append(colEl);
         }
@@ -914,8 +1126,12 @@
         const done = t.status.toLowerCase() === "done";
         const blocked = t.status.toLowerCase() === "blocked";
         const overdue = !done && t.dueDate && t.dueDate < todayISO();
-        const card = el("div", { class: `board-card pr-${rank}${done ? " is-done" : ""}`, draggable: "true", dataset: { taskTitle: t.title }, style: `--pr-accent:${PR_COLORS[rank]}` });
-        card.addEventListener("dragstart", (e) => { e.dataTransfer.setData("text/plain", String(t.id)); e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging"); });
+        const card = el("div", { class: `board-card pr-${rank}${done ? " is-done" : ""}`, draggable: "true", dataset: { taskTitle: t.title, taskKey: taskKey(t) }, style: `--pr-accent:${PR_COLORS[rank]}` });
+        card.addEventListener("pointerdown", (e) => { card.draggable = !e.target.closest(".task-inline-editor") && !pendingTaskEdits.has(taskKey(t)); });
+        card.addEventListener("dragstart", (e) => {
+            if (pendingTaskEdits.has(taskKey(t)) || e.target.closest(".task-inline-editor")) { e.preventDefault(); return; }
+            e.dataTransfer.setData("text/plain", String(t.id)); e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging");
+        });
         card.addEventListener("dragend", () => card.classList.remove("dragging"));
 
         // Header row: priority + status flag, id pushed right — visually separate
@@ -930,15 +1146,11 @@
         card.append(head, el("div", { class: "bc-title", text: t.title, title: t.title, onclick: () => taskDetail(t) }));
 
         const foot = el("div", { class: "bc-foot" });
-        if (t.dueDate) {
-            const state = done ? "" : overdue ? " overdue" : (t.dueDate === todayISO() ? " today" : "");
-            foot.append(el("span", { class: `bc-due${state}`, title: `Due ${t.dueDate}`, text: `📅 ${t.dueDate}` }));
-        } else {
-            foot.append(el("span", { class: "bc-due none", title: "No due date", text: "🗓️ No due date" }));
-        }
+        foot.append(taskInlineEditor(t, "dueDate"));
         if (String(t.tags || "").trim()) foot.append(tagChips(t.tags));
         if (t.log && t.log.length) foot.append(el("span", { class: "bc-due", title: `${t.log.length} progress update${t.log.length > 1 ? "s" : ""}`, text: `💬 ${t.log.length}` }));
         if (foot.childNodes.length) card.append(foot);
+        syncTaskBusy(card, taskKey(t));
         return card;
     }
 
@@ -1246,6 +1458,7 @@
     }
 
     async function removeTask(t) {
+        if (taskEditBlocked(t)) return;
         if (!confirm(`Delete task "${t.title}"?`)) return;
         try { await api(`/api/tasks/${t.id}${pq(t)}`, { method: "DELETE" }); toast("Deleted", t.title, "ok"); await refreshSummary(); go("tasks"); }
         catch (e) { toast("Error", e.message, "err"); }
@@ -1260,6 +1473,7 @@
      * files it by due date, so planning ahead writes into that month's markdown.
      */
     async function persistTask(t, draft, period = null) {
+        if (taskEditBlocked(t)) return false;
         const payload = {
             title: String(draft.title || "").trim(),
             due: draft.due || "", priority: draft.priority || "",
@@ -1293,6 +1507,7 @@
     }
 
     function taskModal(t, prefill = {}, period = null) {
+        if (taskEditBlocked(t)) return;
         const editing = !!t;
         const f = {};
         const smart = t?.smart || {};
@@ -1625,6 +1840,7 @@ Respond with ONLY minified JSON, no code fences, shaped exactly:
     }
 
     function taskDetail(t) {
+        if (taskEditBlocked(t)) return;
         const done = t.status.toLowerCase() === "done";
         const logHost = el("div", { class: "task-log" });
         const sm = t.smart || {};

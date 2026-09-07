@@ -1,6 +1,6 @@
 {
   "name": "@alberttanure/catpilot-cli",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "😺 CatPilot: a playful personal secretary for GitHub Copilot CLI (tasks, journal, milestones, memos, summaries)",
   "license": "MIT",
   "author": "Albert Tanure",
@@ -72,7 +72,7 @@
     "node": ">=18"
   },
   "scripts": {
-    "test": "node test/quick-test.js && node test/adapter-integration.js && node test/canvas-bridge.js && node test/canvas-port.js && node test/mcp-smoke.js && node test/period-tasks.mjs",
+    "test": "node test/quick-test.js && node test/adapter-integration.js && node test/canvas-bridge.js && node test/canvas-port.js && node test/mcp-smoke.js && node test/period-tasks.mjs && node test/canvas-inline-tasks.js",
     "test:mcp": "node test/mcp-smoke.js",
     "mcp": "node bin/cat-mcp.js",
     "test:bridge": "node test/canvas-bridge.js",

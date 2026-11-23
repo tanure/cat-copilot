@@ -41,8 +41,9 @@ npm run test:package
 npm run desktop:pack
 ```
 
-`test:electron` builds the Electron app. The smoke test reports success only after
-both launches exit cleanly; each graceful shutdown fails the test after 30 seconds.
+`test:electron` builds the Electron app and checks that quitting during renderer
+startup exits cleanly. The smoke test reports success only after all graceful
+shutdowns complete; each has a 30-second timeout.
 The proposal and workflow UI checks launch that build, then load the current
 renderer source in a separate window.
 

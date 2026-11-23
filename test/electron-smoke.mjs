@@ -148,14 +148,17 @@ try {
   await source.waitFor({ state: 'visible' });
   assert.equal((await source.locator('.cm-line').allTextContents()).join('\n'), richMarkdown, 'Mode-only switches must not rewrite the edited Markdown');
   await page.getByRole('button', { name: 'Preview Markdown', exact: true }).click();
-  await page.getByRole('button', { name: 'Save Ctrl S', exact: true }).click();
+  // Mode switches can outlast the autosave debounce. The shortcut also works
+  // when the edit is already saved and the Save button is disabled.
+  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+s' : 'Control+s');
   await page.waitForFunction(async ({ workspaceId, id, body }) => {
     const snapshot = await window.catpilot.request({ action: 'snapshot', workspaceId });
     return snapshot.records.some(r => r.id === id && r.body === body);
   }, { workspaceId: personal.id, id: richRecord.id, body: richMarkdown });
   const richSaved = (await request({ action: 'snapshot', workspaceId: personal.id })).records.find(r => r.id === richRecord.id);
   assert.ok(richSaved, 'The rich-edited record must still exist');
-  assert.equal(richSaved.body, richMarkdown, 'Saving from Preview must persist the actual rich edit');
+  assert.equal(richSaved.body, richMarkdown, 'The actual rich edit must persist after switching to Preview');
+  assert.notEqual(richSaved.revision, richRecord.revision, 'The rich edit must create a new persisted revision');
   await page.reload();
   await page.getByRole('combobox', { name: 'Switch workspace', exact: true }).selectOption(personal.id);
   await page.getByRole('navigation').getByRole('button', { name: 'Concepts', exact: true }).click();

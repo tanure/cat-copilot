@@ -429,6 +429,9 @@ try {
   const finished = await get(legacy.id);
   assert.equal(finished.body, legacy.body); assert.equal(finished.fields.custom, 'preserve-running');
   assert.equal(finished.fields.status, 'Done'); assert.ok(finished.fields.elapsedSec >= 12);
+  // Persistence can finish before the renderer clears the Focus action's busy state.
+  await timer().getByRole('button', { name: 'Start focus session', exact: true })
+    .and(page.locator(':enabled')).waitFor();
   await section('Tasks'); await open('Explicit creation fixture');
   await page.getByRole('button', { name: 'Focus on this task', exact: true }).click();
   const picker = page.locator('.focus-task-picker');

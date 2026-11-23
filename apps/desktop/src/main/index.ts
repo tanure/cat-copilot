@@ -25,6 +25,16 @@ let rendererUrl = '';
 let aiProposal: AiProposal | undefined;
 let loginCode = '';
 let loginGeneration = 0;
+const traceQuit = process.env.CATPILOT_TRACE_QUIT === '1';
+function quitTrace(stage: string) {
+  if (traceQuit) process.stderr.write(`[quit app pid=${process.pid}] ${stage}\n`);
+}
+
+if (traceQuit) {
+  app.on('before-quit', () => quitTrace('before-quit'));
+  app.on('quit', (_event, code) => quitTrace(`quit code=${code}`));
+  process.on('exit', code => quitTrace(`node exit code=${code}`));
+}
 
 function trusted(event: IpcMainInvokeEvent) {
   if (!window || event.sender !== window.webContents || event.senderFrame !== window.webContents.mainFrame || event.senderFrame?.url !== rendererUrl) throw new Error('Untrusted application frame.');
@@ -209,18 +219,21 @@ async function createWindow() {
     },
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  if (traceQuit) window.on('close', () => quitTrace('window close'));
   window.webContents.on('will-prevent-unload', event => {
+    quitTrace('will-prevent-unload: showing synchronous dialog');
     const choice = dialog.showMessageBoxSync(window!, {
       type: 'question', buttons: ['Keep editing', 'Discard unsaved changes'],
       defaultId: 0, cancelId: 0, message: 'This document has unsaved changes.',
       detail: 'Keep editing to save your changes, or discard them and close the window.',
     });
+    quitTrace(`will-prevent-unload: dialog returned ${choice}`);
     if (choice === 1) event.preventDefault();
   });
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   window.once('ready-to-show', () => window!.show());
-  window.on('closed', () => { window = null; preview = undefined; aiProposal = undefined; approvedDirectories.clear(); });
+  window.on('closed', () => { quitTrace('window closed'); window = null; preview = undefined; aiProposal = undefined; approvedDirectories.clear(); });
   if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
     const url = new URL(process.env.ELECTRON_RENDERER_URL);
     if (!['127.0.0.1', 'localhost'].includes(url.hostname) || url.protocol !== 'http:') throw new Error('Development UI must be served from loopback.');
@@ -260,15 +273,21 @@ app.whenReady().then(async () => {
   app.on('activate', () => { if (!window) void createWindow().catch(error => dialog.showErrorBox('CatPilot', String(error))); });
 }).catch(error => { dialog.showErrorBox('CatPilot startup failed', String(error)); app.quit(); });
 
-app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { quitTrace('window-all-closed'); if (process.platform !== 'darwin') app.quit(); });
 let stopping = false;
 app.on('will-quit', event => {
+  quitTrace(`will-quit stopping=${stopping}`);
   if (stopping) return;
   event.preventDefault();
   stopping = true;
   void (async () => {
-    try { await provider?.stop(); }
+    try { quitTrace('provider.stop start'); await provider?.stop(); quitTrace('provider.stop done'); }
     catch (error) { console.error('Copilot shutdown:', error); }
-    finally { await worker?.terminate(); app.quit(); }
+    finally {
+      quitTrace(`storage terminate start thread=${worker?.threadId}`);
+      const code = await worker?.terminate();
+      quitTrace(`storage terminate done code=${code}; requesting app.quit again`);
+      app.quit();
+    }
   })();
 });

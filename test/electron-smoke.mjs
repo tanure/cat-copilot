@@ -1,5 +1,7 @@
 import { _electron as electron } from 'playwright';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { writeSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
@@ -20,9 +22,53 @@ let appProcess;
 let largeWorkspace;
 let succeeded = false;
 const errors = [];
+const traceQuit = process.env.CATPILOT_TRACE_QUIT === '1';
+function quitTrace(child, message) {
+  if (traceQuit) console.error(`[quit test pid=${process.pid} child=${child.pid}] ${message}`);
+}
+
+function watchProcess(child, label) {
+  quitTrace(child, `${label} launched`);
+  if (!traceQuit) return;
+  for (const event of ['exit', 'close']) {
+    child.once(event, (code, signal) => quitTrace(child, `${label} ${event} code=${code} signal=${signal}`));
+  }
+  for (const stream of ['stdout', 'stderr']) {
+    child[stream]?.once('end', () => quitTrace(child, `${label} ${stream} end`));
+  }
+}
+
+async function closeGracefully(app, child, stopped, label) {
+  let stage = 'Playwright app.close()';
+  const timer = setTimeout(() => {
+    writeSync(2, `[quit test pid=${process.pid} child=${child.pid}] ${label} timed out in ${stage}; exitCode=${child.exitCode} signalCode=${child.signalCode}\n`);
+    if (traceQuit && process.platform === 'darwin' && child.pid) {
+      const ps = spawnSync('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,stat=,comm='], { encoding: 'utf8', timeout: 3_000, killSignal: 'SIGKILL' });
+      const group = ps.stdout?.split('\n').filter(line => line.trim().split(/\s+/)[2] === String(child.pid));
+      writeSync(2, `[quit test] exact process group (pid ppid pgid stat executable):\n${group?.join('\n') || '(none)'}\n`);
+      if (group?.some(line => line.trim().split(/\s+/)[0] === String(child.pid)) && child.exitCode === null && child.signalCode === null) {
+        const sample = spawnSync('/usr/bin/sample', [String(child.pid), '2', '10', '-file', '/dev/stdout'], {
+          encoding: 'utf8', timeout: 8_000, killSignal: 'SIGKILL', maxBuffer: 8 * 1024 * 1024,
+        });
+        writeSync(2, `[quit test] sample status=${sample.status} error=${sample.error ?? ''}\n${sample.stderr ?? ''}\n${sample.stdout?.split('\n').slice(0, 170).join('\n') ?? ''}\n`);
+      }
+    }
+    process.exit(1);
+  }, 30_000);
+  try {
+    quitTrace(child, `${label} requesting ${stage}`);
+    await app.close();
+    quitTrace(child, `${label} app.close() completed`);
+    stage = 'child close event';
+    await stopped;
+    quitTrace(child, `${label} child close wait completed`);
+  } finally { clearTimeout(timer); }
+}
+
 try {
   app = await electron.launch(launchOptions);
   appProcess = app.process();
+  watchProcess(appProcess, 'initial');
   const page = await app.firstWindow();
   page.setDefaultTimeout(15_000);
   page.on('pageerror', error => errors.push(error.message));
@@ -339,11 +385,11 @@ try {
   }
   const firstProcess = appProcess;
   const firstStopped = new Promise(resolve => firstProcess.once('close', resolve));
-  await app.close();
-  await firstStopped;
+  await closeGracefully(app, firstProcess, firstStopped, 'initial');
   const startupStart = performance.now();
   app = await electron.launch(launchOptions);
   appProcess = app.process();
+  watchProcess(appProcess, 'restarted');
   const restartedPage = await app.firstWindow();
   restartedPage.on('pageerror', error => errors.push(error.message));
   await restartedPage.waitForFunction(() => Boolean(window.catpilot));
@@ -359,7 +405,7 @@ try {
     assert.ok(startupMs < 10_000, `Large workspace startup exceeded 10s: ${startupMs.toFixed(0)}ms`);
   }
   assert.deepEqual(errors, []);
-  console.log('Electron smoke passed: both backends, restart/reload, conflict rejection, exact-byte Markdown preservation, rich editing, renderer and sandbox.');
+  quitTrace(appProcess, 'all assertions passed; entering final cleanup');
   succeeded = true;
 } finally {
   if (app && appProcess) {
@@ -368,7 +414,7 @@ try {
     const running = process.exitCode === null && process.signalCode === null;
     const stopped = running ? new Promise(resolve => process.once('close', resolve)) : Promise.resolve();
     if (running) {
-      if (succeeded) await app.close();
+      if (succeeded) await closeGracefully(app, process, stopped, 'restarted');
       else await app.evaluate(({ app }) => app.exit(0)).catch(error => {
           if (!/closed|exited|destroyed/i.test(error.message)) throw error;
         });
@@ -377,3 +423,4 @@ try {
   }
   await fs.rm(temp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }
+console.log('Electron smoke passed: both backends, restart/reload, conflict rejection, exact-byte Markdown preservation, rich editing, renderer and sandbox.');

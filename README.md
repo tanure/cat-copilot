@@ -1,8 +1,20 @@
 # CatPilot 😺
 
+**Desktop preview:** an Electron + TypeScript + Svelte application with isolated
+SQLite/Markdown workspaces, contextual navigation, and rich/source Markdown editing.
+Find the **Windows x64 preview installer** (unsigned) on the
+[CatPilot v0.9.0 release page](https://github.com/tanure/cat-copilot/releases/tag/v0.9.0).
+To run from source, use `npm ci` then `npm run desktop:dev` with Node 24 LTS.
+See [desktop setup and current limitations](docs/DESKTOP.md).
+
+**Chromebook PWA:** the shared Svelte interface is installable from Chrome and
+works offline after its first successful load. It supports browser-private SQLite
+or a selected Markdown folder, rich editing and portable backups. Build with
+`npm run pwa:build`; see [installation, hosting and browser limitations](docs/PWA.md).
+
 CatPilot is a terminal-first personal operating system for GitHub Copilot CLI users who want one place to capture tasks, journal notes, milestones, memos, summaries, and reports without leaving the command line.
 
-It can be used in three ways:
+For terminal workflows, it can be used in three ways:
 
 | Entry Point | Best For | What You Get |
 | --- | --- | --- |
@@ -31,7 +43,9 @@ Most terminal tools are either too raw or too rigid. CatPilot is meant to feel c
 - Keep Copilot-aware workflows connected to the same storage
 - Move between chat, direct CLI, and terminal dashboard without losing context
 
-All interfaces write to the same config-driven storage, so your data stays in sync.
+The legacy interfaces share the same config-driven Markdown storage. Desktop
+workspaces use a separate registry and the explicit `workspace` CLI/MCP APIs;
+they do not automatically migrate or synchronize legacy data.
 
 ## A personal knowledge OS across every Copilot surface
 
@@ -753,7 +767,7 @@ npm update -g @alberttanure/catpilot-cli
 
 ## Release Notes
 
-- Current version: **v0.4.0**
+- **[v0.9.0](https://github.com/tanure/cat-copilot/releases/tag/v0.9.0):** Desktop preview, offline Chromebook PWA, SQLite or Markdown workspaces, and improved planning and Focus workflows.
 - Changelog: [CHANGELOG.md](https://github.com/tanure/cat-copilot/blob/main/CHANGELOG.md)
 - GitHub releases: [Releases](https://github.com/tanure/cat-copilot/releases)
 

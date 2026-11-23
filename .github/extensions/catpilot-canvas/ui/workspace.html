@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="catpilot-token" content="__CATPILOT_TOKEN__">
+  <title>CatPilot workspace</title>
+  <link rel="stylesheet" href="workspace.css">
+  <script src="workspace.js" defer></script>
+</head>
+<body>
+  <header><h1>CatPilot workspace</h1><p id="context">Connecting to the selected workspace...</p></header>
+  <p id="message" role="status" aria-live="polite"></p>
+  <main>
+    <aside aria-label="Workspace records">
+      <label>Domain <select id="domain"></select></label>
+      <button id="refresh" type="button">Refresh</button>
+      <button id="new" type="button">New record</button>
+      <nav id="records" aria-label="Records"></nav>
+    </aside>
+    <section aria-label="Record editor">
+      <p id="identity">New record</p>
+      <form id="editor">
+        <label>Title <input id="title" required maxlength="500"></label>
+        <label>Markdown body <textarea id="body" rows="12"></textarea></label>
+        <details><summary>Structured fields (JSON; unknown metadata is retained)</summary>
+          <label for="fields">Fields</label><textarea id="fields" rows="8"></textarea>
+        </details>
+        <div class="actions">
+          <button type="submit">Save</button>
+          <button id="complete" type="button">Complete</button>
+          <button id="comment" type="button">Add comment</button>
+          <button id="log" type="button">Add log</button>
+          <button id="carry" type="button">Carry forward</button>
+          <button id="remove" type="button">Delete</button>
+        </div>
+      </form>
+      <details><summary>Deterministic report</summary>
+        <label>From <input id="from" type="date"></label><label>To <input id="to" type="date"></label>
+        <button id="report" type="button">Generate report</button><pre id="report-output"></pre>
+      </details>
+    </section>
+  </main>
+</body>
+</html>

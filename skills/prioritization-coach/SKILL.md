@@ -6,6 +6,11 @@ license: MIT
 
 # Skill: prioritization-coach
 
+## Desktop workspace boundary
+For a selected registered desktop workspace, use the revision-checked workspace
+APIs in `docs/DESKTOP.md`, not legacy tools or file/table edits. This applies to
+both SQLite and Markdown backends. The procedures below describe legacy storage.
+
 ## When to use
 Use this skill when the user says things like:
 - "What should I work on?" / "What's next?"

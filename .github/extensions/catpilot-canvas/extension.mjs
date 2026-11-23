@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 import * as store from "./catpilot-store.mjs";
+import { WorkspaceCanvasPanels } from "./workspace-canvas.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const UI_DIR = path.join(HERE, "ui");
@@ -26,6 +27,7 @@ function log(message, level = "info") {
 let sharedServer = null;
 let serverInit = null;
 const openInstances = new Set();
+const workspaceInstances = new WorkspaceCanvasPanels();
 
 const STATIC = {
     "/": { file: "index.html", type: "text/html; charset=utf-8" },
@@ -632,22 +634,52 @@ const actions = [
     },
 ];
 
+for (const action of actions) {
+    const legacyHandler = action.handler;
+    action.handler = async (ctx) => {
+        if (workspaceInstances.has(ctx.instanceId) || process.env.CATPILOT_WORKSPACE) {
+            throw new CanvasError("uuid_workspace", "This panel uses UUID records. Use workspace_request with a revision-checked shared-core request instead of a numeric legacy action.");
+        }
+        return legacyHandler(ctx);
+    };
+}
+actions.push({
+    name: "workspace_request",
+    description: "Run a shared-core request in this panel's immutable selected workspace. Supports snapshot, put, remove and management. Existing records use UUIDs and expectedRevision, never numeric legacy IDs or Markdown paths.",
+    inputSchema: { type: "object", required: ["request"], properties: { request: { type: "object", additionalProperties: true } } },
+    handler: async (ctx) => {
+        const selected = workspaceInstances.get(ctx.instanceId);
+        if (!selected) throw new CanvasError("workspace_required", "Open this Canvas with workspace: <name-or-UUID> first.");
+        try { return { ok: true, result: await selected.request(ctx.input.request) }; }
+        catch (error) { throw new CanvasError("workspace_request_failed", error.message); }
+    },
+});
+
 const canvas = createCanvas({
     id: "catpilot-canvas",
     displayName: "CatPilot",
     description: "Visual command center for CatPilot: dashboard, tasks, journal, milestones, memos, learning, growth, projects, timeline, Copilot reports, settings/migration and a help guide — with charts and agent actions.",
     inputSchema: {
         type: "object",
-        properties: { view: { type: "string", description: "Optional initial view: dashboard|timeline|tasks|journal|milestones|memos|learning|growth|projects|reports|settings|help" } },
+        properties: {
+            view: { type: "string", description: "Optional initial legacy view." },
+            workspace: { type: "string", minLength: 1, description: "Record workspace name or UUID. Uses shared services through an installed Node bridge; defaults to CATPILOT_WORKSPACE." },
+        },
     },
     actions,
     open: async (ctx) => {
+        const selector = ctx.input?.workspace ?? (workspaceInstances.has(ctx.instanceId) ? undefined : process.env.CATPILOT_WORKSPACE);
+        if (selector !== undefined || workspaceInstances.has(ctx.instanceId)) {
+            const selected = await workspaceInstances.open(ctx.instanceId, selector);
+            return { title: `CatPilot: ${selected.workspace.name}`, status: `${selected.workspace.backend} workspace`, url: selected.url };
+        }
         const srv = await ensureServer();
         openInstances.add(ctx.instanceId);
         const view = ctx.input?.view ? `#${encodeURIComponent(ctx.input.view)}` : "";
         return { title: "CatPilot", status: "Ready", url: `${srv.url}${view}` };
     },
     onClose: async (ctx) => {
+        await workspaceInstances.close(ctx.instanceId);
         openInstances.delete(ctx.instanceId);
         if (openInstances.size === 0 && sharedServer) {
             const { server } = sharedServer;

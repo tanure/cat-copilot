@@ -11,6 +11,8 @@ import {
 } from '../lib/tui.js';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
+import { assertLegacyWorkspace } from '../lib/workspaces.js';
+import { runWorkspaceTerminal } from '../lib/workspace-tui.js';
 
 /**
  * CatPilot TUI - Terminal User Interface
@@ -20,6 +22,7 @@ import { dirname } from 'path';
 class CatPilotApp extends React.Component {
   constructor(props) {
     super(props);
+    assertLegacyWorkspace('TUI');
 
     this.state = {
       tuiState: null,
@@ -220,10 +223,19 @@ const __dirname = dirname(__filename);
 
 if (process.argv[1] === __filename) {
   try {
+    const args = process.argv.slice(2);
+    const selectorIndex = args.indexOf('--workspace');
+    const inlineSelector = args.find(arg => arg.startsWith('--workspace='));
+    const selector = selectorIndex >= 0 ? args[selectorIndex + 1] : inlineSelector !== undefined ? inlineSelector.slice(12) : process.env.CATPILOT_WORKSPACE;
+    if ((selectorIndex >= 0 || inlineSelector !== undefined) && (!selector?.trim() || selector.startsWith('--'))) throw new Error('--workspace requires a workspace name or UUID.');
+    if (selector) {
+      await runWorkspaceTerminal(selector, { snapshotOnly: args.includes('--snapshot') });
+    } else {
     const app = React.createElement(CatPilotApp);
     render(app, {
       exitOnCtrlC: true
     });
+    }
   } catch (err) {
     console.error('❌ TUI Error:', err.message);
     process.exit(1);

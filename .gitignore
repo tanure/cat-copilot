@@ -453,3 +453,14 @@ data/config.json
 
 # Impeccable design-review skill working cache (never commit).
 .impeccable/
+
+# Shared TypeScript services and desktop build output
+!/packages/
+!/packages/core/
+!/packages/storage-markdown/
+!/packages/storage-sqlite/
+dist/
+apps/desktop/out/
+apps/desktop/release/
+apps/desktop/.svelte-kit/
+*.tsbuildinfo

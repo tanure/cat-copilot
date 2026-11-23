@@ -8,7 +8,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { _electron as electron } from 'playwright';
 import { WorkspaceService, recordInputSchema } from '../../../../../dist/core/index.js';
 
-// Current source UI + actual disk-backed core services; no desktop rebuild or fake timer state.
+// Launch the existing Electron build with the source renderer and actual disk-backed core services.
 const root = fileURLToPath(new URL('../../../../../', import.meta.url));
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'catpilot-workflows-ui-'));
 const core = new WorkspaceService(path.join(temp, 'registry'));

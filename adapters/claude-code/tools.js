@@ -9,6 +9,7 @@
 import * as cliUtils from '../../lib/cli-utils.js';
 import * as pomodoro from '../../lib/pomodoro.js';
 import * as eisen from '../../lib/eisenhower.js';
+import { workspaceSelected, workspaceTool } from '../../lib/workspaces.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -77,6 +78,7 @@ function strandedSummary(config) {
 }
 
 async function list_tasks(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('list_tasks', params);
   try {
     const config = cliUtils.loadConfig();
     const tasksPath = cliUtils.resolveFilePath('tasks', config);
@@ -110,6 +112,7 @@ async function list_tasks(params = {}) {
 }
 
 async function add_task(params) {
+  if (workspaceSelected(params)) return workspaceTool('add_task', params);
   try {
     if (!params.title) {
       return { success: false, error: 'title is required' };
@@ -154,6 +157,7 @@ async function add_task(params) {
  * Only the keys present in `params` are touched; pass an empty string to clear.
  */
 async function set_task_smart(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('set_task_smart', params);
   try {
     if (params.id === undefined) return { success: false, error: 'id is required' };
     const { tasksPath, tasks } = readTasks();
@@ -177,6 +181,7 @@ async function set_task_smart(params = {}) {
 
 /** Build the full Eisenhower matrix, optionally narrowed to one quadrant. */
 async function task_matrix(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('task_matrix', params);
   try {
     const { tasksPath, tasks } = readTasks();
     const includeDone = params.includeDone === true || String(params.status || '').toLowerCase() === 'all';
@@ -199,6 +204,7 @@ async function task_matrix(params = {}) {
 
 /** Ranked "what should I do next" list with a reason per task. */
 async function task_focus(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('task_focus', params);
   try {
     const { tasksPath, tasks } = readTasks();
     const limit = params.limit === undefined ? 5 : Math.max(1, parseInt(params.limit, 10) || 5);
@@ -219,6 +225,7 @@ async function task_focus(params = {}) {
 }
 
 async function task_carry(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('task_carry', params);
   try {
     const config = cliUtils.loadConfig();
     const dryRun = params.dryRun === true || params.dry_run === true;
@@ -237,6 +244,7 @@ async function task_carry(params = {}) {
 }
 
 async function complete_task(params) {
+  if (workspaceSelected(params)) return workspaceTool('complete_task', params);
   try {
     if (params.id === undefined) {
       return { success: false, error: 'id is required' };
@@ -267,6 +275,7 @@ async function complete_task(params) {
 }
 
 async function set_task_status(params) {
+  if (workspaceSelected(params)) return workspaceTool('set_task_status', params);
   try {
     if (params.id === undefined) {
       return { success: false, error: 'id is required' };
@@ -301,6 +310,7 @@ async function set_task_status(params) {
 }
 
 async function remove_task(params) {
+  if (workspaceSelected(params)) return workspaceTool('remove_task', params);
   try {
     if (params.id === undefined) {
       return { success: false, error: 'id is required' };
@@ -345,6 +355,7 @@ function loadTasksForComment(id) {
 }
 
 async function add_task_comment(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('add_task_comment', params);
   try {
     if (params.id === undefined) return { success: false, error: 'id is required' };
     const text = (params.text || '').trim();
@@ -365,6 +376,7 @@ async function add_task_comment(params = {}) {
 }
 
 async function list_task_comments(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('list_task_comments', params);
   try {
     if (params.id === undefined) return { success: false, error: 'id is required' };
     const { task } = loadTasksForComment(params.id);
@@ -376,6 +388,7 @@ async function list_task_comments(params = {}) {
 }
 
 async function edit_task_comment(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('edit_task_comment', params);
   try {
     if (params.id === undefined) return { success: false, error: 'id is required' };
     if (params.index === undefined) return { success: false, error: 'index is required' };
@@ -398,6 +411,7 @@ async function edit_task_comment(params = {}) {
 }
 
 async function remove_task_comment(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('remove_task_comment', params);
   try {
     if (params.id === undefined) return { success: false, error: 'id is required' };
     if (params.index === undefined) return { success: false, error: 'index is required' };
@@ -417,6 +431,7 @@ async function remove_task_comment(params = {}) {
 }
 
 async function add_journal_entry(params) {
+  if (workspaceSelected(params)) return workspaceTool('add_journal_entry', params);
   try {
     if (!params.text) {
       return { success: false, error: 'text is required' };
@@ -442,6 +457,7 @@ async function add_journal_entry(params) {
 }
 
 async function list_journal(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('list_journal', params);
   try {
     const config = cliUtils.loadConfig();
     const journalPath = cliUtils.resolveFilePath('journal', config);
@@ -463,6 +479,7 @@ async function list_journal(params = {}) {
 }
 
 async function create_memo(params) {
+  if (workspaceSelected(params)) return workspaceTool('create_memo', params);
   try {
     if (!params.title) {
       return { success: false, error: 'title is required' };
@@ -490,6 +507,7 @@ async function create_memo(params) {
 }
 
 async function list_memos(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('list_memos', params);
   try {
     const config = cliUtils.loadConfig();
     const memoDir = cliUtils.resolveFilePath('memos', config);
@@ -507,6 +525,7 @@ async function list_memos(params = {}) {
 }
 
 async function read_memo(params) {
+  if (workspaceSelected(params)) return workspaceTool('read_memo', params);
   try {
     if (!params.filename) {
       return { success: false, error: 'filename is required' };
@@ -560,6 +579,7 @@ function resolveTaskLabel(taskRef) {
 }
 
 async function pomodoro_start(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('pomodoro_start', params);
   try {
     const task = resolveTaskLabel(params.task);
     const result = pomodoro.start({ ...params, task }, process.cwd());
@@ -569,7 +589,8 @@ async function pomodoro_start(params = {}) {
   }
 }
 
-async function pomodoro_status() {
+async function pomodoro_status(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('pomodoro_status', params);
   try {
     const result = pomodoro.status(process.cwd());
     return { success: true, data: result.active, path: result.path };
@@ -579,6 +600,7 @@ async function pomodoro_status() {
 }
 
 async function pomodoro_complete(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('pomodoro_complete', params);
   try {
     const result = pomodoro.complete(params, process.cwd());
     return { success: true, data: result.record, path: result.path };
@@ -588,6 +610,7 @@ async function pomodoro_complete(params = {}) {
 }
 
 async function pomodoro_cancel(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('pomodoro_cancel', params);
   try {
     const result = pomodoro.cancel(params, process.cwd());
     return { success: true, data: result.record, path: result.path };
@@ -597,6 +620,7 @@ async function pomodoro_cancel(params = {}) {
 }
 
 async function pomodoro_list(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('pomodoro_list', params);
   try {
     const result = pomodoro.list(params, process.cwd());
     return { success: true, data: result.data, path: result.path, count: result.count };
@@ -606,6 +630,7 @@ async function pomodoro_list(params = {}) {
 }
 
 async function pomodoro_stats(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('pomodoro_stats', params);
   try {
     const data = pomodoro.stats(params, process.cwd());
     return { success: true, data };
@@ -615,6 +640,7 @@ async function pomodoro_stats(params = {}) {
 }
 
 async function pomodoro_report(params = {}) {
+  if (workspaceSelected(params)) return workspaceTool('pomodoro_report', params);
   try {
     const data = pomodoro.report(params, process.cwd());
     return { success: true, data };

@@ -6,6 +6,11 @@ license: MIT
 
 # Skill: interactive-setup
 
+## Desktop workspace boundary
+For a registered desktop workspace, use Settings or `cat-pilot workspace create`
+as documented in `docs/DESKTOP.md`. Do not change global legacy configuration or
+move existing vault files. The setup procedure below configures legacy mode only.
+
 ## When to use
 Use this skill when:
 - The user says "setup", "configure", "reconfigure", or "change storage".

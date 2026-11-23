@@ -1,0 +1,16 @@
+{
+  "id": "./",
+  "name": "CatPilot",
+  "short_name": "CatPilot",
+  "description": "Local-first tasks, notes and personal workspaces.",
+  "lang": "en",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#eef3f8",
+  "theme_color": "#12333d",
+  "icons": [
+    { "src": "./icons/catpilot-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icons/catpilot-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

@@ -26,6 +26,8 @@ jobs:
 
       - name: Resolve and validate release tag
         id: tag
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -33,7 +35,7 @@ jobs:
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             TAG="${GITHUB_REF_NAME}"
           else
-            TAG="${{ github.event.inputs.tag }}"
+            TAG="${DISPATCH_TAG:-}"
           fi
 
           if [[ -z "${TAG}" ]]; then
@@ -62,8 +64,11 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - run: npm ci
 
       - name: Sync package version from tag
         shell: bash

@@ -12,6 +12,11 @@ import path from "node:path";
 import os from "node:os";
 import * as eisen from "./eisenhower.mjs";
 
+// This portable engine has no authenticated UUID repository bridge.
+function assertLegacyWorkspace() {
+    if (process.env.CATPILOT_WORKSPACE) throw new Error("A record workspace is selected. Refusing legacy Markdown fallback; open the Canvas workspace view.");
+}
+
 export { eisen };
 
 const GLOBAL_CONFIG_DIR = path.join(os.homedir(), ".catpilot");
@@ -62,12 +67,14 @@ function configBaseDir(configPath) {
 }
 
 export function configStatus(projectRoot = process.cwd()) {
+    assertLegacyWorkspace();
     const { path: configPath, scope } = resolveConfigPath(projectRoot);
     const exists = scope !== "none" && fs.existsSync(configPath);
     return { configured: exists, configPath, scope };
 }
 
 export function loadConfig(projectRoot = process.cwd()) {
+    assertLegacyWorkspace();
     const { path: configPath } = resolveConfigPath(projectRoot);
     if (!fs.existsSync(configPath)) {
         const err = new Error("CatPilot is not set up yet.");
@@ -85,6 +92,7 @@ export function loadConfig(projectRoot = process.cwd()) {
 // chosen root. (Move/Copy migration is offered later from Settings, where the
 // plan/preview/approve flow in applyConfigChange handles it safely.)
 export function writeConfig({ root, partitioning = "month" } = {}) {
+    assertLegacyWorkspace();
     if (!root || !String(root).trim()) throw new Error("A storage root path is required.");
     if (!["day", "week", "month"].includes(partitioning)) throw new Error("partitioning must be day, week, or month.");
     const config = {

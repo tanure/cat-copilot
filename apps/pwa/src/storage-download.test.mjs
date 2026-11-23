@@ -29,7 +29,7 @@ test('production offline backup downloads', { timeout: 45_000 }, async () => {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     context = await chromium.launchPersistentContext(profile, {
       headless: true, acceptDownloads: true,
-      executablePath: process.env.CATPILOT_BROWSER_EXE || 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      executablePath: process.env.CATPILOT_BROWSER_EXE || undefined,
       downloadsPath: path.join(profile, 'downloads'),
     });
     const page = await context.newPage();

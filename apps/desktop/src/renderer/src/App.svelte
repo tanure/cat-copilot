@@ -26,14 +26,14 @@
   } from './icons.js';
   import { afterSave, canAutosave } from './autosave.js';
   import { isDocument, recordInputSchema, type RecordEntry as StoredRecord } from '../../../../../packages/core/types.js';
-  import { conceptFolderTree, flattenFolders, folderParent, folderTrail, folderVersion, inFolder, joinFolder } from '../../../../../packages/core/concept-folders.js';
+  import { conceptFolderTree, conceptKinds, flattenFolders, folderParent, folderTrail, folderVersion, inFolder, isConcept, joinFolder, type ConceptKind } from '../../../../../packages/core/concept-folders.js';
   import type { FolderCommand } from '../../../../../packages/core/folder-command.js';
   import { taskReadiness } from '../../../../../packages/core/management.js';
   import { proposalMatches } from './proposal.js';
   import type { ManagementReport } from '../../../../../packages/core/management-types.js';
   import { pageWindow } from './pagination.js';
   import { defaultFields, draftKey, readPreference, writePreference, splitFrontmatter } from './document.js';
-  import { dayKey, isDay, dateFromDay, journalDay, achievementYear, focusTaskIds, isConcept, kindNames, kindTones, conceptKinds, tones, type ConceptKind, type Tone } from './workspace-views.js';
+  import { dayKey, isDay, dateFromDay, journalDay, achievementYear, focusTaskIds, kindNames, kindTones, tones, type Tone } from './workspace-views.js';
   import logo from '../../../../../assets/catpilot-pixel.png';
   const isWeb = window.catpilot.platform === 'web';
 

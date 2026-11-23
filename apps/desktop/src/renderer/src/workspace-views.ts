@@ -1,6 +1,5 @@
 import type { Domain, RecordEntry } from '../../shared.js';
 
-export { conceptKinds, isConcept, folderTrail, type ConceptKind } from '../../../../../packages/core/concept-folders.js';
 export const kindNames: Record<Domain, string> = {
   tasks: 'Task', knowledge: 'Knowledge', journal: 'Journal', projects: 'Project', learning: 'Learning',
   milestones: 'Milestone', growth: 'Growth', achievements: 'Achievement', pomodoro: 'Focus', reports: 'Report',

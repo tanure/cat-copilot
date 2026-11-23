@@ -3,8 +3,8 @@
   import { SvelteMap } from 'svelte/reactivity';
   import { FolderOpen, ChevronRight, Ellipsis, FolderInput, FolderPlus, Plus, Trash2 } from './icons.js';
   import { conceptIcons } from './ConceptExplorer.svelte';
-  import { conceptKinds, kindNames, type ConceptKind, type Tone } from './workspace-views.js';
-  import { folderParent, inFolder, type ConceptFolder } from '../../../../../packages/core/concept-folders.js';
+  import { kindNames, type Tone } from './workspace-views.js';
+  import { conceptKinds, folderParent, inFolder, type ConceptFolder, type ConceptKind } from '../../../../../packages/core/concept-folders.js';
 
   let { tree, folder, kind, palette, disabled, onfolder, onkind, oncreate, onmanage, onmove }: {
     tree: ConceptFolder[]; folder: string | null; kind: ConceptKind | '';

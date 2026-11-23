@@ -6,7 +6,8 @@
 <script lang="ts">
   import type { RecordEntry } from '../../shared.js';
   import { Plus } from './icons.js';
-  import { conceptKinds, isConcept, kindNames, tones, type ConceptKind, type Tone } from './workspace-views.js';
+  import { conceptKinds, isConcept, type ConceptKind } from '../../../../../packages/core/concept-folders.js';
+  import { kindNames, tones, type Tone } from './workspace-views.js';
   import Pagination from './Pagination.svelte';
   import { pageWindow } from './pagination.js';
   import TagList from './TagList.svelte';

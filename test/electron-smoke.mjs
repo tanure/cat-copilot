@@ -14,7 +14,7 @@ const appPath = process.env.CATPILOT_TEST_APP || path.join(root, 'apps', 'deskto
 const launchOptions = {
   ...(process.env.CATPILOT_TEST_EXE ? { executablePath: process.env.CATPILOT_TEST_EXE } : {}),
   args: process.env.CATPILOT_TEST_EXE ? [] : [appPath],
-  env: { ...process.env, CATPILOT_HOME: path.join(temp, 'registry'), CATPILOT_USER_DATA: path.join(temp, 'user-data') },
+  env: { ...process.env, CATPILOT_TRACE_QUIT: '1', CATPILOT_HOME: path.join(temp, 'registry'), CATPILOT_USER_DATA: path.join(temp, 'user-data') },
   timeout: 60_000,
 };
 let app;
@@ -22,6 +22,16 @@ let appProcess;
 let largeWorkspace;
 let succeeded = false;
 const errors = [];
+const stderr = new WeakMap();
+async function launch() {
+  const instance = await electron.launch(launchOptions);
+  const child = instance.process();
+  child.stderr?.setEncoding('utf8').on('data', chunk => {
+    stderr.set(child, ((stderr.get(child) ?? '') + chunk).slice(-4096));
+  });
+  return instance;
+}
+
 async function closeGracefully(app, child, label) {
   assert.ok(child.exitCode === null && child.signalCode === null, `${label} Electron process exited before graceful shutdown`);
   const stopped = new Promise(resolve => child.once('close', resolve));
@@ -29,6 +39,7 @@ async function closeGracefully(app, child, label) {
   // Rejecting a promise alone would leave Playwright and its child keeping CI alive.
   const timer = setTimeout(() => {
     writeSync(2, `[quit test pid=${process.pid} child=${child.pid}] ${label} timed out in ${stage}; exitCode=${child.exitCode} signalCode=${child.signalCode}\n`);
+    if (stderr.has(child)) writeSync(2, `[quit test] Electron stderr:\n${stderr.get(child)}\n`);
     if (process.env.GITHUB_ACTIONS === 'true' && process.platform === 'darwin' && child.pid) {
       const ps = spawnSync('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,stat=,comm='], { encoding: 'utf8', timeout: 3_000, killSignal: 'SIGKILL' });
       const group = ps.stdout?.split('\n').filter(line => line.trim().split(/\s+/)[2] === String(child.pid));
@@ -51,7 +62,7 @@ async function closeGracefully(app, child, label) {
 }
 
 try {
-  app = await electron.launch(launchOptions);
+  app = await launch();
   appProcess = app.process();
   const page = await app.firstWindow();
   page.setDefaultTimeout(15_000);
@@ -369,7 +380,7 @@ try {
   }
   await closeGracefully(app, appProcess, 'initial');
   const startupStart = performance.now();
-  app = await electron.launch(launchOptions);
+  app = await launch();
   appProcess = app.process();
   const restartedPage = await app.firstWindow();
   restartedPage.on('pageerror', error => errors.push(error.message));

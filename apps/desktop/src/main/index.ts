@@ -210,6 +210,7 @@ async function createWindow() {
   });
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-prevent-unload', event => {
+    if (process.env.CATPILOT_TRACE_QUIT === '1') console.error('CatPilot quit: unsaved-changes dialog');
     const choice = dialog.showMessageBoxSync(window!, {
       type: 'question', buttons: ['Keep editing', 'Discard unsaved changes'],
       defaultId: 0, cancelId: 0, message: 'This document has unsaved changes.',
@@ -257,8 +258,17 @@ app.whenReady().then(async () => {
   provider = new CopilotProvider(path.join(app.getPath('userData'), 'copilot'), runtimePath);
   registerHandlers();
   await createWindow();
-  app.on('activate', () => { if (!window) void createWindow().catch(error => dialog.showErrorBox('CatPilot', String(error))); });
-}).catch(error => { dialog.showErrorBox('CatPilot startup failed', String(error)); app.quit(); });
+  app.on('activate', () => {
+    if (!window) void createWindow().catch(error => {
+      console.error('CatPilot window failed to open:', error);
+      dialog.showErrorBox('CatPilot', String(error));
+    });
+  });
+}).catch(error => {
+  console.error('CatPilot startup failed:', error);
+  dialog.showErrorBox('CatPilot startup failed', String(error));
+  app.quit();
+});
 
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 let stopping = false;

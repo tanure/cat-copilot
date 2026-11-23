@@ -22,27 +22,14 @@ let appProcess;
 let largeWorkspace;
 let succeeded = false;
 const errors = [];
-const traceQuit = process.env.CATPILOT_TRACE_QUIT === '1';
-function quitTrace(child, message) {
-  if (traceQuit) console.error(`[quit test pid=${process.pid} child=${child.pid}] ${message}`);
-}
-
-function watchProcess(child, label) {
-  quitTrace(child, `${label} launched`);
-  if (!traceQuit) return;
-  for (const event of ['exit', 'close']) {
-    child.once(event, (code, signal) => quitTrace(child, `${label} ${event} code=${code} signal=${signal}`));
-  }
-  for (const stream of ['stdout', 'stderr']) {
-    child[stream]?.once('end', () => quitTrace(child, `${label} ${stream} end`));
-  }
-}
-
-async function closeGracefully(app, child, stopped, label) {
+async function closeGracefully(app, child, label) {
+  assert.ok(child.exitCode === null && child.signalCode === null, `${label} Electron process exited before graceful shutdown`);
+  const stopped = new Promise(resolve => child.once('close', resolve));
   let stage = 'Playwright app.close()';
+  // Rejecting a promise alone would leave Playwright and its child keeping CI alive.
   const timer = setTimeout(() => {
     writeSync(2, `[quit test pid=${process.pid} child=${child.pid}] ${label} timed out in ${stage}; exitCode=${child.exitCode} signalCode=${child.signalCode}\n`);
-    if (traceQuit && process.platform === 'darwin' && child.pid) {
+    if (process.env.GITHUB_ACTIONS === 'true' && process.platform === 'darwin' && child.pid) {
       const ps = spawnSync('/bin/ps', ['-axo', 'pid=,ppid=,pgid=,stat=,comm='], { encoding: 'utf8', timeout: 3_000, killSignal: 'SIGKILL' });
       const group = ps.stdout?.split('\n').filter(line => line.trim().split(/\s+/)[2] === String(child.pid));
       writeSync(2, `[quit test] exact process group (pid ppid pgid stat executable):\n${group?.join('\n') || '(none)'}\n`);
@@ -56,19 +43,16 @@ async function closeGracefully(app, child, stopped, label) {
     process.exit(1);
   }, 30_000);
   try {
-    quitTrace(child, `${label} requesting ${stage}`);
     await app.close();
-    quitTrace(child, `${label} app.close() completed`);
     stage = 'child close event';
     await stopped;
-    quitTrace(child, `${label} child close wait completed`);
+    assert.equal(child.exitCode, 0, `${label} Electron process did not exit cleanly (signal=${child.signalCode})`);
   } finally { clearTimeout(timer); }
 }
 
 try {
   app = await electron.launch(launchOptions);
   appProcess = app.process();
-  watchProcess(appProcess, 'initial');
   const page = await app.firstWindow();
   page.setDefaultTimeout(15_000);
   page.on('pageerror', error => errors.push(error.message));
@@ -383,13 +367,10 @@ try {
       await page.waitForFunction(() => document.body.innerText.includes('Benchmark task'));
     }
   }
-  const firstProcess = appProcess;
-  const firstStopped = new Promise(resolve => firstProcess.once('close', resolve));
-  await closeGracefully(app, firstProcess, firstStopped, 'initial');
+  await closeGracefully(app, appProcess, 'initial');
   const startupStart = performance.now();
   app = await electron.launch(launchOptions);
   appProcess = app.process();
-  watchProcess(appProcess, 'restarted');
   const restartedPage = await app.firstWindow();
   restartedPage.on('pageerror', error => errors.push(error.message));
   await restartedPage.waitForFunction(() => Boolean(window.catpilot));
@@ -405,21 +386,19 @@ try {
     assert.ok(startupMs < 10_000, `Large workspace startup exceeded 10s: ${startupMs.toFixed(0)}ms`);
   }
   assert.deepEqual(errors, []);
-  quitTrace(appProcess, 'all assertions passed; entering final cleanup');
   succeeded = true;
 } finally {
   if (app && appProcess) {
-    // Test workspaces are disposable; dirty-state guards must not hide a test failure.
-    const process = appProcess;
-    const running = process.exitCode === null && process.signalCode === null;
-    const stopped = running ? new Promise(resolve => process.once('close', resolve)) : Promise.resolve();
-    if (running) {
-      if (succeeded) await closeGracefully(app, process, stopped, 'restarted');
-      else await app.evaluate(({ app }) => app.exit(0)).catch(error => {
-          if (!/closed|exited|destroyed/i.test(error.message)) throw error;
-        });
+    if (succeeded) {
+      await closeGracefully(app, appProcess, 'restarted');
+    } else if (appProcess.exitCode === null && appProcess.signalCode === null) {
+      // Test workspaces are disposable; dirty-state guards must not hide a test failure.
+      const stopped = new Promise(resolve => appProcess.once('close', resolve));
+      await app.evaluate(({ app }) => app.exit(0)).catch(error => {
+        if (!/closed|exited|destroyed/i.test(error.message)) throw error;
+      });
+      await stopped;
     }
-    await stopped;
   }
   await fs.rm(temp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 }

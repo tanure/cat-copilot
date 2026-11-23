@@ -41,8 +41,10 @@ npm run test:package
 npm run desktop:pack
 ```
 
-`test:electron` builds the Electron app. The proposal and workflow UI checks
-launch that build, then load the current renderer source in a separate window.
+`test:electron` builds the Electron app. The smoke test reports success only after
+both launches exit cleanly; each graceful shutdown fails the test after 30 seconds.
+The proposal and workflow UI checks launch that build, then load the current
+renderer source in a separate window.
 
 `desktop:pack` produces an unpacked application under `apps/desktop/release`.
 To produce an installer on its target platform:

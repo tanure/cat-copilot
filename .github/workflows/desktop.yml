@@ -57,9 +57,6 @@ jobs:
       # Builds the Electron entry point needed by the two source-renderer checks below.
       - run: npm run test:electron
         timeout-minutes: 8
-        env:
-          CATPILOT_TRACE_QUIT: ${{ runner.os == 'macOS' && '1' || '' }}
-          DEBUG: ${{ runner.os == 'macOS' && 'pw:browser' || '' }}
       - run: npm run test:proposal-ui
       - run: npm run test:workflows-ui
       - run: npm run test:design-ui

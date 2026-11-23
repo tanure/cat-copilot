@@ -8,7 +8,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { _electron as electron } from 'playwright';
 import { defaultFields } from './document.ts';
 
-// Serve the current renderer without rebuilding the desktop parent is integrating.
+// Launch the existing Electron build and serve the current renderer from source.
 // The controlled bridge tests UI authorization/lifecycle, not SDK or native token storage.
 const root = fileURLToPath(new URL('../../../../../', import.meta.url));
 const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'catpilot-proposal-ui-'));
@@ -295,7 +295,7 @@ try {
   assert.equal(await review.count(), 0);
   assert.equal(await title.inputValue(), 'Target task revised');
   assert.deepEqual(errors, []);
-  console.log('Proposal UI passed: read-only SMART review; dirty/stale/scope/late/error guards; explicit token approval; status/due/tags preservation. Controlled bridge; no desktop build.');
+  console.log('Proposal UI passed: read-only SMART review; dirty/stale/scope/late/error guards; explicit token approval; status/due/tags preservation. Controlled bridge with source renderer.');
 } catch (error) {
   if (page) console.error('Proposal UI fixture state:', page.url(), (await page.locator('body').innerText()).slice(0, 1200));
   throw error;

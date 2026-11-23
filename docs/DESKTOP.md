@@ -34,12 +34,15 @@ Build and check:
 npm run desktop:check
 npm run test:desktop
 npm run test:provider
+npm run test:electron
 npm run test:proposal-ui
 npm run test:workflows-ui
 npm run test:package
-npm run test:electron
 npm run desktop:pack
 ```
+
+`test:electron` builds the Electron app. The proposal and workflow UI checks
+launch that build, then load the current renderer source in a separate window.
 
 `desktop:pack` produces an unpacked application under `apps/desktop/release`.
 To produce an installer on its target platform:

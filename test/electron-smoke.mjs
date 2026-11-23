@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { writeSync } from 'node:fs';
 import fs from 'node:fs/promises';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -14,7 +16,7 @@ const appPath = process.env.CATPILOT_TEST_APP || path.join(root, 'apps', 'deskto
 const launchOptions = {
   ...(process.env.CATPILOT_TEST_EXE ? { executablePath: process.env.CATPILOT_TEST_EXE } : {}),
   args: process.env.CATPILOT_TEST_EXE ? [] : [appPath],
-  env: { ...process.env, CATPILOT_TRACE_QUIT: '1', CATPILOT_HOME: path.join(temp, 'registry'), CATPILOT_USER_DATA: path.join(temp, 'user-data') },
+  env: { ...process.env, CATPILOT_HOME: path.join(temp, 'registry'), CATPILOT_USER_DATA: path.join(temp, 'user-data') },
   timeout: 60_000,
 };
 let app;
@@ -23,8 +25,8 @@ let largeWorkspace;
 let succeeded = false;
 const errors = [];
 const stderr = new WeakMap();
-async function launch() {
-  const instance = await electron.launch(launchOptions);
+async function launch(options = launchOptions) {
+  const instance = await electron.launch(options);
   const child = instance.process();
   child.stderr?.setEncoding('utf8').on('data', chunk => {
     stderr.set(child, ((stderr.get(child) ?? '') + chunk).slice(-4096));
@@ -61,7 +63,36 @@ async function closeGracefully(app, child, label) {
   } finally { clearTimeout(timer); }
 }
 
+async function checkQuitDuringLoad() {
+  let requested = false;
+  const server = createServer((_request, reply) => {
+    requested = true;
+    reply.writeHead(200, { 'Content-Type': 'text/html' });
+    reply.write('<!doctype html><title>Renderer still loading</title>');
+    // Leave the main document response unfinished until Electron quits.
+  });
+  server.listen(0, '127.0.0.1');
+  try {
+    await once(server, 'listening');
+    app = await launch({
+      ...launchOptions,
+      env: { ...launchOptions.env, ELECTRON_RENDERER_URL: `http://127.0.0.1:${server.address().port}/` },
+    });
+    appProcess = app.process();
+    if (!requested) await once(server, 'request', { signal: AbortSignal.timeout(15_000) });
+    assert.ok(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.webContents.isLoadingMainFrame()),
+      'The renderer must still be loading when the quit is requested');
+    await closeGracefully(app, appProcess, 'quit during renderer load');
+    assert.doesNotMatch(stderr.get(appProcess) ?? '', /CatPilot startup failed/);
+    console.log('Electron shutdown regression passed: quitting during renderer load exits cleanly.');
+  } finally {
+    server.close();
+    server.closeAllConnections();
+  }
+}
+
 try {
+  if (!process.env.CATPILOT_TEST_EXE) await checkQuitDuringLoad();
   app = await launch();
   appProcess = app.process();
   const page = await app.firstWindow();

@@ -199,7 +199,7 @@ function registerHandlers() {
 }
 
 async function createWindow() {
-  window = new BrowserWindow({
+  const createdWindow = new BrowserWindow({
     width: 1440, height: 940, minWidth: 850, minHeight: 620,
     title: 'CatPilot', backgroundColor: '#f7f7f4', show: false,
     autoHideMenuBar: true,
@@ -208,28 +208,41 @@ async function createWindow() {
       nodeIntegration: false, contextIsolation: true, sandbox: true,
     },
   });
+  window = createdWindow;
+  let closing = false;
+  const markClosing = () => { closing = true; };
+  createdWindow.on('close', markClosing);
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-prevent-unload', event => {
-    if (process.env.CATPILOT_TRACE_QUIT === '1') console.error('CatPilot quit: unsaved-changes dialog');
     const choice = dialog.showMessageBoxSync(window!, {
       type: 'question', buttons: ['Keep editing', 'Discard unsaved changes'],
       defaultId: 0, cancelId: 0, message: 'This document has unsaved changes.',
       detail: 'Keep editing to save your changes, or discard them and close the window.',
     });
     if (choice === 1) event.preventDefault();
+    else closing = false;
   });
   window.webContents.on('will-navigate', event => event.preventDefault());
   window.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   window.once('ready-to-show', () => window!.show());
   window.on('closed', () => { window = null; preview = undefined; aiProposal = undefined; approvedDirectories.clear(); });
-  if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
-    const url = new URL(process.env.ELECTRON_RENDERER_URL);
-    if (!['127.0.0.1', 'localhost'].includes(url.hostname) || url.protocol !== 'http:') throw new Error('Development UI must be served from loopback.');
-    rendererUrl = url.href;
-    await window.loadURL(rendererUrl);
-  } else {
-    rendererUrl = new URL('../renderer/index.html', import.meta.url).href;
-    await window.loadFile(path.join(here, '../renderer/index.html'));
+  try {
+    if (!app.isPackaged && process.env.ELECTRON_RENDERER_URL) {
+      const url = new URL(process.env.ELECTRON_RENDERER_URL);
+      if (!['127.0.0.1', 'localhost'].includes(url.hostname) || url.protocol !== 'http:') throw new Error('Development UI must be served from loopback.');
+      rendererUrl = url.href;
+      await createdWindow.loadURL(rendererUrl);
+    } else {
+      rendererUrl = new URL('../renderer/index.html', import.meta.url).href;
+      await createdWindow.loadFile(path.join(here, '../renderer/index.html'));
+    }
+  } catch (error) {
+    // Electron can reject a load interrupted by closing with generic ERR_FAILED.
+    // Neither that nor ERR_ABORTED should turn an intentional close into a modal.
+    if (!(closing || createdWindow.isDestroyed()) || !(error instanceof Error && 'code' in error &&
+      (error.code === 'ERR_FAILED' || error.code === 'ERR_ABORTED'))) throw error;
+  } finally {
+    if (!createdWindow.isDestroyed()) createdWindow.removeListener('close', markClosing);
   }
 }
 
@@ -258,12 +271,7 @@ app.whenReady().then(async () => {
   provider = new CopilotProvider(path.join(app.getPath('userData'), 'copilot'), runtimePath);
   registerHandlers();
   await createWindow();
-  app.on('activate', () => {
-    if (!window) void createWindow().catch(error => {
-      console.error('CatPilot window failed to open:', error);
-      dialog.showErrorBox('CatPilot', String(error));
-    });
-  });
+  app.on('activate', () => { if (!window) void createWindow().catch(error => dialog.showErrorBox('CatPilot', String(error))); });
 }).catch(error => {
   console.error('CatPilot startup failed:', error);
   dialog.showErrorBox('CatPilot startup failed', String(error));

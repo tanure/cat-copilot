@@ -420,7 +420,10 @@ try {
   assert.ok(persisted.records.some(item => item.id === record.id));
   assert.ok(persisted.records.some(item => item.title === 'Desktop smoke task' && item.fields.status === 'Done'));
   if (largeWorkspace) {
-    assert.equal(await restartedPage.getByRole('combobox', { name: 'Switch workspace', exact: true }).inputValue(), largeWorkspace.id);
+    const workspaceSwitcher = restartedPage.getByRole('combobox', { name: 'Switch workspace', exact: true });
+    // The preload bridge is available before the renderer restores the workspace.
+    await workspaceSwitcher.and(restartedPage.locator('select:enabled:has(option[value]:not([value=""]))')).waitFor();
+    assert.equal(await workspaceSwitcher.inputValue(), largeWorkspace.id);
     await restartedPage.getByRole('navigation').getByRole('button', { name: /^Tasks(?: \d+)?$/ }).click();
     await restartedPage.waitForFunction(() => document.body.innerText.includes('Benchmark task'));
     const startupMs = performance.now() - startupStart;

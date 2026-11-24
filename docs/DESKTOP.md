@@ -265,10 +265,11 @@ milestones, with status groups in the sidebar. In Concepts, use **+** beside
 **Folders** to create a folder, then choose it from the **Folder** dropdown
 when editing a concept. Folders sort alphabetically and persist when empty.
 Drag a folder onto another folder to nest it, or onto **All folders** to move
-it to the top level. Right-click a folder or open its **…** actions to create a
-subfolder, move it without dragging, or delete it. Deletion keeps the contents
-by default: subfolders move up a level and concepts directly in the deleted
-folder move to its parent or **Unfiled**. Choose **Delete everything inside**
+it to the top level. Right-click a folder, press **Shift+F10** while it is focused,
+or open its **…** actions to create a subfolder, move it without dragging, or
+delete it. Deletion keeps the contents by default: subfolders move up a level
+and concepts directly in the deleted folder move to its parent or **Unfiled**.
+Choose **Delete everything inside**
 to remove the entire branch. Folder edits organize CatPilot records; moving a
 folder updates its concepts without moving their Markdown files. Full backups
 include empty folders.

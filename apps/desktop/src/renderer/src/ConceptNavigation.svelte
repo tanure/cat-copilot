@@ -26,6 +26,8 @@
   let menu = $state<HTMLDivElement>();
   let menuPath = $state('');
   let menuTrigger: HTMLButtonElement | undefined;
+  type MenuRequest = { trigger: HTMLButtonElement; path: string; point: { x: number; y: number } };
+  let pendingMenu: MenuRequest | undefined;
 
   function dragStart(event: DragEvent, path: string) {
     if (disabled || !event.dataTransfer) { event.preventDefault(); return; }
@@ -51,14 +53,30 @@
     if (parent) expand.set(parent, true);
     onmove(path, parent);
   }
-  async function showMenu(event: MouseEvent | KeyboardEvent, path: string) {
+  function showMenu(event: MouseEvent | KeyboardEvent, path: string) {
     if (disabled || !menu) return;
     event.preventDefault();
-    menuTrigger = event.currentTarget as HTMLButtonElement;
-    menuPath = path;
-    const anchor = menuTrigger.getBoundingClientRect();
-    const point = event instanceof MouseEvent && event.type === 'contextmenu' && (event.clientX || event.clientY)
+    const trigger = event.currentTarget as HTMLButtonElement;
+    const anchor = trigger.getBoundingClientRect();
+    const contextClick = event instanceof MouseEvent && event.type === 'contextmenu';
+    const point = contextClick && (event.clientX || event.clientY)
       ? { x: event.clientX, y: event.clientY } : { x: anchor.left, y: anchor.bottom + 3 };
+    const request = { trigger, path, point };
+    // macOS can fire contextmenu on mouse-down; opening then lets the release light-dismiss the popover.
+    if (contextClick && event.buttons && (!(event instanceof PointerEvent) || event.pointerType === 'mouse')) {
+      pendingMenu = request;
+    } else void openMenu(request);
+  }
+  function clearPendingMenu() { pendingMenu = undefined; }
+  function openPendingMenu() {
+    const request = pendingMenu;
+    clearPendingMenu();
+    if (request?.trigger.isConnected) void openMenu(request);
+  }
+  async function openMenu({ trigger, path, point }: MenuRequest) {
+    if (disabled || !menu) return;
+    menuTrigger = trigger;
+    menuPath = path;
     if (!menu.matches(':popover-open')) menu.showPopover();
     await tick();
     if (!menu.matches(':popover-open')) return;
@@ -81,6 +99,8 @@
     menuTrigger?.focus({ preventScroll: true });
   }
 </script>
+
+<svelte:window onpointerdown={clearPendingMenu} onpointercancel={clearPendingMenu} onblur={clearPendingMenu} onmouseup={openPendingMenu} />
 
 {#snippet folders(nodes: ConceptFolder[], depth = 0)}
   <ul class="concept-folders">

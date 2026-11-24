@@ -298,11 +298,12 @@ try {
   assert.equal(await context().getByRole('button', { name: 'Board', exact: true }).count(), 0);
   const folderGroup = () => context().getByRole('group', { name: 'Concept folders' });
   const folderAt = path => folderGroup().locator(`[data-folder-path="${path}"]`);
+  const folderMenu = path => page.getByRole('group', { name: `Folder actions for ${path}`, exact: true });
   const folderDialog = name => page.getByRole('dialog', { name, exact: true });
   async function createFolder(name, parent = '') {
     if (parent) {
       await folderAt(parent).click({ button: 'right' });
-      await page.getByRole('button', { name: 'New subfolder', exact: true }).click();
+      await folderMenu(parent).getByRole('button', { name: 'New subfolder', exact: true }).click();
     } else await folderGroup().getByRole('button', { name: 'New folder', exact: true }).click();
     const dialog = folderDialog(parent ? 'New subfolder' : 'New folder');
     await dialog.getByLabel('Folder name', { exact: true }).fill(name);
@@ -313,6 +314,13 @@ try {
   await createFolder('Work');
   await createFolder('Archives');
   await createFolder('Research', 'Work');
+  await folderAt('Work').press('Shift+F10');
+  const firstFolderAction = folderMenu('Work').getByRole('button', { name: 'New subfolder', exact: true });
+  await firstFolderAction.waitFor();
+  assert.equal(await firstFolderAction.evaluate(button => button === document.activeElement), true);
+  await firstFolderAction.press('Escape');
+  await folderMenu('Work').waitFor({ state: 'hidden' });
+  assert.equal(await folderAt('Work').evaluate(button => button === document.activeElement), true);
   const topFolders = await folderGroup().locator('.concept-folders > li > .folder-row').evaluateAll(rows =>
     rows.filter(row => row.style.getPropertyValue('--folder-depth') === '0').map(row => row.querySelector('[data-folder-path]').dataset.folderPath));
   assert.ok(topFolders.indexOf('Archives') < topFolders.indexOf('Work'));
@@ -337,7 +345,7 @@ try {
   await section('Concepts');
   await folderAt('Archives').waitFor();
   await folderAt('Archives').click({ button: 'right' });
-  await page.getByRole('button', { name: 'Delete folder…', exact: true }).click();
+  await folderMenu('Archives').getByRole('button', { name: 'Delete folder…', exact: true }).click();
   const deleteFolder = folderDialog('Delete folder');
   assert.ok(await deleteFolder.getByRole('radio', { name: /Keep contents/ }).isChecked());
   if (process.env.CATPILOT_FOLDER_SCREENSHOTS) await page.screenshot({ path: path.join(process.env.CATPILOT_FOLDER_SCREENSHOTS, 'desktop-delete-folder.png') });
@@ -350,7 +358,7 @@ try {
   await folderAt('Work/Research').click();
   assert.equal(await page.locator('.concept-entry').filter({ hasText: 'Folder fixture' }).locator('.kind-badge').getAttribute('data-tone'), 'rose');
   await folderGroup().getByRole('button', { name: 'Actions for Work/Research', exact: true }).click();
-  await page.getByRole('button', { name: 'Delete folder…', exact: true }).click();
+  await folderMenu('Work/Research').getByRole('button', { name: 'Delete folder…', exact: true }).click();
   await deleteFolder.getByRole('radio', { name: /Delete everything inside/ }).check();
   await deleteFolder.getByRole('button', { name: 'Delete folder and contents', exact: true }).click();
   await deleteFolder.waitFor({ state: 'hidden' });

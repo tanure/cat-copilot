@@ -119,14 +119,14 @@ The Windows x64 NSIS installer is
 `apps/desktop/release/CatPilot Setup 0.9.0.exe`; the unpacked executable is
 `apps/desktop/release/win-unpacked/CatPilot.exe`.
 The packaged smoke test also supports `CATPILOT_TEST_LARGE=1`: it creates a
-synthetic SQLite workspace with 10,000 tasks and 1,000 notes. A packaged Windows
-run measured 2.27s for the IPC snapshot, 0.32s for navigation, 719 MiB combined
-process working sets, and 0.90s for a second process launch with the large
-workspace selected. Lists mount bounded pages rather than all records at once.
+synthetic SQLite workspace with 10,000 tasks and 1,000 notes. It measures
+snapshot delivery into the renderer without transferring the full snapshot back
+to the test runner. It also checks that a second process restores the selected
+workspace and that task lists mount bounded pages rather than all records at once.
 Regression budgets are 5s for the snapshot, 10s for navigation/second-process
 startup, and 1 GiB combined working sets. These are engineering gates, not
 guarantees for arbitrary hardware.
-The native CI matrix runs the fixture; its macOS results have not yet been observed.
+The native CI matrix runs the fixture.
 
 ## Workspaces and storage
 

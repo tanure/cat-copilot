@@ -315,10 +315,13 @@ try {
     const repository = await openRepository(workspace);
     try { await repository.restore(records); }
     finally { repository.close(); }
-    const snapshotStart = performance.now();
-    const snapshot = await request({ action: 'snapshot', workspaceId: workspace.id });
-    const snapshotMs = performance.now() - snapshotStart;
-    assert.equal(snapshot.records.length, 11_000);
+    // Measure delivery to the renderer, not serializing the completed snapshot again over Playwright's connection.
+    const { count, snapshotMs } = await page.evaluate(async workspaceId => {
+      const snapshotStart = performance.now();
+      const snapshot = await window.catpilot.request({ action: 'snapshot', workspaceId });
+      return { count: snapshot.records.length, snapshotMs: performance.now() - snapshotStart };
+    }, workspace.id);
+    assert.equal(count, 11_000);
     await page.reload();
     const navigationStart = performance.now();
     await page.getByRole('combobox', { name: 'Switch workspace', exact: true }).selectOption(workspace.id);

@@ -21,7 +21,7 @@ export class SqliteRepository implements Repository {
     try {
       this.db.exec('PRAGMA busy_timeout=5000;');
       const applicationId = Number(this.db.prepare('PRAGMA application_id').get()?.application_id);
-      const empty = Number(this.db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE name NOT LIKE 'sqlite_%'").get()?.count) === 0;
+      const empty = Number(this.db.prepare("SELECT count(*) AS count FROM sqlite_master WHERE name NOT GLOB 'sqlite_*'").get()?.count) === 0;
       if (applicationId !== 1128354896 && !(applicationId === 0 && empty)) throw new Error('This is not a CatPilot workspace database. It has not been adopted.');
       const version = this.db.prepare('PRAGMA user_version').get();
       if (Number(version?.user_version) > 1) throw new Error('This database was created by a newer CatPilot version.');

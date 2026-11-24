@@ -17,7 +17,8 @@ export class WorkspaceRegistry {
   }
   async get(id: string): Promise<Workspace> {
     const workspaces = await this.list();
-    const matches = workspaces.filter(w => w.id === id || w.name === id);
+    const byId = workspaces.find(w => w.id === id);
+    const matches = byId ? [byId] : workspaces.filter(w => w.name === id);
     if (matches.length !== 1) throw new Error(`Workspace not found or ambiguous: ${id}`);
     const workspace = matches[0];
     const real = await fs.realpath(workspace.location);

@@ -20,6 +20,14 @@ Use `cat-pilot setup --local` only if you want a per-project config
 
 This installs four binaries: `catpilot`, `cat-pilot`, `cat-tui`, and `catpilot-mcp`.
 
+### Installing from source
+
+Run `npm ci` in the repository, then `npm test`.
+The repository's `.npmrc` keeps registry tarball URLs out of `package-lock.json`,
+so installs use your configured npm registry rather than another developer's
+package-feed URLs. Locked versions and integrity hashes remain enforced; no
+registry override or relaxation of remote-fetch policy is required.
+
 ## Surface → command matrix
 
 | Surface | What you install | Command / config | What you get |

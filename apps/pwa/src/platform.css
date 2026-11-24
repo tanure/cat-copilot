@@ -1,0 +1,31 @@
+html, body { height: 100%; }
+body { display: flex; flex-direction: column; }
+#app { flex: 1; min-height: 0; }
+.desktop-shell { height: 100%; }
+.compact-workspace { display: none; }
+.platform-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; min-height: 38px; padding: 5px 16px; background: var(--context); border-bottom: 1px solid var(--line); font-size: 12px; color: var(--ink); }
+.platform-bar > [role="status"], .platform-bar > [role="alert"] { margin-left: auto; }
+.platform-bar button { min-height: 28px; font-size: 12px; padding: 3px 10px; }
+@media (max-width: 760px) {
+  .primary-sidebar, .primary-sidebar:not(.is-collapsed) { width: 66px; flex: 0 0 66px; padding: 12px 8px; }
+  .primary-sidebar .brand > span, .primary-sidebar .workspace-switcher, .primary-sidebar nav button > span:not(.nav-icon), .primary-sidebar .sidebar-bottom button > span:not(.nav-icon), .primary-sidebar .local-note, .primary-sidebar .resize-handle { display: none; }
+  .primary-sidebar nav button, .primary-sidebar .sidebar-bottom button { min-height: 44px; justify-content: center; padding: 10px; }
+  .context-sidebar { display: none; }
+  .compact-context { display: block; }
+  .context-expand { display: none; }
+  .compact-workspace { display: block; max-width: 180px; }
+  .main-header { padding: 10px 12px; flex-wrap: wrap; }
+  .breadcrumbs { white-space: normal; }
+  .breadcrumbs > span:first-of-type, .breadcrumbs > .crumb-divider:first-of-type { display: none; }
+  .page-content, .document-page { padding: 20px 14px; }
+  .metadata-grid { grid-template-columns: minmax(0, 1fr); }
+  .metadata-grid .wide { grid-column: auto; }
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .document-tabs { overflow-x: auto; flex-wrap: nowrap; }
+  .document-tabs button { white-space: nowrap; min-height: 44px; }
+  .editor-toolbar button { min-height: 36px; }
+  .board { grid-template-columns: minmax(220px, 1fr); }
+  .model-picker { flex-wrap: wrap; }
+  .view-label { display: none; }
+  .platform-bar { gap: 4px 12px; }
+}

@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-23
+
+### Added
+- Electron desktop preview with separate SQLite or Markdown workspaces, portable
+  backups, legacy vault import, and rich editing with Markdown source access.
+- Offline Chromebook PWA with browser-private SQLite or a selected Markdown
+  folder. See the [PWA guide](docs/PWA.md) for hosting and installation.
+- Contextual navigation, a drag-and-drop task board, a month calendar, an
+  Eisenhower Matrix, a project portfolio, and dated Journal and Timeline views.
+- A Concepts folder tree with persistent empty folders, drag-and-drop nesting,
+  folder selection in the editor, and a choice to keep or delete contents.
+- A Focus timer with presets, optional purpose, and links to one or more tasks.
+- Optional GitHub Copilot assistance on desktop with device sign-in, model
+  selection, and explicit approval for structured edits.
+
+The Windows x64 preview installer is unsigned. The browser build does not use
+the native Copilot SDK or synchronize workspaces across devices.
+
 ## [0.8.3] - 2026-09-07
 
 ### Added

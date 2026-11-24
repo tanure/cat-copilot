@@ -1,0 +1,73 @@
+name: Windows signed release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: windows-signed-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: windows-latest
+    environment: windows-signing
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      CATPILOT_SIGNING_ENDPOINT: ${{ vars.CATPILOT_SIGNING_ENDPOINT }}
+      CATPILOT_SIGNING_ACCOUNT: ${{ vars.CATPILOT_SIGNING_ACCOUNT }}
+      CATPILOT_SIGNING_PROFILE: ${{ vars.CATPILOT_SIGNING_PROFILE }}
+      CATPILOT_SIGNING_PUBLISHER: ${{ vars.CATPILOT_SIGNING_PUBLISHER }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Require explicit signing configuration
+        shell: pwsh
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in 'AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID') {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "The windows-signing environment requires $name."
+            }
+          }
+          node -e "require('./apps/desktop/electron-builder.windows-signed.cjs')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run: npm ci
+      - run: npm run test:signing
+      - run: npm run desktop:check
+      - run: npm run desktop:build
+      - name: Authenticate to the selected signing subscription
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build, sign and verify application and installer
+        run: npm run dist:win:signed --workspace @catpilot/desktop
+      - name: Exercise the signed application
+        shell: pwsh
+        run: |
+          $env:CATPILOT_TEST_EXE = (Resolve-Path 'apps\desktop\release\win-unpacked\CatPilot.exe').Path
+          $env:CATPILOT_TEST_LARGE = '1'
+          node test\desktop-design-smoke.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node test\electron-smoke.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: catpilot-win-x64-signed
+          if-no-files-found: error
+          path: |
+            apps/desktop/release/CatPilot Setup *.exe
+            apps/desktop/release/CatPilot Setup *.exe.blockmap
+          retention-days: 7

@@ -16,6 +16,146 @@ const __dirname = dirname(__filename);
 const program = new Command();
 const pluginRoot = path.resolve(__dirname, '..');
 
+import { workspaceCore, workspaceRequest, resolveWorkspace, workspaceManagement, assertLegacyWorkspace } from '../lib/workspaces.js';
+
+program.hook('preAction', (_command, actionCommand) => {
+  let command = actionCommand;
+  while (command.parent && command.parent !== program) command = command.parent;
+  if (command.name() !== 'workspace') assertLegacyWorkspace('Legacy CLI');
+});
+
+const workspaceCmd = program.command('workspace').description('Manage desktop workspaces (SQLite requires Node 22.13+)');
+const printWorkspaceResult = value => console.log(JSON.stringify(value, null, 2));
+workspaceCmd.command('list').action(async () => printWorkspaceResult(await workspaceRequest({ action: 'listWorkspaces' })));
+workspaceCmd.command('create <name>')
+  .option('--backend <backend>', 'sqlite or markdown', 'sqlite')
+  .option('--directory <path>', 'Directory for workspace data')
+  .action(async (name, options) => printWorkspaceResult(await workspaceRequest({
+    action: 'createWorkspace', name, backend: options.backend, location: options.directory,
+  })));
+workspaceCmd.command('records')
+  .option('--workspace <id-or-name>', 'Workspace selector (or CATPILOT_WORKSPACE)')
+  .option('--domain <domain>', 'Filter by domain')
+  .action(async options => {
+    const workspace = await resolveWorkspace(options.workspace);
+    const { records } = await workspaceRequest({ action: 'snapshot', workspaceId: workspace.id });
+    const { isDocument } = await workspaceCore();
+    printWorkspaceResult(records.filter(record => isDocument(record) && (!options.domain || record.domain === options.domain)));
+  });
+workspaceCmd.command('add <domain> <title>')
+  .option('--workspace <id-or-name>', 'Workspace selector (or CATPILOT_WORKSPACE)')
+  .option('--body <markdown>', 'Markdown body', '')
+  .option('--fields <json>', 'Structured metadata as JSON', '{}')
+  .action(async (domain, title, options) => {
+    const workspace = await resolveWorkspace(options.workspace);
+    const { recordInputSchema } = await workspaceCore();
+    printWorkspaceResult(await workspaceRequest({
+      action: 'put', workspaceId: workspace.id,
+      input: recordInputSchema.parse({ domain, title, body: options.body, fields: JSON.parse(options.fields) }),
+    }));
+  });
+workspaceCmd.command('update <id>')
+  .option('--workspace <id-or-name>', 'Workspace selector (or CATPILOT_WORKSPACE)')
+  .requiredOption('--revision <revision>', 'Last observed revision; rejects stale writes')
+  .option('--title <title>', 'New title')
+  .option('--body <markdown>', 'New Markdown body')
+  .option('--fields <json>', 'Partial structured metadata as JSON')
+  .action(async (id, options) => {
+    const workspace = await resolveWorkspace(options.workspace);
+    const { records } = await workspaceRequest({ action: 'snapshot', workspaceId: workspace.id });
+    const record = records.find(item => item.id === id);
+    if (!record) throw new Error('Record not found.');
+    const { recordInputSchema } = await workspaceCore();
+    printWorkspaceResult(await workspaceRequest({
+      action: 'put', workspaceId: workspace.id, id, expectedRevision: options.revision,
+      input: recordInputSchema.parse({
+        domain: record.domain, title: options.title ?? record.title, body: options.body ?? record.body,
+        fields: { ...record.fields, ...(options.fields ? JSON.parse(options.fields) : {}) },
+      }),
+    }));
+  });
+workspaceCmd.command('remove <id>')
+  .option('--workspace <id-or-name>', 'Workspace selector (or CATPILOT_WORKSPACE)')
+  .requiredOption('--revision <revision>', 'Last observed revision')
+  .action(async (id, options) => {
+    const workspace = await resolveWorkspace(options.workspace);
+    await workspaceRequest({ action: 'remove', workspaceId: workspace.id, id, expectedRevision: options.revision });
+    printWorkspaceResult({ removed: id });
+  });
+workspaceCmd.command('export')
+  .option('--workspace <id-or-name>', 'Workspace selector (or CATPILOT_WORKSPACE)')
+  .action(async options => {
+    const workspace = await resolveWorkspace(options.workspace);
+    printWorkspaceResult(await workspaceRequest({ action: 'export', workspaceId: workspace.id }));
+  });
+workspaceCmd.command('import <file>')
+  .option('--workspace <id-or-name>', 'Empty destination workspace (or CATPILOT_WORKSPACE)')
+  .option('--apply', 'Approve the previewed import; source is unchanged')
+  .action(async (file, options) => {
+    const backup = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const workspace = await resolveWorkspace(options.workspace);
+    printWorkspaceResult(await workspaceRequest({ action: 'previewImport', backup }));
+    if (options.apply) printWorkspaceResult(await workspaceRequest({ action: 'import', workspaceId: workspace.id, backup, approved: true }));
+  });
+
+workspaceCmd.command('manage <request-json>')
+  .description('Run shared comments/logs, completion, carryForward, prioritize, rollup or report requests')
+  .option('--workspace <id-or-name>', 'Workspace selector (or CATPILOT_WORKSPACE)')
+  .action(async (requestJson, options) => {
+    printWorkspaceResult(await workspaceManagement(options.workspace, JSON.parse(requestJson)));
+  });
+
+workspaceCmd.command('legacy-import <directory>')
+  .description('Preview a legacy vault conversion; --apply imports into an empty workspace without changing originals')
+  .option('--workspace <id-or-name>', 'Empty destination workspace (or CATPILOT_WORKSPACE)')
+  .option('--apply', 'Approve importing the previewed records and byte-for-byte source archive')
+  .action(async (directory, options) => {
+    const workspace = await resolveWorkspace(options.workspace);
+    const source = fs.realpathSync(directory);
+    const destination = fs.realpathSync(workspace.location);
+    const contains = (root, candidate) => {
+      const relative = path.relative(root, candidate);
+      return !relative || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+    };
+    if (contains(source, destination) || contains(destination, source)) {
+      throw new Error('Legacy source and destination must not overlap. Select a separate empty workspace to leave originals unchanged.');
+    }
+    const { legacyBackup } = await import('../dist/core/legacy.js');
+    const { backup, warnings, sourceFiles } = await legacyBackup(source, workspace);
+    const preview = await workspaceRequest({ action: 'previewImport', backup });
+    const result = options.apply
+      ? await workspaceRequest({ action: 'import', workspaceId: workspace.id, backup, approved: true })
+      : undefined;
+    printWorkspaceResult({ preview, warnings, sourceFiles, ...(result ? { result } : {}) });
+  });
+
+workspaceCmd.command('asset-import <file>')
+  .description('Import one attachment without overwriting an existing asset')
+  .option('--workspace <id-or-name>', 'Workspace selector (or CATPILOT_WORKSPACE)')
+  .option('--path <relative-path>', 'Portable relative asset path (defaults to the source basename)')
+  .action(async (file, options) => {
+    const workspace = await resolveWorkspace(options.workspace);
+    const size = fs.statSync(file).size;
+    if (size > 20_000_000) throw new Error('Asset exceeds the 20 MB file limit.');
+    const bytes = fs.readFileSync(file);
+    const { digest } = await import('../dist/core/assets.js');
+    const uri = await workspaceRequest({
+      action: 'addAsset', workspaceId: workspace.id,
+      asset: { path: options.path || path.basename(file), data: bytes.toString('base64'), sha256: digest(bytes) },
+    });
+    printWorkspaceResult({ uri });
+  });
+
+workspaceCmd.command('asset-export <asset-path> <file>')
+  .description('Export one workspace attachment to a new file; never overwrites an existing file')
+  .option('--workspace <id-or-name>', 'Workspace selector (or CATPILOT_WORKSPACE)')
+  .action(async (assetPath, file, options) => {
+    const workspace = await resolveWorkspace(options.workspace);
+    const asset = await workspaceRequest({ action: 'readAsset', workspaceId: workspace.id, path: assetPath });
+    fs.writeFileSync(file, asset.data, { flag: 'wx', mode: 0o600 });
+    printWorkspaceResult({ exported: path.resolve(file), bytes: asset.data.length, mime: asset.mime });
+  });
+
 // Single source of truth for the version: package.json (prevents the drift where
 // the CLI, MCP server and plugin manifest each hard-code a different number).
 let pkgVersion = '0.0.0';
@@ -1111,7 +1251,10 @@ program
 // PARSE AND RUN
 // ============================================================================
 
-program.parse(process.argv);
+program.parseAsync(process.argv).catch(error => {
+  console.error(`CatPilot: ${error.message}`);
+  process.exitCode = 1;
+});
 
 if (process.argv.length < 3) {
   program.outputHelp();

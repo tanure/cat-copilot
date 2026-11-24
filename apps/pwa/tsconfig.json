@@ -1,0 +1,8 @@
+{
+  "extends": "../desktop/tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client", "wicg-file-system-access"],
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src/**/*.ts", "../desktop/src/renderer/**/*.svelte", "../desktop/src/renderer/**/*.ts", "../desktop/src/shared.ts"]
+}

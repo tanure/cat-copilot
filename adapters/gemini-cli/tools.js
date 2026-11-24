@@ -14,6 +14,7 @@
 import * as cliUtils from '../../lib/cli-utils.js';
 import * as eisen from '../../lib/eisenhower.js';
 import * as core from '../claude-code/tools.js';
+import { workspaceSelected, workspaceTool } from '../../lib/workspaces.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -41,6 +42,7 @@ function smartFromParams(params = {}) {
  */
 
 async function catpilot_list_tasks(params = {}) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('list_tasks', params));
   try {
     const config = cliUtils.loadConfig();
     const tasksPath = cliUtils.resolveFilePath('tasks', config);
@@ -78,6 +80,7 @@ async function catpilot_list_tasks(params = {}) {
 }
 
 async function catpilot_add_task(params) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('add_task', params));
   try {
     if (!params.title) {
       return { success: false, error: 'title is required' };
@@ -121,11 +124,13 @@ async function catpilot_add_task(params) {
 
 /** Set or clear SMART fields / Eisenhower axes on an existing task. */
 async function catpilot_set_task_smart(params = {}) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('set_task_smart', params));
   return fromCore(await core.set_task_smart(params), 'task');
 }
 
 /** Tasks grouped into the four Eisenhower quadrants. */
 async function catpilot_task_matrix(params = {}) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('task_matrix', params));
   const r = await core.task_matrix(params);
   if (!r || r.success === false) return { success: false, error: r?.error || 'unknown error' };
   return { success: true, result: { ...r.data } };
@@ -133,6 +138,7 @@ async function catpilot_task_matrix(params = {}) {
 
 /** Ranked "what to do next" list. */
 async function catpilot_task_focus(params = {}) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('task_focus', params));
   const r = await core.task_focus(params);
   if (!r || r.success === false) return { success: false, error: r?.error || 'unknown error' };
   return { success: true, result: { ...r.data } };
@@ -140,12 +146,14 @@ async function catpilot_task_focus(params = {}) {
 
 /** Move open tasks from earlier periods into the current one. */
 async function catpilot_task_carry(params = {}) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('task_carry', params));
   const r = await core.task_carry(params);
   if (!r || r.success === false) return { success: false, error: r?.error || 'unknown error' };
   return { success: true, result: { ...r.data } };
 }
 
 async function catpilot_complete_task(params) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('complete_task', params));
   try {
     if (params.id === undefined) {
       return { success: false, error: 'id is required' };
@@ -178,6 +186,7 @@ async function catpilot_complete_task(params) {
 }
 
 async function catpilot_add_journal(params) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('add_journal_entry', params));
   try {
     if (!params.text) {
       return { success: false, error: 'text is required' };
@@ -206,6 +215,7 @@ async function catpilot_add_journal(params) {
 }
 
 async function catpilot_list_journal(params = {}) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('list_journal', params));
   try {
     const config = cliUtils.loadConfig();
     const journalPath = cliUtils.resolveFilePath('journal', config);
@@ -229,6 +239,7 @@ async function catpilot_list_journal(params = {}) {
 }
 
 async function catpilot_create_memo(params) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('create_memo', params));
   try {
     if (!params.title) {
       return { success: false, error: 'title is required' };
@@ -257,6 +268,7 @@ async function catpilot_create_memo(params) {
 }
 
 async function catpilot_list_memos(params = {}) {
+  if (workspaceSelected(params)) return fromCore(await workspaceTool('list_memos', params));
   try {
     const config = cliUtils.loadConfig();
     const memoDir = cliUtils.resolveFilePath('memos', config);

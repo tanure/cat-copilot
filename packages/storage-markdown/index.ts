@@ -83,7 +83,9 @@ export class MarkdownRepository implements Repository {
       } else if (expectedRevision) throw new Error('A revision requires a record ID.');
       const now = new Date().toISOString();
       const record = { ...input, id: existing?.id || randomUUID(), created: existing?.created || now, updated: now, revision: 'new' };
-      const raw = this.serialize(record);
+      const original = existing ? await this.readRaw(existing.id) : undefined;
+      if (original !== undefined && hash(original) !== expectedRevision) throw new ConflictError();
+      const raw = this.serialize(record, original);
       await atomicWrite(this.file(record.id), raw);
       return { ...record, revision: hash(raw) };
     });

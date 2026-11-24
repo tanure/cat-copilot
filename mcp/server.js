@@ -36,6 +36,7 @@ import * as knowledge from '../lib/knowledge.js';
 import * as learningPaths from '../lib/learning.js';
 import * as projectsLib from '../lib/projects.js';
 import * as achievements from '../lib/achievements.js';
+import { workspaceCore, workspaceRequest, resolveWorkspace, workspaceManagement, workspaceSelected } from '../lib/workspaces.js';
 
 // Pin working directory so config resolution is stable across MCP hosts.
 if (process.env.CATPILOT_ROOT) {
@@ -57,6 +58,23 @@ const server = new McpServer({
   name: 'catpilot',
   version: pkgVersion
 });
+
+// Legacy tools include synchronous file engines and numeric IDs. Never retarget
+// them implicitly to a UUID backend or let a pinned process read the wrong data.
+const registerTool = server.registerTool.bind(server);
+server.registerTool = (name, config, handler) => {
+  const legacy = !name.startsWith('workspace_');
+  const guardedConfig = legacy ? {
+    ...config,
+    inputSchema: { ...config.inputSchema, workspace: z.string().optional().describe('Record workspace selector: use workspace_* tools instead of legacy file tools.') },
+  } : config;
+  return registerTool(name, guardedConfig, async (...args) => {
+    if (legacy && workspaceSelected(args[0])) {
+      return fail('A record workspace was selected. Use workspace_* tools with UUID record IDs and expectedRevision, not numeric legacy IDs; refusing legacy Markdown fallback.');
+    }
+    return handler(...args);
+  });
+};
 
 /** Wrap any result as MCP text content (JSON for structured data). */
 function ok(payload) {
@@ -554,6 +572,77 @@ server.registerTool('config_info', {
   } catch (err) {
     return fail(err.message);
   }
+});
+
+server.registerTool('workspace_list', {
+  title: 'List desktop workspaces',
+  description: 'List registered CatPilot desktop workspaces. Legacy Markdown tools retain their existing configuration.',
+  inputSchema: {},
+}, async () => {
+  try { return ok(await workspaceRequest({ action: 'listWorkspaces' })); }
+  catch (error) { return fail(error.message); }
+});
+
+server.registerTool('workspace_records', {
+  title: 'Read desktop workspace records',
+  description: 'Read records from one explicitly selected desktop workspace, optionally filtered by domain. Never combines workspaces.',
+  inputSchema: { workspace: z.string().optional(), domain: z.enum(['tasks', 'knowledge', 'journal', 'projects', 'learning', 'milestones', 'growth', 'achievements', 'pomodoro', 'reports']).optional() },
+}, async ({ workspace: selector, domain }) => {
+  try {
+    const workspace = await resolveWorkspace(selector);
+    const snapshot = await workspaceRequest({ action: 'snapshot', workspaceId: workspace.id });
+    return ok({ ...snapshot, records: domain ? snapshot.records.filter(record => record.domain === domain) : snapshot.records });
+  } catch (error) { return fail(error.message); }
+});
+
+server.registerTool('workspace_record_save', {
+  title: 'Save a desktop workspace record',
+  description: 'Create or update a desktop workspace record only when requested by the user. Updates require its last-read revision. Metadata is preserved through explicit fields. Does not edit legacy Markdown tables.',
+  inputSchema: {
+    workspace: z.string().optional(), id: z.uuid().optional(), expectedRevision: z.string().optional(),
+    domain: z.enum(['tasks', 'knowledge', 'journal', 'projects', 'learning', 'milestones', 'growth', 'achievements', 'pomodoro', 'reports']),
+    title: z.string(), body: z.string().optional(), fields: z.record(z.string(), z.unknown()).optional(),
+  },
+}, async ({ workspace: selector, id, expectedRevision, ...input }) => {
+  try {
+    const workspace = await resolveWorkspace(selector);
+    const { recordInputSchema } = await workspaceCore();
+    let existing;
+    if (id) {
+      const { records } = await workspaceRequest({ action: 'snapshot', workspaceId: workspace.id });
+      existing = records.find(record => record.id === id);
+      if (!existing) throw new Error('Record not found.');
+    }
+    return ok(await workspaceRequest({
+      action: 'put', workspaceId: workspace.id, id, expectedRevision,
+      input: recordInputSchema.parse({
+        ...input,
+        body: input.body ?? existing?.body ?? '',
+        fields: { ...existing?.fields, ...input.fields },
+      }),
+    }));
+  } catch (error) { return fail(error.message); }
+});
+
+server.registerTool('workspace_record_remove', {
+  title: 'Remove a desktop workspace record',
+  description: 'Delete a record only on explicit user request, from the named workspace using its last-read revision.',
+  inputSchema: { workspace: z.string().optional(), id: z.uuid(), expectedRevision: z.string() },
+}, async ({ workspace: selector, id, expectedRevision }) => {
+  try {
+    const workspace = await resolveWorkspace(selector);
+    await workspaceRequest({ action: 'remove', workspaceId: workspace.id, id, expectedRevision });
+    return ok({ removed: id });
+  } catch (error) { return fail(error.message); }
+});
+
+server.registerTool('workspace_manage', {
+  title: 'Manage workspace domain workflows',
+  description: 'Shared backend-neutral workflows. request actions: comment/log {id,expectedRevision,text}; complete {id,expectedRevision}; carryForward {id,expectedRevision,period: YYYY-MM-DD or YYYY-Www or YYYY-MM}; prioritize {asOf: YYYY-MM-DD}; rollup {id}; report {from,to: YYYY-MM-DD}. Mutations require the observed revision and preserve metadata. Rollups/achievements are derived, not partial cross-record writes.',
+  inputSchema: { workspace: z.string().optional(), request: z.record(z.string(), z.unknown()) },
+}, async ({ workspace, request }) => {
+  try { return ok(await workspaceManagement(workspace, request)); }
+  catch (error) { return fail(error.message); }
 });
 
 async function main() {
